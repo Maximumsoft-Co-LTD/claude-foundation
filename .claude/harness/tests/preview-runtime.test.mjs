@@ -84,12 +84,32 @@ test("a failing provider records a failed preview without throwing", (t) => {
   assert.equal(runtime.runPreview(id, { provider: "check" }).receipt.status, "fail");
 });
 
+test("preview runs while the workspace is still the target", async (t) => {
+  // Change start records { mode: "current", path: <root> } before any Build.
+  for (const workspace of [
+    (root) => ({ mode: "current", path: root }),
+    () => undefined,
+    (root) => ({ path: root })
+  ]) {
+    const value = fixture(t, { providers: { check: { command: node("process.exit(0)") } } });
+    const state = JSON.parse(readFileSync(join(value.runtimeDir, `${value.id}.json`), "utf8"));
+    write(join(value.runtimeDir, `${value.id}.json`), { ...state, workspace: workspace(value.root) });
+    assert.equal(value.runtime.runPreview(value.id, { provider: "check" }).receipt.status, "pass");
+  }
+});
+
 test("preview is refused once Build owns the workspace", (t) => {
-  const { id, runtime } = fixture(t, {
-    state: { status: "building", workspace: { path: "x" } },
-    providers: { check: { command: node("process.exit(0)") } }
-  });
-  assert.throws(() => runtime.runPreview(id, { provider: "check" }), /only before Build/);
+  for (const state of [
+    { status: "change", workspace: { mode: "copy", path: "/elsewhere/.foundation/sandboxes/demo" } },
+    { status: "building", workspace: { mode: "current", path: "." } },
+    { status: "building", workspace: { path: "x" } }
+  ]) {
+    const { id, runtime, spawned } = fixture(t, {
+      state, providers: { check: { command: node("process.exit(0)") } }
+    });
+    assert.throws(() => runtime.runPreview(id, { provider: "check" }), /only before Build/);
+    assert.equal(spawned.length, 0);
+  }
 });
 
 test("a preview from an earlier revision is shown as stale in the package", (t) => {

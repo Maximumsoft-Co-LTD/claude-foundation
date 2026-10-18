@@ -93,6 +93,26 @@ const DOMAIN_ROWS = [
 export const DOMAINS = Object.freeze(DOMAIN_ROWS.map(([id, key, name, group, , artifacts, roles]) =>
   Object.freeze({ id, key, name, group, artifacts: Object.freeze(artifacts), roles: Object.freeze(roles) })));
 
+// Paths a change touches can reveal a risk its draft did not declare. They only
+// raise routing (level, domains, artifacts, approval lanes); discovery and
+// review still follow the declared signals.
+const PATH_SIGNALS = Object.freeze([
+  ["persisted-data-change", /(^|\/)(migrations?|migrate|prisma)\/|(^|\/)schema\.[a-z]+$|\.sql$/i],
+  ["access-control", /(^|\/)(auth|authz|permissions?|rbac|acl)(\/|[._-])/i],
+  ["financial", /(payments?|billing|refunds?|checkout|wallets?|ledger|invoices?)/i],
+  ["user-interface", /\.(tsx|jsx|vue|svelte|css|scss)$|(^|\/)(components|pages|views)\//i],
+  ["high-operational-risk", /\.tf$|(^|\/)(terraform|k8s|kubernetes|helm)\/|(^|\/)Dockerfile$|(^|\/)\.github\/workflows\//i],
+  ["external-integration", /webhooks?/i]
+]);
+
+export function inferPathSignals(paths = []) {
+  const found = [];
+  for (const path of [...new Set((Array.isArray(paths) ? paths : []).map(String))])
+    for (const [signal, pattern] of PATH_SIGNALS)
+      if (pattern.test(path) && !found.some((row) => row.signal === signal)) found.push({ signal, path });
+  return found;
+}
+
 const strings = (value) => Array.isArray(value)
   ? [...new Set(value.map((item) => String(item).trim().toLowerCase()).filter(Boolean))]
   : [];
@@ -127,8 +147,14 @@ export function routeChange(source = {}) {
   if (coupling === "coupled" || coupling === "cross-repository") signals.add(coupling);
   if (Array.isArray(source.integrations) && source.integrations.length) signals.add("integrations");
   if (Array.isArray(source.securityTriggers) && source.securityTriggers.length) signals.add("security-triggers");
+  const inferred = inferPathSignals(source.paths).filter((row) => !signals.has(row.signal));
+  for (const row of inferred) signals.add(row.signal);
 
-  const { level, reasons } = riskLevel({ riskSignals: [...signals].filter((s) => RISK_SIGNALS.has(s)), impact: source.impact });
+  const { level, reasons: signalReasons } = riskLevel({
+    riskSignals: [...signals].filter((s) => RISK_SIGNALS.has(s)), impact: source.impact });
+  const reasons = [...signalReasons.filter((reason) =>
+    !inferred.some((row) => reason === `risk:${row.signal}`)),
+  ...inferred.map((row) => `path:${row.path}→${row.signal}`)];
   const domains = DOMAIN_ROWS.filter((row) => row[4](signals)).map(([id]) => DOMAINS[id - 1]);
   const artifacts = new Map();
   const add = (id, domain, roles) => {

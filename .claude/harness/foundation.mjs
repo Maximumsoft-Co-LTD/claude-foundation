@@ -1525,13 +1525,15 @@ const approvalPackage = createApprovalPackageRuntime({
   runtimeDir: RUNTIME,
   packagesDir: PACKAGES,
   previewsDir: PREVIEWS,
+  receiptsDir: RECEIPTS,
   loadRuntime,
   activeChangePath,
   changeWorkTypes,
   evidence,
   providerCapability,
   receiptValidity,
-  fail: die
+  fail: die,
+  trap: trapFailures
 });
 const approvalPackageLink = (id) => trapFailures(() => approvalPackage.tryWritePackage(id));
 const preview = createPreviewRuntime({

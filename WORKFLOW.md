@@ -564,7 +564,23 @@ reaches outside the machine and runs only with the user's `--decision-ref` for
 that run (otherwise `PREVIEW_AUTHORITY_REQUIRED`, and nothing runs). Preview
 receipts never satisfy Prove or Land ([evidence](.claude/harness/EVIDENCE.md)).
 For a High or Critical change the package suggests the matching provider and
-its command, or names the capability to declare.
+its command, or names the capability to declare. A provider with
+`"previewOnly": true` exists only for previews: Prove never selects it, so it
+needs only an `adapter` and a `command`. A provider's `previewArtifact` names a
+file inside the preview workspace, such as a prototype or screenshot; the
+preview keeps a copy under `.foundation/previews/<change>/artifacts/` and the
+package links to it. A path outside the workspace is refused before anything
+runs. The package also shows the agreement's content under each artifact and
+each preview's status and output, and for a change already applied or archived
+it labels proof from the receipts Land accepted.
+
+The router also reads the paths the change's tasks touch. A migration, schema,
+or `.sql` path, an auth or permission path, a payment or billing path, a UI
+component path, an infrastructure path, or a webhook path adds the matching
+risk signal when the draft did not declare it, and the package names the path
+that raised it. Path signals affect only the risk level, domains, artifacts,
+and approval lanes; discovery coverage and review still follow the declared
+signals.
 
 With `approval.roles` set in `foundation.json`, spec approval has one lane per
 configured role the router selects for the change. Each role records

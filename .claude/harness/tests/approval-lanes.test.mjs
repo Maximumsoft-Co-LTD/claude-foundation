@@ -7,6 +7,7 @@ import test from "node:test";
 import { createChangeLifecycle } from "../runtime/workflow/change-lifecycle.mjs";
 import { agreementIdentity, assertSpecApproval, missingApprovalLanes } from "../runtime/core/user-decisions.mjs";
 import { approvalPolicyIssue } from "../runtime/core/runtime-environment.mjs";
+import { routeForState } from "../runtime/workflow/approval-package.mjs";
 
 // The lifecycle records consent; assertSpecApproval is the gate every Build,
 // sandbox, and Land path calls, so a lane gap must stop it.
@@ -105,6 +106,15 @@ test("a malformed approval policy is refused instead of disabling lanes", () => 
   assert.match(approvalPolicyIssue({ approval: { roles: ["cfo"] } }), /unique values/);
   assert.equal(approvalPolicyIssue({}), null);
   assert.equal(approvalPolicyIssue({ approval: { roles: ["tech-lead", "qa"] } }), null);
+});
+
+test("a touched auth path routes the security lane the draft did not declare", () => {
+  const state = { contractRevision: 1, impact: "medium", riskSignals: [],
+    draftSource: { contractRevision: 1, draft: { workType: ["bugfix"],
+      tasks: [{ key: "fix", paths: ["src/auth/session.js"] }] } } };
+  const roles = routeForState(state).roles;
+  assert.ok(roles.includes("security"));
+  assert.ok(routeForState(state).reasons.includes("path:src/auth/session.js→access-control"));
 });
 
 test("legacy single approval state without lanes still passes", (t) => {

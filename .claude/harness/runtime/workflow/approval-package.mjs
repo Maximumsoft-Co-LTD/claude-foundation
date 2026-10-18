@@ -35,10 +35,14 @@ export function routeForState(state, packetWorkTypes = []) {
   const draft = currentDraft(state) ?? state?.draftSource?.draft ?? null;
   const workTypes = [...new Set([...(Array.isArray(draft?.workType) ? draft.workType : []),
     ...(packetWorkTypes || [])])];
+  const paths = [
+    ...(Array.isArray(draft?.tasks) ? draft.tasks.flatMap((task) => Array.isArray(task?.paths) ? task.paths : []) : []),
+    ...(Array.isArray(draft?.fileMap) ? draft.fileMap.map((row) => row?.path).filter(Boolean) : [])
+  ];
   return routeChange({
     workTypes, riskSignals: state?.riskSignals,
     impact: state?.impact, coupling: state?.coupling,
-    integrations: draft?.integrations, securityTriggers: state?.securityTriggers
+    integrations: draft?.integrations, securityTriggers: state?.securityTriggers, paths
   });
 }
 
@@ -94,6 +98,96 @@ export function previewSuggestions(route, providers, id) {
     });
 }
 
+// Agreement content behind each artifact, from the current typed draft. Every
+// value is escaped; an artifact the agreement does not declare says so.
+const list = (value) => Array.isArray(value) ? value : [];
+const plain = (value) => value === undefined || value === null ? ""
+  : typeof value === "string" ? value : JSON.stringify(value);
+const table = (headers, rows) => rows.length
+  ? `<div class="content"><table><thead><tr>${headers.map((h) => `<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${
+    rows.map((row) => `<tr>${row.map((cell) => `<td>${esc(plain(cell))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`
+  : "";
+const scenarioRows = (draft, keep = () => true) => list(draft?.requirements).flatMap((requirement) =>
+  list(requirement.scenarios).filter(keep).map((scenario) => ({ requirement, scenario })));
+
+const CONTENT = {
+  testmap: (draft) => table(["Requirement", "Scenario", "Kind", "Given", "When", "Then"],
+    scenarioRows(draft).map(({ requirement, scenario }) => [requirement.key || requirement.description,
+      scenario.name, scenario.kind, scenario.given, scenario.when,
+      [scenario.then, ...list(scenario.and)].filter(Boolean).join("; ")])),
+  impact: (draft) => table(["Task", "Outcome", "Files"],
+    list(draft?.tasks).map((task) => [task.key, task.outcome, list(task.paths).join(", ")])),
+  flow: (draft) => [
+    table(["Priority", "As a", "I want", "So that"],
+      list(draft?.userStories).map((story) => [story.priority, story.asA, story.iWant, story.soThat])),
+    table(["Success criteria"], list(draft?.successCriteria).map((row) => [row])),
+    table(["Non-goals"], list(draft?.nonGoals).map((row) => [row]))
+  ].join(""),
+  api: (draft) => table(["Method", "Path", "Auth", "Request", "Response", "Errors"],
+    list(draft?.apiContracts).map((row) => [row.method, row.path, row.auth, row.request, row.response,
+      list(row.errors).map((error) => `${error.status}: ${error.when}`).join("; ")])),
+  erd: (draft) => {
+    const model = draft?.dataModel;
+    const entities = Array.isArray(model) ? model : list(model?.entities);
+    return table(["Entity", "Fields", "Migration"], entities.map((row) => [row.entity || row.name,
+      list(row.fields || row.columns).map(plain).join(", "), row.migration || model?.migration]));
+  },
+  perm: (draft) => table(["Access", "Scenario", "When", "Then"],
+    scenarioRows(draft, (scenario) => scenario.access).map(({ scenario }) =>
+      [scenario.access, scenario.name, scenario.when, scenario.then])),
+  ui: (draft) => table(["Screen", "States", "Accessibility"], list(draft?.uiStates).map((row) => [row.screen,
+    list(row.states).map((state) => `${state.state}: ${state.shows}`).join("; "), row.accessibility])),
+  state: (draft) => table(["Job", "States", "Retry", "Timeout", "Idempotency"], list(draft?.jobContract)
+    .map((row) => [row.key, list(row.states).join(" → "), row.retry, row.timeout, row.idempotency])),
+  config: (draft) => table(["Key", "Default", "Validation"],
+    list(draft?.configContract).map((row) => [row.key, row.default, row.validation])),
+  repro: (draft) => draft?.bugfix ? table(["Reproduction", "Root cause", "Regression"],
+    [[draft.bugfix.reproduction, draft.bugfix.rootCause, draft.bugfix.regression]]) : "",
+  equiv: (draft) => draft?.refactor ? table(["Invariants", "Characterization"],
+    [[draft.refactor.invariants, draft.refactor.characterization]]) : "",
+  integ: (draft) => table(["Integration", "Detail"], list(draft?.integrations).map((row) => [row.name || row.key, row])),
+  ledger: (draft) => [
+    table(["Decision", "Reason"], list(draft?.decisions).map((row) => [row.choice, row.reason])),
+    CONTENT.failures(draft)
+  ].join(""),
+  failures: (draft) => table(["Failure", "User sees", "Recovery"],
+    scenarioRows(draft, (scenario) => scenario.kind === "failure").map(({ scenario }) =>
+      [scenario.when, scenario.then, scenario.recovery]))
+};
+CONTENT.timeline = CONTENT.state;
+// Concurrency and retry artifacts show only the failures about them.
+const CONCURRENCY = /พร้อมกัน|concurren|simultan|double|twice|ซ้ำ|race|parallel|idempot/i;
+const RETRY = /retry|ลองใหม่|timeout|time out|หมดเวลา|dead.?letter|dlq|backoff|ซ้ำ/i;
+const matchingFailures = (pattern) => (draft) => {
+  const rows = scenarioRows(draft, (scenario) => scenario.kind === "failure" &&
+    pattern.test([scenario.name, scenario.given, scenario.when, scenario.then].join(" ")));
+  if (!rows.length) return scenarioRows(draft, (scenario) => scenario.kind === "failure").length
+    ? "<p class=\"undeclared\">No failure scenario in the agreement concerns this.</p>" : "";
+  return table(["Failure", "User sees", "Recovery"],
+    rows.map(({ scenario }) => [scenario.when, scenario.then, scenario.recovery]));
+};
+CONTENT.concur = matchingFailures(CONCURRENCY);
+CONTENT.retry = matchingFailures(RETRY);
+
+export function artifactContent(id, draft) {
+  if (!draft) return "";
+  const render = CONTENT[id];
+  if (!render) return "";
+  const html = render(draft);
+  return html || "<p class=\"undeclared\">Not declared in the agreement.</p>";
+}
+
+// A preview's observed result, labeled as preview so it never reads as proof.
+export function previewOutput(preview) {
+  if (!preview) return "";
+  return `<div class="preview-run"><p>Preview <code>${esc(preview.provider)}</code>: ` +
+    `<span class="label label-${preview.stale ? "stale" : "preview"}">${esc(preview.status)}${preview.stale ? ", stale" : ""}</span> ` +
+    `(preview only; never proof)</p>` +
+    (preview.artifact ? `<p><a href="../previews/${encodeURIComponent(preview.changeId || "")}/${
+      String(preview.artifact).split("/").map(encodeURIComponent).join("/")}">Open the preview artifact</a></p>` : "") +
+    `${preview.outputTail ? `<pre>${esc(preview.outputTail)}</pre>` : ""}</div>`;
+}
+
 export function renderApprovalPackage(model) {
   const { id, state, route, draft, diagrams, artifacts, suggestions, legacy, proposal } = model;
   const roleSections = APPROVAL_ROLES.map((role) => {
@@ -104,7 +198,11 @@ export function renderApprovalPackage(model) {
           `<td><span class="label label-${row.evidence}">${esc(LABEL_TEXT[row.evidence])}</span></td></tr>`).join("")
       }</tbody></table>`
       : "<p>No approval needed from this role for this change.</p>";
-    return `<section class="role" id="role-${role}"><h3>${esc(ROLE_LABELS[role])}</h3>${body}</section>`;
+    const details = mine.map((row) => {
+      const content = artifactContent(row.id, draft) + previewOutput(row.preview);
+      return content ? `<details class="artifact" open><summary>${esc(row.label)}</summary>${content}</details>` : "";
+    }).join("");
+    return `<section class="role" id="role-${role}"><h3>${esc(ROLE_LABELS[role])}</h3>${body}${details}</section>`;
   }).join("\n");
   const diagramBlocks = diagrams.length
     ? diagrams.map((row) => `<figure><figcaption>${esc(row.purpose || row.key)}</figcaption>` +
@@ -119,8 +217,9 @@ export function renderApprovalPackage(model) {
           : `no provider yet; declare a provider with capability <code>${esc(row.capability)}</code> in evidence.yaml`
       }</li>`).join("")}</ul></section>`
     : "";
-  const warnings = route.warnings.length
-    ? `<ul class="warnings">${route.warnings.map((text) => `<li>${esc(text)}</li>`).join("")}</ul>` : "";
+  const allWarnings = [...route.warnings, ...(model.notices || [])];
+  const warnings = allWarnings.length
+    ? `<ul class="warnings">${allWarnings.map((text) => `<li>${esc(text)}</li>`).join("")}</ul>` : "";
   return `<!doctype html>
 <html lang="${esc(draft?.language || "en")}">
 <head>
@@ -139,7 +238,13 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line
 .label-proof { color: var(--ok); } .label-preview, .label-stale { color: var(--warn); } .label-none { color: var(--muted); }
 .notice { border: 1px dashed var(--warn); padding: 8px 12px; border-radius: 6px; }
 pre.mermaid { overflow-x: auto; background: transparent; border: 1px solid var(--line); padding: 8px; }
-.role { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.role { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; }
+.artifact summary { font-weight: 600; cursor: pointer; }
+.content { overflow-x: auto; margin-top: 6px; }
+.content table { font-size: .9em; }
+.undeclared { color: var(--muted); font-style: italic; margin: 6px 0 0; }
+.preview-run { border-left: 3px solid var(--warn); padding-left: 10px; margin-top: 8px; }
+.preview-run pre { overflow-x: auto; white-space: pre-wrap; font-size: .85em; margin: 4px 0 0; }
 </style>
 </head>
 <body>
@@ -177,24 +282,53 @@ function proposalSummary(path) {
 }
 
 export function createApprovalPackageRuntime({
-  root, runtimeDir, packagesDir, previewsDir, loadRuntime, activeChangePath,
-  changeWorkTypes, evidence, providerCapability, receiptValidity, fail
+  root, runtimeDir, packagesDir, previewsDir, receiptsDir, loadRuntime, activeChangePath,
+  changeWorkTypes, evidence, providerCapability, receiptValidity, fail,
+  // Runs a harness call so its failure throws instead of exiting the process;
+  // the package is a reading aid and survives broken evidence wiring.
+  trap = (operation) => operation()
 }) {
+  const message = (error) => String(error?.message || error).split("\n")[0];
   function buildModel(id) {
     if (!existsSync(join(runtimeDir, `${id}.json`))) fail(`package: unknown change '${id}'`);
     const state = loadRuntime(id);
     const packet = activeChangePath(id, state);
     const draft = currentDraft(state);
     const route = routeForState(state, draft ? [] : changeWorkTypes(packet));
+    const notices = [];
     let configured = {};
-    try { configured = evidence(id).providers || {}; } catch { configured = {}; }
-    const providers = Object.entries(configured).map(([name, config]) => ({
+    let previewOnly = {};
+    try {
+      const contract = trap(() => evidence(id));
+      configured = contract.providers || {};
+      previewOnly = contract.previewProviders || {};
+    } catch (error) {
+      configured = {};
+      notices.push(`evidence not read (${message(error)}); providers, proof labels, and suggestions are omitted`);
+    }
+    const describe = ([name, config]) => ({
       name, capability: providerCapability(name, config), external: config?.external === true
-    }));
+    });
+    // Proof labels come only from Prove providers; suggestions also offer preview-only ones.
+    const providers = Object.entries(configured).map(describe);
+    const suggestable = [...providers, ...Object.entries(previewOnly).map(describe)];
     const proven = new Set();
-    for (const provider of providers) {
+    // After Land the sandbox is gone, so a workspace-bound validity check can
+    // only fail; the receipts Land accepted are the record of proof.
+    const landed = ["archived", "applied"].includes(state.status) && state.land?.assurance?.status === "passed";
+    for (const provider of landed ? providers : []) {
+      try {
+        const receipt = JSON.parse(readFileSync(join(receiptsDir, id, `${provider.name}.json`), "utf8"));
+        if (receipt?.status === "pass" && receipt.kind !== "preview" && provider.capability) proven.add(provider.capability);
+      } catch { /* no receipt for this provider */ }
+    }
+    for (const provider of landed ? [] : providers) {
       let result = null;
-      try { result = receiptValidity(id, provider.name); } catch { result = null; }
+      try { result = trap(() => receiptValidity(id, provider.name)); }
+      catch (error) {
+        result = null;
+        notices.push(`receipt for '${provider.name}' not checked (${message(error)})`);
+      }
       // Harness receipts record pass|fail|inconclusive|error.
       if (result?.validity === "valid" && result.receipt?.status === "pass" && provider.capability)
         proven.add(provider.capability);
@@ -202,14 +336,16 @@ export function createApprovalPackageRuntime({
     const previews = previewReceipts(previewsDir, id, state.contractRevision);
     const capabilityOf = (row) => row.id === "testmap" ? "test" : row.source === "provider" ? row.ref : null;
     const artifacts = route.artifacts.map((row) => ({
-      ...row, evidence: artifactLabel(capabilityOf(row), { proven, previews })
+      ...row, evidence: artifactLabel(capabilityOf(row), { proven, previews }),
+      preview: capabilityOf(row) ? previews.find((preview) => preview.capability === capabilityOf(row)) || null : null
     }));
     return {
       id, state, route, draft, artifacts,
       diagrams: draftDiagrams(draft),
-      suggestions: previewSuggestions(route, providers, id),
+      suggestions: previewSuggestions(route, suggestable, id),
       legacy: !draft,
-      proposal: proposalSummary(join(packet, "proposal.md"))
+      proposal: proposalSummary(join(packet, "proposal.md")),
+      notices
     };
   }
 
@@ -222,7 +358,7 @@ export function createApprovalPackageRuntime({
     writeFileSync(temporary, html);
     renameSync(temporary, path);
     return { path: relative(root, path), level: model.route.level, roles: model.route.roles,
-      suggestions: model.suggestions.length, warnings: model.route.warnings };
+      suggestions: model.suggestions.length, warnings: [...model.route.warnings, ...model.notices] };
   }
 
   function showPackage(id, flags = {}) {

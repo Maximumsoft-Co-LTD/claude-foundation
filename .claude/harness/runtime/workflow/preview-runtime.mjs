@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // Preview: an optional pre-Build run of one declared provider in a disposable
 // copy of the target. Its receipt carries `kind: "preview"` and lives under
@@ -25,10 +25,19 @@ export function createPreviewRuntime({
   function runPreview(id, { provider, decisionRef = null } = {}) {
     if (!existsSync(join(runtimeDir, `${id}.json`))) fail(`preview: unknown change '${id}'`);
     if (!provider) fail("preview requires --provider <name>");
+    // The name is used in receipt and artifact paths; never let it leave them.
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(String(provider)) || String(provider).includes(".."))
+      fail(`preview: invalid provider name '${provider}'`);
     const state = loadRuntime(id);
-    if (state.workspace || !PREVIEW_STATUSES.has(String(state.status || "change")))
+    // Change start records the target itself as the workspace (mode "current");
+    // only a Build sandbox elsewhere means Build owns the workspace.
+    const workspacePath = state.workspace?.path;
+    const sandboxed = Boolean(workspacePath) && state.workspace.mode !== "current" &&
+      resolve(workspacePath) !== resolve(root);
+    if (sandboxed || !PREVIEW_STATUSES.has(String(state.status || "change")))
       fail(`preview runs only before Build; '${id}' is already ${state.status || "building"}`);
-    const config = (evidence(id).providers || {})[provider];
+    const contract = evidence(id);
+    const config = (contract.providers || {})[provider] ?? (contract.previewProviders || {})[provider];
     if (!config) fail(`preview: provider '${provider}' is not declared in openspec/changes/${id}/evidence.yaml or execution.yaml`);
     const external = config.external === true;
     if (external && !String(decisionRef || "").trim())
@@ -40,6 +49,11 @@ export function createPreviewRuntime({
 
     const base = join(previewsDir, id);
     const workspace = join(base, "workspace");
+    // A declared preview artifact (a prototype or screenshot) must stay inside
+    // the preview workspace; it is checked before anything runs.
+    const artifactPath = config.previewArtifact ? resolve(workspace, String(config.previewArtifact)) : null;
+    if (artifactPath && (relative(workspace, artifactPath).startsWith("..") || isAbsolute(relative(workspace, artifactPath))))
+      fail(`preview: provider '${provider}' previewArtifact '${config.previewArtifact}' is outside the preview workspace`);
     rmSync(workspace, { recursive: true, force: true });
     mkdirSync(workspace, { recursive: true });
     copyWorkspace(root, workspace);
@@ -50,6 +64,13 @@ export function createPreviewRuntime({
       timeout: Number(config.timeoutSeconds || config.timeout || 600) * 1000
     });
     const output = `${result.stdout || ""}${result.stderr || ""}`;
+    let artifact = null;
+    if (artifactPath && existsSync(artifactPath)) {
+      const kept = join(base, "artifacts", `${provider}-${basename(artifactPath)}`);
+      mkdirSync(dirname(kept), { recursive: true });
+      copyFileSync(artifactPath, kept);
+      artifact = relative(base, kept);
+    }
     const receipt = {
       kind: "preview",
       version: PREVIEW_RECEIPT_VERSION,
@@ -65,7 +86,8 @@ export function createPreviewRuntime({
       environment: config.environment ?? null,
       startedAt,
       finishedAt: now(),
-      outputTail: output.slice(-OUTPUT_TAIL_BYTES)
+      outputTail: output.slice(-OUTPUT_TAIL_BYTES),
+      artifact
     };
     const path = previewReceiptPath(previewsDir, id, provider);
     mkdirSync(join(base, "receipts"), { recursive: true });

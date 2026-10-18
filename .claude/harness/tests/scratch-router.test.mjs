@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  APPROVAL_ROLES, ARTIFACTS, DOMAINS, RISK_LEVELS, riskLevel, routeChange
+  APPROVAL_ROLES, ARTIFACTS, DOMAINS, RISK_LEVELS, inferPathSignals, riskLevel, routeChange
 } from "../runtime/contracts/scratch-router.mjs";
 
 const WITHDRAWAL = {
@@ -64,6 +64,31 @@ test("risk levels follow impact and signal weight", () => {
   assert.equal(riskLevel({ riskSignals: ["user-interface"] }).level, "Medium");
   assert.equal(riskLevel({ riskSignals: ["persisted-data-change"] }).level, "High");
   assert.equal(riskLevel({ impact: "high", riskSignals: ["access-control"] }).level, "Critical");
+});
+
+test("a touched migration raises an undeclared change and says why", () => {
+  const route = routeChange({ workType: ["bugfix"], impact: "medium",
+    paths: ["migrations/003_add_status.sql", "src/accounts.js"] });
+  assert.equal(route.level, "High");
+  assert.ok(route.reasons.includes("path:migrations/003_add_status.sql→persisted-data-change"));
+  assert.ok(ids(route.domains).includes(14));
+});
+
+test("ordinary paths infer nothing and declared signals are not repeated", () => {
+  assert.deepEqual(inferPathSignals(["src/util/format.js", "README.md"]), []);
+  const route = routeChange({ workType: ["feature"], riskSignals: ["financial"], impact: "low",
+    paths: ["src/payments/charge.js"] });
+  assert.ok(!route.reasons.some((reason) => reason.startsWith("path:")));
+});
+
+test("each path family maps to its signal", () => {
+  const signals = (path) => inferPathSignals([path]).map((row) => row.signal);
+  assert.deepEqual(signals("src/auth/session.js"), ["access-control"]);
+  assert.deepEqual(signals("src/billing/refund.js"), ["financial"]);
+  assert.deepEqual(signals("web/components/Form.tsx"), ["user-interface"]);
+  assert.deepEqual(signals("infra/main.tf"), ["high-operational-risk"]);
+  assert.deepEqual(signals("src/webhooks/payrail.js"), ["external-integration"]);
+  assert.deepEqual(signals("prisma/schema.prisma"), ["persisted-data-change"]);
 });
 
 test("coupling, integrations, and security triggers add their domains", () => {

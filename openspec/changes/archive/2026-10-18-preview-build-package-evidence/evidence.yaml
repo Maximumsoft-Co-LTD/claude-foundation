@@ -1,0 +1,277 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "preview-before-build-preview-provider",
+      "requirementKey": "preview-before-build",
+      "scenario": "workspace เป็น target",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-before-build-preview",
+      "requirementKey": "preview-before-build",
+      "scenario": "ไม่มี workspace",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-before-build-preview-2",
+      "requirementKey": "preview-before-build",
+      "scenario": "workspace mode อื่นที่ชี้ root",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-before-build-preview-3",
+      "requirementKey": "preview-before-build",
+      "scenario": "มี sandbox แล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-before-build-preview-4",
+      "requirementKey": "preview-before-build",
+      "scenario": "สถานะ building",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-tolerates-evidence-package-cli",
+      "requirementKey": "package-tolerates-evidence",
+      "scenario": "provider ไม่มี adapter",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-tolerates-evidence-package-cli-2",
+      "requirementKey": "package-tolerates-evidence",
+      "scenario": "evidence.yaml เป็น JSON ที่เสีย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-tolerates-evidence-package-id",
+      "requirementKey": "package-tolerates-evidence",
+      "scenario": "change ที่ไม่มีอยู่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-package",
+      "requirementKey": "package-content",
+      "scenario": "API contract",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-package-2",
+      "requirementKey": "package-content",
+      "scenario": "test matrix",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-package-3",
+      "requirementKey": "package-content",
+      "scenario": "permission matrix",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-package-4",
+      "requirementKey": "package-content",
+      "scenario": "ไม่ได้ประกาศ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-content-package-5",
+      "requirementKey": "package-content",
+      "scenario": "ค่าที่มี HTML",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-preview-output-package",
+      "requirementKey": "package-preview-output",
+      "scenario": "preview ล้มเหลว",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-preview-output-package-2",
+      "requirementKey": "package-preview-output",
+      "scenario": "preview เก่า",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "package-preview-output-package-3",
+      "requirementKey": "package-preview-output",
+      "scenario": "output มี HTML",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "archived-proof-labels-package",
+      "requirementKey": "archived-proof-labels",
+      "scenario": "archive แล้วผ่าน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "archived-proof-labels-package-2",
+      "requirementKey": "archived-proof-labels",
+      "scenario": "archive แต่ receipt ไม่ผ่าน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-only-provider-preview-provider",
+      "requirementKey": "preview-only-provider",
+      "scenario": "preview-only accessibility",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-only-provider-harness-provider",
+      "requirementKey": "preview-only-provider",
+      "scenario": "Prove ไม่เลือก",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-only-provider-preview",
+      "requirementKey": "preview-only-provider",
+      "scenario": "previewOnly ไม่มี command",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-artifact-link-preview-package",
+      "requirementKey": "preview-artifact-link",
+      "scenario": "มี prototype",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "preview-artifact-link-preview",
+      "requirementKey": "preview-artifact-link",
+      "scenario": "path ออกนอก workspace",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "failure-table-filter-package",
+      "requirementKey": "failure-table-filter",
+      "scenario": "กรองตรง",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "failure-table-filter-package-2",
+      "requirementKey": "failure-table-filter",
+      "scenario": "ไม่มีที่ตรง",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-path-signals-routechange",
+      "requirementKey": "router-path-signals",
+      "scenario": "migration ที่ไม่ประกาศ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-path-signals-routechange-2",
+      "requirementKey": "router-path-signals",
+      "scenario": "path ปกติ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-path-signals-advance-through-build-tech-lead",
+      "requirementKey": "router-path-signals",
+      "scenario": "lane จาก path",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/preview-runtime.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs) && (node --test .claude/harness/tests/preview-runtime.test.mjs .claude/harness/tests/preview-only-provider.test.mjs .claude/harness/tests/approval-package.test.mjs) && (node --test .claude/harness/tests/scratch-router.test.mjs .claude/harness/tests/approval-lanes.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/preview-runtime.test.mjs",
+        "node --test .claude/harness/tests/approval-package.test.mjs",
+        "node --test .claude/harness/tests/preview-runtime.test.mjs .claude/harness/tests/preview-only-provider.test.mjs .claude/harness/tests/approval-package.test.mjs",
+        "node --test .claude/harness/tests/scratch-router.test.mjs .claude/harness/tests/approval-lanes.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ]
+    }
+  }
+}

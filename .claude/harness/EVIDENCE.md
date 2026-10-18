@@ -410,7 +410,10 @@ and are refused as `preview-evidence` wherever they appear, including when
 copied into the receipt store; artifacts and references under
 `.foundation/previews/` are rejected like prototypes. A preview is a reading
 aid for approvers ([WORKFLOW.md](../../WORKFLOW.md#approval-package-preview-and-role-lanes)),
-and every claim is still proven by a Prove run.
+and every claim is still proven by a Prove run. A provider declared with
+`"previewOnly": true` is outside the proof contract: it is never a required
+provider, never covers a claim, and is not subject to provider wiring rules
+beyond having an adapter and a command.
 
 Valid receipts are reused. Commands with identical executable arguments,
 environment, working directory, and timeout are deduplicated within one proof

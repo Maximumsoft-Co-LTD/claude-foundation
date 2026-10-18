@@ -1018,10 +1018,20 @@ export function createEvidenceContract({
     const value = readJson(path);
     validateEvidenceClaims(id, value);
     const executionValue = rawExecution(id, dir);
-    const configuredProviders = {
+    const declaredProviders = {
       ...(value.providers || {}),
       ...(executionValue.providers || {})
     };
+    // A previewOnly provider exists for pre-Build previews: Prove never selects
+    // it, so it is kept out of the proof contract and its validation.
+    const previewProviders = Object.fromEntries(Object.entries(declaredProviders)
+      .filter(([, config]) => config?.previewOnly === true));
+    const configuredProviders = Object.fromEntries(Object.entries(declaredProviders)
+      .filter(([, config]) => config?.previewOnly !== true));
+    // Identity still applies: the provider name becomes a file name under
+    // .foundation/previews, so it must be a plain instance id.
+    for (const [provider, config] of Object.entries(previewProviders))
+      validateProviderIdentity(id, provider, config);
     for (const [provider, config] of Object.entries(configuredProviders)) {
       validateConfiguredProvider(id, provider, config, {
         configuredProviders, executionValue, claims: value.claims
@@ -1034,7 +1044,7 @@ export function createEvidenceContract({
     if (writerConflict)
       die(`discovery receipt '${writerConflict.output}' has multiple writers ('${
         writerConflict.producers.join("', '")}'); each durable provider receipt requires one producer`);
-    return { ...value, providers: configuredProviders, execution: executionValue };
+    return { ...value, providers: configuredProviders, previewProviders, execution: executionValue };
   }
   
   function builtInProviderConfig(id, provider) {
