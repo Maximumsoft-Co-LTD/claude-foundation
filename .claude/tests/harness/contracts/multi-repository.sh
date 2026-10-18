@@ -457,8 +457,18 @@ app_record="$({ node .claude/harness/foundation.mjs land-record cross-repository
   && pass "explicit app commit is bound to Land" \
   || fail "explicit app commit is bound to Land"
 assert_not_contains "a feature branch stays silent at record" "$app_record" "WARNING"
-resume_stage="$(node .claude/harness/foundation.mjs land-advance \
+pointer_stage="$(node .claude/harness/foundation.mjs land-advance \
   cross-repository-profile)"
+# Staging root pointers returns the change to Build; Land refuses it before any
+# archive step until the lifecycle route proves it again.
+assert_contains "staged root pointers stop Land until the change is proven again" \
+  "$pointer_stage" "lifecycle is 'building', not proven"
+assert_eq "the refused Land archives nothing" "0" \
+  "$(ls -d openspec/changes/archive/*-cross-repository-profile 2>/dev/null | wc -l | tr -d ' ')"
+assert_cmd_zero "the pointer-staged change proves again" \
+  node .claude/harness/foundation.mjs prove cross-repository-profile
+resume_stage="$(node .claude/harness/foundation.mjs advance \
+  cross-repository-profile --through archived)"
 assert_contains "Land advance completes the authorized repository transaction" \
   "$resume_stage" '"reached":"archived"'
 assert_cmd_zero "archived repository transaction remains inspectable" \

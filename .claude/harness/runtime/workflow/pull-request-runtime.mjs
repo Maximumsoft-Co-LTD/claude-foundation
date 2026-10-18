@@ -621,7 +621,7 @@ function userEnvironmentDecision(changeId, error, resumeCommand) {
       option.id === "fixed" ? { ...option, command: resumeCommand } : option) } };
 }
 
-const LANDABLE_STATUSES = new Set(["proven", "applied", "landing"]);
+const LANDABLE_STATUSES = new Set(["proven", "applied"]);
 
 function followUpNotice(followUp) {
   return followUp.mode === "update-existing"

@@ -1906,6 +1906,7 @@ const {
     assertLandedProjection({ root: ROOT, id, state, fail: die, preflight: true });
     applyRuntime.landPreflight(id, state, options);
   },
+  assertApproval: (id, state, options) => assertSpecApproval(ROOT, id, state, options),
   fail: die
 });
 const landGrantRuntime = createLandGrantRuntime({
@@ -2058,25 +2059,6 @@ function prepareExecution(id, { stage = "build" } = {}) {
   plan.stage = stage;
   writeJson(preparationPlanPath(id), plan);
   return assertExecutionPreparationReady(plan);
-}
-// `land advance` grants Land authority before the advance envelope is
-// written. The grant's readiness report and any refusal stay out of stdout:
-// a refused grant leaves the advance route to reach and report that same
-// boundary in its own JSON envelope, so the first run prints only JSON.
-function issueLandGrantQuietly(id) {
-  const priorLog = console.log;
-  const priorBlocked = operationBlocked;
-  const priorBlocker = operationBlocker;
-  console.log = () => {};
-  try {
-    return trapFailures(() => landGrantRuntime.issue(id));
-  } catch {
-    operationBlocked = priorBlocked;
-    operationBlocker = priorBlocker;
-    return null;
-  } finally {
-    console.log = priorLog;
-  }
 }
 async function runAdvanceQuietly(operation) {
   const priorLog = console.log;
@@ -2457,7 +2439,6 @@ await routeRuntimeCommand(command, values, {
   prove,
   landCheck,
   grantLand: landGrantRuntime.issue,
-  grantLandQuietly: issueLandGrantQuietly,
   advanceLand,
   recoverLand,
   showLandPlan,

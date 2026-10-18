@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  lifecycleTransitionValue, transitionLifecycleState
+  lifecycleTransitionValue, normalizeLifecycleState, normalizeLifecycleStatus,
+  transitionLifecycleState
 } from "../runtime/core/lifecycle-reducer.mjs";
 
 test("lifecycle reducer returns one typed transition outcome", () => {
@@ -30,4 +31,27 @@ test("lifecycle reducer permits recovery edges and rejects impossible resurrecti
     /invalid lifecycle transition/);
   assert.throws(() => lifecycleTransitionValue({ status: "change" }, "unknown"),
     /unknown lifecycle target/);
+});
+
+test("lifecycle reducer never lets unproven work reach applied or archived", () => {
+  for (const from of ["change", "resolved", "building"])
+    for (const target of ["applied", "archived"])
+      assert.throws(() => lifecycleTransitionValue({ status: from }, target),
+        /invalid lifecycle transition/, `${from} -> ${target}`);
+  assert.equal(lifecycleTransitionValue({ status: "proven" }, "applied").to, "applied");
+  assert.equal(lifecycleTransitionValue({ status: "proven" }, "archived").to, "archived");
+});
+
+test("a legacy landing status is read as proven", () => {
+  assert.equal(normalizeLifecycleStatus("landing"), "proven");
+  assert.equal(normalizeLifecycleStatus(undefined), "change");
+  assert.equal(normalizeLifecycleStatus("building"), "building");
+  const legacy = { status: "landing" };
+  assert.equal(normalizeLifecycleState(legacy), true);
+  assert.equal(legacy.status, "proven");
+  assert.equal(normalizeLifecycleState(legacy), false);
+  assert.deepEqual(lifecycleTransitionValue({ status: "landing" }, "applied"), {
+    version: 1, from: "proven", to: "applied", changed: true,
+    outcome: "transitioned", reason: null
+  });
 });

@@ -100,6 +100,8 @@ const RULES = [
   [/handoff-policy\.test/, ["external operation handoff"]],
   [/proof-advance\.test/, ["bounded review repair closure"]],
   [/contracts\/evidence-proof|run-harness-tests/, EVIDENCE],
+  [/advance-recovery|advance-runtime|lifecycle-reducer|lifecycle-outcome|convergent-gate|proof-readiness|proof-execution-runtime|land-runtime|lease-runtime|agent-dispatch|^WORKFLOW\.md$/,
+    ["blocking policy"]],
   [/run-all\.sh|affected-suite-selector/, [
     "run-all process control", "affected test selection"
   ]]

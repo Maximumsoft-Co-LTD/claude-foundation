@@ -56,6 +56,22 @@ function envelope(id, action, values = {}) {
   };
 }
 
+// What an unchanged automated step reported, as one bounded line the agent can
+// act on: its reason, issues, and next steps with their commands.
+export function noProgressOutput(output) {
+  if (!output) return "";
+  const parts = [];
+  if (typeof output.reason === "string" && output.reason.trim()) parts.push(output.reason.trim());
+  for (const issue of Array.isArray(output.issues) ? output.issues.slice(0, 5) : [])
+    parts.push(typeof issue === "string" ? issue : issue?.message || issue?.reason || JSON.stringify(issue));
+  for (const row of Array.isArray(output.next) ? output.next.slice(0, 5) : []) {
+    const reason = typeof row?.reason === "string" ? row.reason : "";
+    const commandText = typeof row?.command === "string" ? row.command : "";
+    if (reason || commandText) parts.push(commandText ? `${reason || "next"} (${commandText})` : reason);
+  }
+  return parts.filter(Boolean).join("; ").slice(0, 2000);
+}
+
 function packetSpecFiles(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
@@ -281,6 +297,18 @@ function failureEnvelope(id, error, { stage = "build", through = null } = {}) {
         ? ["invoke /land for this exact change", "leave the proven change pending"] : [],
       resumeCommand: resume(id, through)
     });
+  // A lease resource another task or change holds is queued: the harness
+  // waits for the holder and retries on resume. Never a repair or a question.
+  if (error?.code === "LEASE_RESOURCE_HELD" && error.wait) return envelope(id, "WAIT", {
+    legacyAction: "WAIT_RESOURCE",
+    actor: "harness",
+    boundary: "resource",
+    reason,
+    wait: { ...error.wait, owner: "harness", checkCommand: resume(id, through) },
+    recoveryType: "PAUSE",
+    alternatives: ["wait for the holding lease to be released, then resume"],
+    resumeCommand: resume(id, through)
+  });
   if (error?.owner === "external") return envelope(id, "WAIT", {
     legacyAction: "WAIT_EXTERNAL",
     actor: "external-authority",
@@ -737,6 +765,21 @@ function buildAction(id, dispatch, state, plan = null) {
       alternatives: ["amend the agreement if Build discovers new behavior"]
     });
   }
+  // Another active change holding a shared resource queues this one: the
+  // harness waits for the holder and resumes; no repair and no question.
+  if (dispatch.action === "wait" && dispatch.waitKind === "cross-change-resource")
+    return envelope(id, "WAIT", {
+      legacyAction: "WAIT_RESOURCE", actor: "harness", boundary: "resource",
+      reason: dispatch.reason,
+      resourceWaits: dispatch.resourceWaits || [],
+      wait: { owner: "harness", kind: "cross-change-resource",
+        holders: dispatch.holders || [], resources: (dispatch.resourceWaits || []).map((row) => row.key),
+        condition: `The shared resource is released when ${(dispatch.holders || []).join(", ") ||
+          "the holding change"} lands, is archived, or is abandoned.`,
+        checkCommand: resume(id) },
+      recoveryType: "PAUSE",
+      alternatives: ["wait for the holding change to land or be abandoned"]
+    });
   if (dispatch.action === "wait") return envelope(id, "WAIT", {
     legacyAction: "WAIT_RESOURCE", actor: "harness", boundary: "resource",
     reason: dispatch.reason, wait: { workers: dispatch.activeWorkers || [] },
@@ -749,6 +792,10 @@ function buildAction(id, dispatch, state, plan = null) {
     reason: dispatch.reason || "the Build graph is not dispatchable",
     findings: dispatch.reasons || null,
     command: dispatch.nextCommand,
+    ...(dispatch.reasons?.preview?.length ? {
+      instruction: `Resolve this change's plan blockers: ${dispatch.reasons.preview.join("; ")}. ` +
+        "Then run the resume command."
+    } : {}),
     recoveryType: "RECONFIGURE",
     alternatives: ["repair the agreement or task graph", "inspect the Build diagnostic"]
   });
@@ -767,7 +814,7 @@ export function coordinatorAction({
   const pendingBuild = buildAction(id, dispatch, state, plan);
   if (pendingBuild) return pendingBuild;
 
-  if (["proven", "landing"].includes(state.status) && proofIsCurrent === false)
+  if (state.status === "proven" && proofIsCurrent === false)
     return envelope(id, "RUN_EXTERNAL", {
       legacyAction: "RUN_INVALIDATED_EVIDENCE", actor: "harness",
       reason: "The retained proof or required receipts are no longer current; refresh only invalidated evidence before delivery.",
@@ -779,13 +826,13 @@ export function coordinatorAction({
   // ordering, the last failed AI attempt could keep routing a proven change
   // back into repair after deterministic closure had already passed.
   const proofCurrent = proofCursor.workspaceHash === workspaceHash &&
-    (["proven", "landing"].includes(state.status) || proofCursor.status === "PASS");
+    (state.status === "proven" || proofCursor.status === "PASS");
   if (proofCurrent)
     return envelope(id, "ASK_USER", {
       legacyAction: "LAND_READY", actor: "user", 
       boundary: "land-authority",
       reason: "proof is current; explicit Land authority is required",
-      command: command(`land advance ${id}`),
+      command: resume(id, "archived"),
       forbidden: ["commit", "push", "publish", "open-pr", "waive"],
       recoveryType: "ASK_USER",
       alternatives: ["invoke /land to apply and archive", "leave the proven change pending"]
@@ -1037,7 +1084,7 @@ export function createAdvanceRuntime({
           id, state, dispatch: { action: "build-complete" }, workspaceHash: null,
           stableHash
         });
-        if (["proven", "landing"].includes(state.status)) stage = "land";
+        if (state.status === "proven") stage = "land";
         const authority = authorityStatusValue(id);
         // Plan once per read: dispatch and the Build action consume the same
         // compiled graph. A planning failure leaves dispatch to plan (and
@@ -1077,7 +1124,7 @@ export function createAdvanceRuntime({
           authorityRequests: openRequests,
           proofPreflight,
           plan,
-          proofIsCurrent: proofIsCurrent && ["proven", "landing"].includes(state.status)
+          proofIsCurrent: proofIsCurrent && state.status === "proven"
             ? proofIsCurrent(id) : null,
           authorityActions: authorityNext
             ? authorityNext(id, openRequests[0]?.type || "review", openRequests) : null,
@@ -1101,10 +1148,22 @@ export function createAdvanceRuntime({
     return null;
   }
 
+  // A Land grant outlives a Prove rerun, so an in-progress Land journal stays
+  // reusable. It short-circuits to Land only while the lifecycle is landable:
+  // mid-apply, or proven on proof current for this workspace. A change sent
+  // back to Build (root-pointer staging, target-edit or sandbox sync) re-proves
+  // first instead of retrying a Land that its gate must refuse.
+  function landableGrant(id) {
+    if (!hasLandGrant(id)) return false;
+    const status = loadRuntime(id).status;
+    if (status === "applied") return true;
+    return status === "proven" && (!proofIsCurrent || proofIsCurrent(id));
+  }
+
   function reached(id, through) {
     const state = loadRuntime(id);
     if (state.status === "archived") return "archived";
-    if (through === "proven" && ["proven", "landing"].includes(state.status) &&
+    if (through === "proven" && state.status === "proven" &&
         (!proofIsCurrent || proofIsCurrent(id))) return "proven";
     return null;
   }
@@ -1197,22 +1256,24 @@ export function createAdvanceRuntime({
   }
 
   // An automated step that keeps completing without progress is handed to the
-  // agent with what the step returned; the user is asked only if repeated
-  // agent repair also makes no progress (the recovery ladder decides).
+  // agent with what the step returned. Repeated rounds stay with the agent:
+  // the recovery ladder changes strategy and never asks for code work.
   function noProgress(id, through, operation = null, result = null) {
     const name = operation?.legacyAction || "the automated step";
     const output = result && typeof result === "object"
       ? { issues: result.issues || null, next: result.next || null, reason: result.reason || null }
       : null;
+    const observed = noProgressOutput(output);
     return projected(recovery.observe(id, withContext(id, envelope(id, "REPAIR", {
       legacyAction: "NO_PROGRESS_BOUNDARY", actor: "agent",
       boundary: "repeated-no-progress",
       reason: `The harness ran ${name} twice without changing delivery state`,
       details: output,
-      command: command(`advance ${id} --inspect`),
-      instruction: `The harness could not move ${name} forward. Read its result in details and ` +
-        `'${command(`advance ${id} --inspect`)}', fix what keeps it from progressing ` +
-        "(workspace, evidence wiring in execution.yaml, or setup), then resume.",
+      step: { route: name, output: observed || null },
+      instruction: `The harness ran ${name} twice and delivery state did not change. Its result: ${
+          observed || "no issue, reason, or next step was reported"}. Fix what that result names ` +
+        "inside the workspace (code, evidence wiring in execution.yaml, or declared setup in " +
+        "foundation.json) so the step can change state, then run the resume command.",
       recoveryType: "HANDOFF",
       resumeCommand: resume(id, through)
     }))));
@@ -1265,12 +1326,16 @@ export function createAdvanceRuntime({
       try { value = projected(recovery.observe(id, value)); }
       catch (error) {
         // Recovery bookkeeping must not hide the original failure or turn a
-        // corrupt/missing runtime into an uncaught exception loop.
-        return envelope(id, "ASK_USER", {
-          actor: "user", boundary: "recovery-unavailable",
+        // corrupt/missing runtime into an uncaught exception loop. It is
+        // harness bookkeeping, never a user decision: resume retries it.
+        return envelope(id, "REPAIR", {
+          actor: "harness", owner: "harness", legacyAction: "REPAIR_RECOVERY_STATE",
+          boundary: "internal-recovery",
           reason: `${value.reason}; recovery state could not be retained: ${error.message}`,
-          decision: { kind: "recovery-unavailable" },
-          recoveryType: "ASK_USER", resumeCommand: resume(id, through)
+          details: { original: value, error: error.message },
+          command: resume(id, through),
+          instruction: "The harness could not record recovery state; run the resume command to retry it.",
+          recoveryType: "AUTO_RECOVER", resumeCommand: resume(id, through)
         });
       }
       if (value.action === "REPAIR" && value.automaticRecovery?.kind === "sandbox-sync" && recoverSandbox) {
@@ -1315,7 +1380,7 @@ export function createAdvanceRuntime({
           saveRuntime(initial);
         }
         if (through === "archived" && recoverArchive) {
-          if (["proven", "applied", "landing", "archived"].includes(initial.status)) stage = "land";
+          if (["proven", "applied", "archived"].includes(initial.status)) stage = "land";
           if (initial.advanceRecovery?.pending?.paused)
             return pendingAction(id, through, initial.advanceRecovery.pending);
           if (await recoverArchive(id)) return done(id, "archived", through);
@@ -1329,7 +1394,7 @@ export function createAdvanceRuntime({
           await recoverWorkspace(id);
           initial = loadRuntime(id);
         }
-        const explicitLand = through === "archived" && hasLandGrant(id);
+        const explicitLand = through === "archived" && landableGrant(id);
         if (!explicitLand) assertApproval?.(id, initial, { workspace: false });
         const pending = recovery.pending(id);
         if (pending && (pending.paused || pending.decision.kind !== "external-dependency"))
@@ -1381,7 +1446,7 @@ export function createAdvanceRuntime({
         while (true) {
           const completed = reached(id, through);
           if (completed) return done(id, completed, through);
-          let value = through === "archived" && (explicitLand || hasLandGrant(id))
+          let value = through === "archived" && landableGrant(id)
             ? { action: "WORKING", legacyAction: "LAND_READY", actor: "harness",
               reason: "explicit Land authority accepts the current assurance" }
             : readAdvanceValue(id, {}, automation);

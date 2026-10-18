@@ -148,6 +148,12 @@ export function trackedPathSet(relativePaths) {
 // repository must not widen another repository's manifest, hash, or Land
 // deletion guard. Legacy runtime state stored bare repository-relative strings,
 // which always meant the root workspace.
+//
+// Two optional flags keep a recorded path visible to Land instead of refused
+// at Prove: `protected` (control-plane, CI, or secret path; a property of the
+// path, so it is sticky) and `deleted` (the sandbox removed the path; the
+// latest observation wins, so a restored file stops reading as a deletion).
+// Unflagged entries keep their two-field shape.
 export function surfaceAdditionEntries(value) {
   const entries = new Map();
   for (const entry of Array.isArray(value) ? value : []) {
@@ -156,7 +162,13 @@ export function surfaceAdditionEntries(value) {
       : entry && typeof entry.path === "string"
         ? { repositoryId: String(entry.repositoryId || "root"), path: entry.path }
         : null;
-    if (row?.path) entries.set(`${row.repositoryId}\0${row.path}`, row);
+    if (!row?.path) continue;
+    const key = `${row.repositoryId}\0${row.path}`;
+    const prior = entries.get(key);
+    if (entry?.protected === true || prior?.protected) row.protected = true;
+    const deleted = typeof entry?.deleted === "boolean" ? entry.deleted : prior?.deleted;
+    if (deleted === true) row.deleted = true;
+    entries.set(key, row);
   }
   // Code-unit order, locale-independent, so persisted state is stable.
   const order = (left, right) => left < right ? -1 : left > right ? 1 : 0;

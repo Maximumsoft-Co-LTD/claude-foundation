@@ -129,6 +129,7 @@ try {
   // landCheck gates on the CLI before it reads proof or touches a projection.
   const calls = [];
   const runtime = createLandRuntime({
+    assertApproval: () => {},
     root: workspace,
     loadRuntime: () => ({ id: "demo", status: "proven" }),
     pendingApplyTransactions: () => [],
@@ -154,12 +155,13 @@ try {
     "landCheck refuses a missing CLI");
   check(calls, ["scenarios"], "the refusal happens before proof is even read");
 
-  // With a usable CLI the mechanical gate is transparent. Missing proof is
-  // reported as assurance metadata and explicit Land remains available.
+  // With a usable CLI the mechanical gate is transparent; Land then reaches
+  // the proof gate and refuses missing proof.
   fakeCli({ stdout: "1.7.0" });
-  const ready = runtime.landCheck("demo");
-  check(ready.assurance.status, "missing",
-    "a usable CLI lets Land report missing assurance without refusing");
+  assertions += 1;
+  assert.throws(() => runtime.landCheck("demo"),
+    /Land requires current passing proof .*assurance: missing/,
+    "a usable CLI lets Land reach the proof gate, which refuses missing proof");
   check(calls, ["scenarios", "scenarios", "proof"],
     "Land reads assurance only after the OpenSpec gate passes");
 

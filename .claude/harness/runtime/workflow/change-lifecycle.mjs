@@ -2706,7 +2706,7 @@ export function createChangeLifecycle({
     if (!existsSync(revisionRuntimePath(id)))
       fail(`change revise requires an existing active change; '${id}' was not found`);
     const state = loadRuntime(id);
-    if (["proven", "landing", "archived"].includes(state.status))
+    if (["proven", "archived"].includes(state.status))
       fail(`change revise cannot rewrite an agreement in '${state.status}' status; ` +
         "start a successor change");
     if (!existsSync(changePath(id)))
@@ -2976,7 +2976,7 @@ export function createChangeLifecycle({
   function amendChangeUnlocked(id, amendmentPath, options, state, expectedRevision) {
     if (!isSemanticVersion(state.semanticDraftVersion))
       fail(`change amend requires a semantic-draft v3 or v4 change; '${id}' is a legacy agreement`);
-    if (["landing", "applied", "archived"].includes(state.status))
+    if (["applied", "archived"].includes(state.status))
       fail(`change amend cannot rewrite an agreement in '${state.status}' status; start a successor change`);
     if (state.land?.status || state.workspace?.applied)
       fail("change amend cannot rewrite an agreement after Land has started; recover Land before starting a successor change");

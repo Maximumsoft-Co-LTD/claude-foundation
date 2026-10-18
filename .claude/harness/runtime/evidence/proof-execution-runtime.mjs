@@ -6,7 +6,8 @@ import {
   compareGateProgress,
   gateProgressValue,
   gateRepairPlan,
-  noProgressDecision
+  noProgressDecision,
+  noProgressRepair
 } from "../core/convergent-gate.mjs";
 import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
 import { derivedReviewRepairGraph } from "./repair-runtime.mjs";
@@ -627,7 +628,9 @@ export function createProofExecutionRuntime({
         ? { fingerprint: advanceStart.progressFingerprint } : null,
       progress);
     const noProgress = advanceStart.stage === stage && !progressComparison.progressed;
-    const decision = noProgress ? noProgressDecision({
+    // An unchanged coding repair cycle is a strategy change for the agent, not
+    // a user decision; the advance recovery ladder counts repetitions.
+    const stall = noProgress ? noProgressRepair({
       changeId: id,
       phase: "prove",
       gate,
@@ -644,8 +647,9 @@ export function createProofExecutionRuntime({
       version: 1,
       changeId: id,
       command: "proof advance",
-      status: noProgress ? "NEEDS_USER_DECISION" : "ACTION_REQUIRED",
-      route: noProgress ? "NO_PROGRESS_DECISION" : route,
+      status: "ACTION_REQUIRED",
+      // The caller's route stands: a contract decision it already raised stays one.
+      route,
       stage,
       completed: false,
       workspaceHash: readiness.workspaceHash,
@@ -660,10 +664,13 @@ export function createProofExecutionRuntime({
       ...(repairBatch ? { repairGraph: derivedReviewRepairGraph(
         deliveredAiAttempts(id).at(-1), stableHash
       ) } : {}),
-      ...(decision ? { decision: decision.decision,
-        attemptedStrategies: decision.attemptedStrategies } : {}),
+      ...(stall ? { noProgress: {
+        reason: stall.reason,
+        progressFingerprint: stall.progressFingerprint,
+        findingIds: stall.next[0].findingIds
+      }, attemptedStrategies: stall.attemptedStrategies } : {}),
       executedProviders,
-      next: noProgress ? decision.next : [{
+      next: noProgress ? stall.next : [{
         kind: gate === "review" ? "correct-workspace" : "correct-failed-evidence",
         // Lead with the first finding's own diagnosis so the agent can act on
         // the returned envelope instead of reading receipts.

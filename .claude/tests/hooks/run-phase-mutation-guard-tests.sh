@@ -466,11 +466,13 @@ printf '%s\n' '{"type":"last-prompt","lastPrompt":"/land delivery-change"}' \
 land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_eq "current /land may invoke the stable lifecycle wrapper" "" "$out"
+assert_contains "current /land routes the land advance alias to the public route" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
 npx_land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npx --no-install claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$npx_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_eq "current /land may invoke the wrapper through npx" "" "$out"
+assert_contains "current /land routes the npx land advance alias to the public route" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
 
 dev_land_event="{\"transcript_path\":\"$TMP/dev-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$dev_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
@@ -487,7 +489,8 @@ assert_contains "/dev Land through the internal wrapper is routed to advance" "$
 late_land_event="{\"transcript_path\":\"$TMP/late-land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change\"}}"
 out="$(printf '%s' "$late_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
-assert_eq "a typed /land counts before its last-prompt row is written" "" "$out"
+assert_contains "a typed /land still routes the land advance alias to the public route" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
 {
   printf '%s\n' '{"type":"user","message":{"role":"user","content":"<command-name>/land</command-name>"}}'
   printf '%s\n' '{"type":"last-prompt","lastPrompt":"/dev next thing"}'
@@ -497,6 +500,12 @@ out="$(printf '%s' "$stale_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
   FOUNDATION_GUARDRAIL_MODE=auto node "$HOOK")"
 assert_contains "an earlier /land does not let a later /dev turn use the internal wrapper" "$out" \
   '"command":"claude-foundation advance delivery-change --through archived"'
+
+out="$(printf '%s' "$land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \
+  FOUNDATION_GUARDRAIL_MODE=block node "$HOOK")"
+assert_contains "block mode also routes the land advance alias to the public route" "$out" \
+  '"command":"claude-foundation advance delivery-change --through archived"'
+assert_not_contains "the land advance alias is rewritten, never refused" "$out" '"decision":"block"'
 
 chained_land_event="{\"transcript_path\":\"$TMP/land-transcript.jsonl\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"claude-foundation land advance delivery-change && git commit -am bad\"}}"
 out="$(printf '%s' "$chained_land_event" | CLAUDE_PROJECT_DIR="$TMP/pre" \

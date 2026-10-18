@@ -365,6 +365,23 @@ test("a non-dispatchable plan returns its existing blockers", () => {
   assert.equal("workers" in value, false);
 });
 
+test("a shared resource another active change holds queues dispatch instead of blocking it", () => {
+  const resourceWaits = [{ changeId: "other-change", key: "resource:staging-db <> resource:staging-db",
+    reason: "shared resource resource:staging-db <> resource:staging-db is held by active change other-change" }];
+  const value = runtime(plan({ dispatchable: false, blockingReasons: [], resourceWaits }))
+    .dispatchValue("dispatch-change");
+  assert.equal(value.action, "wait");
+  assert.equal(value.waitKind, "cross-change-resource");
+  assert.deepEqual(value.holders, ["other-change"]);
+  assert.match(value.reason, /queued behind active change other-change/);
+  assert.equal(value.nextCommand, "claude-foundation advance dispatch-change");
+  assert.equal("reasons" in value, false, "a queue is not reported as plan blockers");
+
+  const defective = runtime(plan({ dispatchable: false, blockingReasons: ["ambiguity requires /investigate"],
+    resourceWaits })).dispatchValue("dispatch-change");
+  assert.equal(defective.action, "blocked", "a real plan defect still reports its blockers");
+});
+
 test("dispatch rejects missing changes and empty planned frontiers", () => {
   assert.throws(() => runtime(plan()).dispatchValue(),
     /agents dispatch requires <change>/);

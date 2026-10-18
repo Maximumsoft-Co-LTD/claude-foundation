@@ -1155,6 +1155,34 @@ test("an amendment withdraws unfinished tasks and never completed or depended-on
   assert.match(added.tasksContent, /^- \[ \] \*\*T005\*\* Build C$/m);
 });
 
+// A multi-task cycle is an amendment repair, never a Build-time planner failure.
+test("an amendment refuses task dependency cycles across updated and added tasks", () => {
+  const ledger = [
+    "- [ ] **T001** Build A [key:a-task] [claims:a] — verify: `npm test`",
+    "- [ ] **T002** Build B [key:b-task] [depends:T001] [claims:b] — verify: `npm run lint`"
+  ];
+  const updated = compileSemanticAmendment({ ...verifyFixture(ledger), amendment: {
+    version: 1, updateTasks: [{ key: "a-task", dependsOn: ["b-task"] }] } });
+  assert.match(updated.issues.join("\n"),
+    /task dependencies contain a cycle: (T001 -> T002 -> T001|T002 -> T001 -> T002)/);
+  assert.equal(updated.tasksContent, undefined);
+  const added = compileSemanticAmendment({
+    ...verifyFixture(ledger), renderTask: (task) => `- [ ] **${task.id}** ${task.outcome}`,
+    amendment: { version: 1, addRequirements: [{ key: "c", capability: "change",
+      scenario: "C runs", outcome: "C" }],
+    evidence: { c: { capabilities: ["test"] } },
+    addTasks: [
+      { key: "c-one", outcome: "C one", covers: ["c"], verify: "npm test", dependsOn: ["c-two"] },
+      { key: "c-two", outcome: "C two", covers: ["c"], verify: "npm test", dependsOn: ["c-one"] }
+    ] }
+  });
+  assert.match(added.issues.join("\n"), /task dependencies contain a cycle: 'c-one' -> 'c-two' -> 'c-one'/);
+  // An acyclic reorder still compiles.
+  const reordered = compileSemanticAmendment({ ...verifyFixture(ledger), amendment: {
+    version: 1, updateTasks: [{ key: "b-task", dependsOn: [] }, { key: "a-task", dependsOn: ["b-task"] }] } });
+  assert.deepEqual(reordered.issues, []);
+});
+
 test("a completed task's verify changes only by re-opening it", () => {
   const ledger = ["- [x] **T001** Build A [key:impl] [claims:a] — verify: `go test ./...`"];
   const refused = compileSemanticAmendment({ ...verifyFixture(ledger), amendment: { version: 1,

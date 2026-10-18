@@ -85,9 +85,24 @@ test("a misplaced root sandbox still raises the issue and collects fix-it detail
   }).changedSurfaceIssues("fixit-change", details);
   assert.equal(issues.length, 1);
   assert.match(issues[0], /changed outside task paths: api\/test\/new\.spec\.js; all implementation tasks target 'api'/);
-  assert.deepEqual(details, [
-    { repositoryId: "root", paths: ["api/test/new.spec.js"] }
-  ]);
+  assert.deepEqual(details, [{
+    repositoryId: "root", paths: ["api/test/new.spec.js"], reason: "misplaced-sandbox",
+    workspacePath: null, targets: [{ repositoryId: "api", workspacePath: null }]
+  }]);
+});
+
+test("a misplaced root sandbox recovers with a concrete move, not a bare doctor", () => {
+  const runtime = runtimeWith({ changed: [] });
+  const [move, ...rest] = runtime.configurationRecovery("fixit-change", ["issue"], [{
+    repositoryId: "root", paths: ["api/test/new.spec.js"], reason: "misplaced-sandbox",
+    workspacePath: "/w/root", targets: [{ repositoryId: "api", workspacePath: "/w/api" }]
+  }]);
+  assert.equal(move.kind, "move-to-repository-sandbox");
+  assert.deepEqual(move.paths, ["api/test/new.spec.js"]);
+  assert.match(move.instruction, /'api' at \/w\/api/);
+  assert.equal(move.command, "claude-foundation proof readiness fixit-change");
+  assert.ok(!rest.some((row) => row.kind === "declare-surface"),
+    "the agent is never told to edit the approved tasks.md");
 });
 
 test("a fully declared surface stays silent and collects nothing", () => {

@@ -22,8 +22,7 @@ const NEXT_BY_STATUS = {
   change: "advance --through build",
   building: "advance --through build",
   proven: "advance",
-  applied: "advance --through archived",
-  landing: "advance --through archived"
+  applied: "advance --through archived"
 };
 
 const THROUGH_RANK = { build: 1, proven: 2, archived: 3 };

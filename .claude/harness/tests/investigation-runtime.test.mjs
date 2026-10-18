@@ -174,6 +174,10 @@ test("report path conflicts preserve evidence and recover after resolving the de
   assert.equal(readFileSync(external, "utf8"), "owned by user\n");
   const preserved = value.readJson(join(value.root, blocked.state.path));
   assert.deepEqual(preserved.facts, value.record.facts);
+  // The persisted state matches the presented action, never a stale DONE.
+  assert.equal(preserved.status, "EDIT");
+  assert.equal(preserved.action.boundary, "investigation-report");
+  assert.equal(preserved.stateDigest, blocked.state.digest);
   rmSync(path); rmSync(external);
   const resumed = inspect();
   assert.equal(resumed.action, "DONE");
@@ -190,6 +194,9 @@ test("authored report conflicts never overwrite notes or advertise an older repo
   assert.equal(stopped.report.status, "unavailable");
   assert.equal(stopped.report.path, null);
   assert.equal(stopped.handoff, null);
+  assert.notEqual(value.readJson(join(value.root, stopped.state.path)).status, "DONE");
+  assert.match(validateInvestigationBinding({ projectRoot: value.root, binding: first.handoff })
+    .join("\n"), /ready-for-change DONE state/);
   assert.equal(readFileSync(path, "utf8"), "User replaced the generated report with private notes.\n");
   // An explicit fixture-owned relocation preserves the note, then the same
   // investigation can regenerate without discarding its research.
@@ -270,6 +277,9 @@ test("an active-change investigation reads and binds the isolated Build sandbox"
   const blocked = quiet(() => value.runtime.inspectInvestigation(
     "openspec/investigations/retry-race.json"));
   assert.equal(blocked.action, "EDIT");
+  assert.equal(blocked.owner, "harness");
+  assert.equal(blocked.boundary, "investigation-workspace");
+  assert.equal(blocked.investigation.kind, "repair-harness");
   assert.equal(blocked.resume,
     "claude-foundation investigate openspec/investigations/retry-race.json");
   assert.match(blocked.investigation.issues.join("\n"), /sandbox is missing or unsafe/);
@@ -441,8 +451,12 @@ test("repeated no-progress from a missing sandbox goes to the harness, not the u
   value.record.activeChange = "missing-change";
   writeFileSync(value.recordPath, JSON.stringify(value.record));
   let result;
-  for (let attempt = 0; attempt < 3; attempt += 1)
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     result = quiet(() => value.runtime.inspectInvestigation("openspec/investigations/retry-race.json"));
+    // A sandbox fault is the harness's from the first run, never record repair.
+    assert.equal(result.owner, "harness", `attempt ${attempt + 1}`);
+    assert.equal(result.investigation.kind, "repair-harness", `attempt ${attempt + 1}`);
+  }
   assert.equal(result.noProgress.boundaryReached, true);
   assert.equal(result.action, "EDIT");
   assert.equal(result.owner, "harness");
@@ -647,6 +661,20 @@ test("nonmaterial open questions do not block a clear change", (t) => {
   assert.equal(result.action, "DONE");
   assert.equal(result.pendingQuestions.length, 1);
   assert.ok(result.handoff);
+});
+
+test("a material question that depends on an open nonmaterial question is still asked", (t) => {
+  const v = intakeFixture(t);
+  v.record.questions = [
+    { key: "detail", question: "Which log wording?", material: false, status: "open" },
+    { key: "policy", question: "Reject or merge stale writes?", material: true, status: "open",
+      dependsOn: ["detail"] }
+  ];
+  const result = v.inspect();
+  assert.equal(result.action, "ASK_USER");
+  assert.deepEqual(result.decision.items.map((item) => item.key), ["policy"]);
+  assert.equal(result.handoff, null);
+  assert.notEqual(v.state(result).status, "DONE");
 });
 
 test("question dependency cycles and nonexistent work links are repaired by the agent", (t) => {

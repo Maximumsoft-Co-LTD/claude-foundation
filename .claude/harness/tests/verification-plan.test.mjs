@@ -98,7 +98,7 @@ test("compacted provider displays never invent reuse decisions", () => {
   assert.equal(plan.risk, "standard");
   assert.equal(plan.evidence.measurement, "compacted-unavailable");
   assert.deepEqual(plan.evidence.reusable, []);
-  assert.equal(plan.execution.command, "claude-foundation land advance change");
+  assert.equal(plan.execution.command, "claude-foundation advance change --through archived");
 });
 
 test("task packets keep phase verification with the parent boundary", () => {

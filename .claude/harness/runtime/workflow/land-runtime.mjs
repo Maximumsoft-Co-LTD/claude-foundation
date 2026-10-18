@@ -9,7 +9,8 @@ import {
 import {
   outOfBandDeliveryDriftValue, riskRequiresCi
 } from "../core/authority-policy.mjs";
-import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
+import { normalizeLifecycleStatus, transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
+import * as stateRuntime from "../core/state-runtime.mjs";
 import { compositeRepositorySelection } from "../core/repository-binding.mjs";
 import { probeOpenSpecVersion } from "../core/tool-identity.mjs";
 
@@ -457,6 +458,33 @@ export function landPreparationBindings(proof, graph) {
   };
 }
 
+// Prove records protected-path edits and sandbox deletions instead of
+// refusing them; Land is where the user sees them. Paths only, never contents.
+function surfaceEntryKey(entry) {
+  return { repositoryId: entry.repositoryId ?? null, path: String(entry.path) };
+}
+
+export function landSurfaceReport(state) {
+  const report = typeof stateRuntime.surfaceAdditionReport === "function"
+    ? stateRuntime.surfaceAdditionReport(state) : null;
+  const entries = report?.entries || (Array.isArray(state?.surfaceAdditions)
+    ? state.surfaceAdditions : []).filter((entry) =>
+    entry && typeof entry === "object" && typeof entry.path === "string");
+  const protectedEntries = report?.protected || entries.filter((entry) => entry.protected === true);
+  const deleted = report?.deleted || entries.filter((entry) => entry.deleted === true);
+  return {
+    protected: protectedEntries.map(surfaceEntryKey),
+    deleted: deleted.map(surfaceEntryKey),
+    requiresPresentation: report ? Boolean(report.requiresPresentation)
+      : protectedEntries.length > 0 || deleted.length > 0
+  };
+}
+
+function surfacePathList(entries) {
+  return entries.map((entry) => entry.repositoryId && entry.repositoryId !== "root"
+    ? `${entry.repositoryId}:${entry.path}` : entry.path).join(", ");
+}
+
 export function createLandRuntime({
   root,
   transactions,
@@ -499,8 +527,34 @@ export function createLandRuntime({
   // delivery, landed-projection binding, spec sync). `inspect` keeps it
   // read-only for `land check`; Land runs it with recording allowed.
   landPreflight = null,
+  // Required, not defaulted: Land re-checks spec approval itself so a Land
+  // grant can never stand in for the user's consent to the agreement.
+  assertApproval,
   fail
 }) {
+  if (typeof assertApproval !== "function")
+    throw new Error("createLandRuntime requires assertApproval");
+
+  // Land is the single hard gate: it never accepts missing, failed,
+  // inconclusive, invalid, or stale proof. Recovery is the normal lifecycle
+  // route, which proves the current workspace before it reaches Land again.
+  function assertLandAssurance(id, assurance, state) {
+    // The lifecycle must agree with the proof: a change returned to `building`
+    // (an amendment, staged root pointers) is unproven even when its proof hash
+    // still matches, and the reducer would refuse its archive only after the
+    // destructive OpenSpec step.
+    const status = normalizeLifecycleStatus(state?.status);
+    if (!["proven", "applied"].includes(status))
+      fail(`Land requires current passing proof for '${id}' (assurance: ${
+        assurance?.status || "unknown"}; lifecycle is '${status}', not proven)\n` +
+        `  next: claude-foundation advance ${id} --through archived`);
+    if (assurance?.status === "passed" && assurance.proofWorkspaceHash &&
+        assurance.proofWorkspaceHash === assurance.workspaceHash) return;
+    fail(`Land requires current passing proof for '${id}' (assurance: ${
+      assurance?.status || "unknown"}${assurance?.reason ? `; ${assurance.reason}` : ""})\n` +
+      `  next: claude-foundation advance ${id} --through archived`);
+  }
+
   function assertLandTargetReady(id, state) {
     // Kept target content must reach the sandbox and be proven again. That is
     // the harness's own sync, never a command handed to the agent.
@@ -711,7 +765,7 @@ export function createLandRuntime({
     }
   }
 
-  function reportLandReady(id, state, hash, assurance, externalOperations) {
+  function reportLandReady(id, state, hash, assurance, externalOperations, surface) {
     const waived = (state.waivers || []).map((row) =>
       `${row.capability} (${row.authority?.reference || "user decision"})`);
     const rootBranch = targetBranch(root);
@@ -727,7 +781,10 @@ export function createLandRuntime({
       Object.values(telemetry.measuredDimensions || {}).some(Boolean));
     const telemetryRecovery = hasMeasuredUsage
       ? null : telemetry?.recoveryActions?.[0]?.command || null;
-    console.log(`LAND READY ${id}\n  workspace: ${hash}\n  assurance: ${assurance.status}${
+    const surfaceLines = surface?.requiresPresentation
+      ? `${surface.protected.length ? `\n  protected paths changed: ${surfacePathList(surface.protected)}` : ""}${
+        surface.deleted.length ? `\n  paths deleted: ${surfacePathList(surface.deleted)}` : ""}` : "";
+    console.log(`LAND READY ${id}\n  workspace: ${hash}\n  assurance: ${assurance.status}${surfaceLines}${
       postLand.length ? `\n  declared post-Land obligation: ${postLand.join(", ")}` : ""}${
       waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: /land ${id}${telemetry
         ? `\n  telemetry: ${telemetry.classification}${telemetryRecovery
@@ -746,6 +803,10 @@ export function createLandRuntime({
       console.log(`ALREADY ARCHIVED ${id}\n  archived: ${state.archivedAt || "unknown"}`);
       return { archived: true, state };
     }
+    // A Land grant is authority to apply, never consent to the agreement:
+    // stale or missing spec approval refuses here, so grant issue and archive
+    // (both of which run this check) refuse too.
+    assertApproval(id, state, { workspace: false });
     const multiRepository = compositeRepositorySelection(selectedRepositories(id, state));
     assertLandTargetReady(id, state);
     const isolationIssues = workspaceIsolationIssues(id);
@@ -759,12 +820,16 @@ export function createLandRuntime({
       assurance.status = "inconclusive";
       assurance.reason = "external-operation-pending";
     }
+    // `land check` stops on every code Land stops on, so it refuses unproven
+    // work as well instead of reporting it LAND READY.
+    assertLandAssurance(id, assurance, state);
     assertLandOperationalSafety(id, state);
     if (preflight && landPreflight)
       landPreflight(id, state, { inspect: preflight !== "apply" });
     if (multiRepository) persistLandPreparation(id, state, proof, graph, hash);
-    const telemetry = reportLandReady(id, state, hash, assurance, externalOperations);
-    return { archived: false, state, hash, assurance, externalOperations, telemetry };
+    const surface = landSurfaceReport(state);
+    const telemetry = reportLandReady(id, state, hash, assurance, externalOperations, surface);
+    return { archived: false, state, hash, assurance, externalOperations, telemetry, surface };
   }
 
   // The explicit half of the split. Recovery replays or reverses filesystem

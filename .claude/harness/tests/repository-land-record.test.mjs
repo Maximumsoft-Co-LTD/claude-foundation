@@ -74,6 +74,7 @@ const git = (args, cwd) => {
   throw new Error(`unexpected git call ${args.join(" ")} at ${cwd}`);
 };
 const runtime = createLandRuntime({
+  assertApproval: () => {},
   root, transactions, loadRuntime: () => state,
   saveRuntime: (value) => saves.push(structuredClone(value)),
   pendingApplyTransactions: () => [], recoverPendingApply: () => {},

@@ -11,6 +11,7 @@ import {
   agentPlanGroupSummaries,
   agentPlanGroupView,
   agentPlanNext,
+  agentPlanResourceWaits,
   agentPlanSummaryView,
   agentTaskExecutionRows,
   changedPlanRepositories,
@@ -287,18 +288,24 @@ test("a task result bound to its own authority survives an amendment elsewhere",
     "a result without task authority keeps the whole-graph binding");
 });
 
-test("blocking reasons combine ambiguity and active scope conflicts", () => {
-  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "clear" }, []), []);
-  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "unclear" }, [{
-    key: "path:root:src <> path:root:src", changeId: "other"
-  }]), [
-    "ambiguity requires /investigate",
-    "scope path:root:src <> path:root:src is active in other"
+test("blocking reasons name only this plan's defects; held shared resources are queued", () => {
+  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "clear" }), []);
+  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "unclear" }), [
+    "ambiguity requires /investigate"
   ]);
+  assert.deepEqual(agentPlanResourceWaits([{
+    key: "resource:staging-db <> resource:staging-db", changeId: "other", status: "building"
+  }]), [{
+    changeId: "other", key: "resource:staging-db <> resource:staging-db", resource: "staging-db",
+    status: "building",
+    reason: "shared resource resource:staging-db <> resource:staging-db is held by active change other"
+  }]);
+  assert.match(agentPlanNext({ dispatchable: false, blockingReasons: [],
+    resourceWaits: [{ changeId: "other" }] }, "demo"), /queued behind other; claude-foundation advance demo/);
 });
 
 test("blocking reasons stop dispatch before unavailable authority spends model budget", () => {
-  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "clear" }, [], {
+  assert.deepEqual(agentPlanBlockingReasons({ ambiguity: "clear" }, {
     status: "NEEDS_USER_DECISION",
     blockers: [{
       kind: "configuration-required",

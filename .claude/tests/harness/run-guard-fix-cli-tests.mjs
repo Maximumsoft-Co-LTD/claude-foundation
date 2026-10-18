@@ -66,6 +66,18 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
   }), /lifecycle failed asynchronously/);
 }
 
+// `land advance` is an alias of `advance --through archived`: it never
+// pre-issues a Land grant, which would let advance skip the proof route.
+{
+  const calls = [];
+  await route("land-advance", ["change"], {
+    showAdvance: async (id, options) => calls.push(["advance", id, options.through]),
+    grantLand: () => calls.push(["grant"]),
+    advanceLand: () => calls.push(["legacy"])
+  });
+  assert.deepEqual(calls, [["advance", "change", "archived"]]);
+}
+
 {
   let observed = null;
   await route("handoff-list", [

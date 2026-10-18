@@ -1668,9 +1668,7 @@ export function createApplyRuntime({
       console.error(`WARNING: no model usage was imported for this change; cost and token columns stay empty — claude-foundation telemetry sync ${id} [transcript.jsonl]`);
     console.log(cli.stdout.trim());
     const assurance = state.land?.assurance?.status || "legacy-unknown";
-    console.log(`${assurance === "passed" ? "LANDED" :
-      ["failed", "inconclusive"].includes(assurance)
-        ? "LANDED_WITH_RISK" : "LANDED_UNPROVEN"} ${id}\n  assurance: ${assurance}\n  lifecycle: archived`);
+    console.log(`LANDED ${id}\n  assurance: ${assurance}\n  lifecycle: archived`);
   }
 
   function archive(id) {
@@ -1703,6 +1701,11 @@ export function createApplyRuntime({
     recoverPendingApply(id, initial);
     let readiness = measure("land.check", () => landCheck(id, { preflight: "apply" }));
     if (readiness.archived) return;
+    // Land never archives unproven work. landCheck already refuses it; this
+    // repeats the gate at the last point before any target mutation.
+    if (readiness.assurance?.status !== "passed")
+      fail(`Land requires current passing proof for '${id}' (assurance: ${
+        readiness.assurance?.status || "unknown"})\n  next: claude-foundation advance ${id} --through archived`);
     archiveCheckpoint("before-evidence-snapshot", readiness.state);
     snapshotArchiveEvidence(id, readiness);
     archiveCheckpoint("after-evidence-snapshot", readiness.state);

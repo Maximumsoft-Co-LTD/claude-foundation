@@ -62,6 +62,19 @@ test("fresh recovery lets Build repair missing repository bindings before hashin
   assert.equal(value.legacyAction, "REPAIR_PROOF_RESULT");
 });
 
+test("unrecordable recovery state is a harness repair carrying the original value, never a user question", async () => {
+  const f = fixture({ saveRuntime: () => { throw new Error("disk full"); } });
+  const value = await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.owner, "harness");
+  assert.equal(value.legacyAction, "REPAIR_RECOVERY_STATE");
+  assert.match(value.reason, /recovery state could not be retained: disk full/);
+  assert.equal(value.details.error, "disk full");
+  assert.ok(value.details.original?.action, "the original outcome is preserved");
+  assert.equal(value.command, "claude-foundation advance demo --through proven");
+  assert.equal(value.decision, undefined);
+});
+
 test("typed automatic sync stays harness-owned and arbitrary commands never become automatic", () => {
   const decision = targetHeadMovedDecision({ changeId: "demo", recordedBase: "a", currentHead: "b" });
   const value = advanceFailureAction("demo", { message: decision.summary, decision }, { stage: "land", through: "archived" });
@@ -132,7 +145,7 @@ test("restarted advance restores an interrupted amendment before checking approv
 
 // A sync conflict is the agent's to resolve first; only repeated conflict
 // without progress reaches the user.
-test("sync conflicts go to the agent first and reach the user only after repeated attempts", async () => {
+test("repeated sync conflicts stay agent repair with a changed strategy, never a question", async () => {
   let syncs = 0;
   const f = fixture({ hasLandGrant: () => true,
     recoverSandbox: async () => { syncs++; return { status: "CONFLICT", conflicts: ["app.js"] }; },
@@ -145,28 +158,66 @@ test("sync conflicts go to the agent first and reach the user only after repeate
   assert.equal(value.legacyAction, "REPAIR_SYNC_CONFLICT");
   assert.equal(value.details.status, "CONFLICT");
   let last = value;
-  for (let index = 0; index < 4 && last.action !== "ASK_USER"; index++)
+  for (let index = 0; index < 4; index++) {
     last = await f.runtime().advanceThrough("demo", "archived");
-  assert.equal(last.action, "ASK_USER");
+    assert.notEqual(last.action, "ASK_USER", "a coding conflict is never the user's decision");
+  }
+  assert.equal(last.action, "REPAIR");
+  assert.equal(last.owner, "agent");
+  assert.equal(last.legacyAction, "NO_PROGRESS_BOUNDARY");
+  assert.equal(last.repeatedAction, "REPAIR_SYNC_CONFLICT");
+  assert.equal(last.repetition.rounds, 5, "the repetition count keeps growing and stays visible");
+  assert.match(last.instruction, /not listed in attemptedStrategies/);
   assert.equal(f.state().status, "proven");
 });
 
-test("repair handoffs persist across process-shaped runtime recreation and require a decision", async () => {
+// A user-owned boundary that repeats unchanged. Only these reach the user.
+const userBoundaryFixture = (calls = { count: 0 }) => fixture({ prepareBuild: async () => {
+  calls.count++;
+  throw Object.assign(new Error("model spend for this run is unapproved"), { boundary: "spend" });
+} });
+
+test("repeated product repair changes strategy with its evidence instead of asking the user", async () => {
   const f = fixture();
   assert.equal((await f.runtime().advanceThrough("demo", "archived")).action, "REPAIR");
   const alternate = await f.runtime().advanceThrough("demo", "archived");
-  assert.equal(alternate.action, "REPAIR", "the agent tries one different approach before any question");
+  assert.equal(alternate.action, "REPAIR", "the agent tries one different approach first");
   assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH");
   assert.equal(alternate.owner, "agent");
-  const stopped = await f.runtime().advanceThrough("demo", "archived");
-  assert.equal(stopped.action, "ASK_USER", "the third unchanged round asks the user");
-  assert.equal(stopped.decision.attemptedStrategies[0].observations, 3);
-  assert.equal(stopped.decision.repetition.rounds, 3);
-  assert.match(stopped.decision.repetition.output, /test failed/);
+  const changed = await f.runtime().advanceThrough("demo", "archived");
+  assert.equal(changed.action, "REPAIR", "the third unchanged round is still the agent's repair");
+  assert.equal(changed.owner, "agent");
+  assert.equal(changed.legacyAction, "NO_PROGRESS_BOUNDARY");
+  assert.equal(changed.boundary, "repeated-no-progress");
+  assert.equal(changed.repeatedAction, "REPAIR_PROOF_RESULT");
+  assert.equal(changed.attemptedStrategies[0].observations, 3);
+  assert.equal(changed.repetition.rounds, 3);
+  assert.match(changed.repetition.output, /test failed/);
+  assert.match(changed.instruction, /3 times without progress/);
+  assert.equal(changed.decision, null, "no question is attached");
   const calls = f.calls();
+  const state = f.state();
+  assert.notEqual(f.runtime().advanceValue("demo", { inspect: true }).action, "ASK_USER");
+  assert.deepEqual(f.state(), state, "inspection must not count as an attempt");
+  const repeated = await f.runtime().advanceThrough("demo", "archived");
+  assert.equal(repeated.repetition.rounds, 4, "the count survives runtime recreation");
+  assert.ok(f.calls() > calls, "the harness keeps running the repaired work");
+  assert.equal(f.state().advanceRecovery.pending ?? null, null);
+});
+
+test("a repeated user-owned boundary asks once and persists across runtime recreation", async () => {
+  const calls = { count: 0 };
+  const f = userBoundaryFixture(calls);
+  assert.equal((await f.runtime().advanceThrough("demo", "archived")).action, "REPAIR");
+  assert.equal((await f.runtime().advanceThrough("demo", "archived")).legacyAction, "TRY_ALTERNATE_APPROACH");
+  const stopped = await f.runtime().advanceThrough("demo", "archived");
+  assert.equal(stopped.action, "ASK_USER");
+  assert.equal(stopped.boundary, "spend");
+  assert.equal(stopped.decision.repetition.rounds, 3);
+  const before = calls.count;
   const repeated = await f.runtime().advanceThrough("demo", "archived");
   assert.equal(repeated.decision.fingerprint, stopped.decision.fingerprint);
-  assert.equal(f.calls(), calls, "pending decision does not repeat failed work");
+  assert.equal(calls.count, before, "pending decision does not repeat failed work");
   const state = f.state();
   assert.equal(f.runtime().advanceValue("demo", { inspect: true }).action, "ASK_USER");
   assert.deepEqual(f.state(), state, "inspection must not count as an attempt");
@@ -174,6 +225,19 @@ test("repair handoffs persist across process-shaped runtime recreation and requi
   assert.equal(resumed.action, "REPAIR");
   assert.equal(resumed.resume, "claude-foundation advance demo --through archived");
   assert.equal(f.state().advanceRecovery.answers.length, 1);
+});
+
+test("a repetition question recorded before the strategy rung no longer holds delivery", () => {
+  const legacy = { key: "old", through: "proven", decision: { kind: "repair-no-progress",
+    fingerprint: "f", summary: "old", options: [{ id: "retry", outcome: "r" }, { id: "pause", outcome: "p" }],
+    recommended: "retry" } };
+  const record = (pending) => ({ advanceRecovery: { version: 1, subject: "content-a",
+    attempts: [], answers: [], pending } });
+  assert.equal(recoveryHarness(record(legacy)).recovery.pending("demo"), null);
+  assert.equal(recoveryHarness(record({ ...legacy, paused: true })).recovery.pending("demo").paused, true,
+    "a recorded user pause is still honored");
+  const typed = { ...legacy, legacyAction: "NO_PROGRESS_BOUNDARY", boundary: "spend" };
+  assert.equal(recoveryHarness(record(typed)).recovery.pending("demo").boundary, "spend");
 });
 
 // The proof gate's own no-progress question used to point at `packet`, which
@@ -239,9 +303,10 @@ test("a pause answer keeps a proof gate question paused, and gate options with c
 });
 
 test("changed content expires a pending recovery decision and stale answers cannot authorize work", async () => {
-  const f = fixture();
+  const f = userBoundaryFixture();
   let value;
   for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "proven");
+  assert.equal(value.action, "ASK_USER");
   f.setContent("actual repair");
   await assert.rejects(f.runtime().showAdvance("demo", answer(value)), /stale/);
   assert.equal((await f.runtime().advanceThrough("demo", "proven")).action, "REPAIR");
@@ -254,23 +319,36 @@ test("changing diagnostic text alone cannot reset the no-progress boundary", asy
   } });
   let value;
   for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "archived");
-  assert.equal(value.action, "ASK_USER");
-  assert.match(value.decision.summary, /connection attempt 3/);
-  assert.equal(value.decision.attemptedStrategies[0].observations, 3);
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.legacyAction, "NO_PROGRESS_BOUNDARY");
+  assert.match(value.reason, /connection attempt 3/);
+  assert.equal(value.attemptedStrategies[0].observations, 3);
 });
 
-test("repeated setup exceptions survive restart and pause prevents setup writes", async () => {
+test("repeated setup failures stay harness-owned with a visible count; pause prevents setup writes", async () => {
   let preparations = 0;
   const f = fixture({ prepareBuild: async () => { preparations++; throw new Error("tool unavailable"); } });
   let value;
-  for (let index = 0; index < 3; index++) value = await f.runtime().advanceThrough("demo", "archived");
+  for (let index = 0; index < 5; index++) {
+    value = await f.runtime().advanceThrough("demo", "archived");
+    assert.notEqual(value.action, "ASK_USER", "setup the harness owns is never the user's decision");
+  }
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.owner, "harness");
+  assert.equal(value.repeatedAction, "REPAIR_BUILD_RUNTIME");
+  assert.equal(value.repetition.rounds, 5);
+  assert.match(value.instruction, /Do not rerun the same step unchanged/);
+  assert.ok(value.command, "a harness-owned strategy change keeps its own step");
+  assert.equal(preparations, 5, "the harness keeps retrying its own setup");
+
+  const asked = userBoundaryFixture();
+  for (let index = 0; index < 3; index++) value = await asked.runtime().advanceThrough("demo", "archived");
   assert.equal(value.action, "ASK_USER");
-  assert.match(value.decision.summary, /tool unavailable/);
-  const paused = await f.runtime().showAdvance("demo", answer(value, "pause"));
+  assert.match(value.decision.summary, /unapproved/);
+  const paused = await asked.runtime().showAdvance("demo", answer(value, "pause"));
   assert.equal(paused.userState, "PAUSED");
   assert.equal(paused.user.decision, undefined, "a recorded pause does not ask the same question again");
-  assert.equal((await f.runtime().advanceThrough("demo", "archived")).userState, "PAUSED");
-  assert.equal(preparations, 3);
+  assert.equal((await asked.runtime().advanceThrough("demo", "archived")).userState, "PAUSED");
 });
 
 test("recovery snapshots after a setup exception stay inside the runtime failure trap", async () => {
@@ -318,14 +396,19 @@ test("repair counters and fresh proof IDs alone do not manufacture progress", as
   } });
   const value = await f.runtime().advanceThrough("demo", "proven");
   assert.equal(calls, 2);
-  assert.equal(value.action, "REPAIR", "the agent gets the stuck step before the user is asked");
+  assert.equal(value.action, "REPAIR", "the agent gets the stuck step");
   assert.equal(value.owner, "agent");
   assert.equal(value.recovery.type, "HANDOFF");
   let last = value;
-  for (let index = 0; index < 4 && last.action !== "ASK_USER"; index++)
+  for (let index = 0; index < 4; index++) {
     last = await f.runtime().advanceThrough("demo", "proven");
-  assert.equal(last.action, "ASK_USER");
-  assert.ok(last.decision.fingerprint);
+    assert.notEqual(last.action, "ASK_USER", "an idempotent automated step is agent work");
+  }
+  assert.equal(last.action, "REPAIR");
+  assert.equal(last.owner, "agent");
+  assert.equal(last.repeatedAction, "NO_PROGRESS_BOUNDARY");
+  assert.equal(last.repetition.rounds, 5);
+  assert.ok(calls > 2, "repetition is counted on unchanged rounds, not used to stop work");
 });
 
 test("malformed legacy decisions retain honest choices and advance v6 rejects empty guidance", () => {
@@ -367,8 +450,11 @@ test("a dead proof worker cannot leave delivery looking active indefinitely", as
   const f = fixture({ runProof: async () => ({ status: "IN_PROGRESS", owner: { pid: -1 } }) });
   let value;
   for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "proven");
-  assert.equal(value.action, "ASK_USER");
-  assert.match(value.decision.summary, /no longer live/);
+  assert.equal(value.action, "REPAIR", "a dead worker's lock is the harness's to recover, not a question");
+  assert.equal(value.owner, "harness");
+  assert.equal(value.repeatedAction, "REPAIR_PROOF_LOCK");
+  assert.match(value.reason, /no longer live/);
+  assert.equal(value.repetition.rounds, 4);
 });
 
 test("a genuinely live proof worker stays a verified wait without consuming repair attempts", async () => {
@@ -431,7 +517,7 @@ test("external waiting follows its current owner, condition and checking route",
   }
 });
 
-test("partial Land checkpoints converge, but a stuck checkpoint asks before repeating forever", async () => {
+test("partial Land checkpoints converge, and a stuck checkpoint stays counted agent repair", async () => {
   for (const progresses of [true, false]) {
     let runs = 0;
     const f = fixture({ hasLandGrant: () => true, runLand: async () => {
@@ -448,14 +534,16 @@ test("partial Land checkpoints converge, but a stuck checkpoint asks before repe
     if (progresses) continue;
     assert.equal(value.owner, "agent");
     let last = value;
-    for (let index = 0; index < 4 && last.action !== "ASK_USER"; index++)
+    for (let index = 0; index < 4; index++)
       last = await f.runtime().advanceThrough("demo", "archived");
-    assert.equal(last.action, "ASK_USER", "a stuck checkpoint still asks before repeating forever");
+    assert.equal(last.action, "REPAIR", "a stuck checkpoint is repaired, not asked");
+    assert.equal(last.legacyAction, "NO_PROGRESS_BOUNDARY");
+    assert.equal(last.repetition.rounds, 5, "repeating is visible, never silent");
   }
 });
 
 test("retry does not grant Land, waive evidence or extend model/review budgets", async () => {
-  const f = fixture();
+  const f = userBoundaryFixture();
   let value;
   for (let index = 0; index < 4; index++) value = await f.runtime().advanceThrough("demo", "proven");
   await assert.rejects(f.runtime().showAdvance("demo", answer(value, "land")), /not offered/);
@@ -486,7 +574,9 @@ test("separate CLI host processes retain decisions, protect inspection, and resu
         relevantHash: () => "unchanged", stableHash: gateDigest,
         deliveredAiAttempts: () => [], authorityStatusValue: () => ({ requests: [] }),
         readJson: () => ({}), proofAdvancePath: () => "unused",
-        prepareBuild: async () => { throw new Error("fixture tool is unavailable"); }
+        prepareBuild: async () => {
+          throw Object.assign(new Error("fixture spend is unapproved"), { boundary: "spend" });
+        }
       });
       await runtime.showAdvance("demo", JSON.parse(process.argv[2]));
     `);
@@ -512,7 +602,7 @@ test("separate CLI host processes retain decisions, protect inspection, and resu
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("proof target refreshes stale evidence while explicit Land accepts its assurance", async () => {
+test("proof target and explicit Land both refresh stale evidence before delivery", async () => {
   let current = false;
   let proofs = 0;
   const prove = fixture({ proofIsCurrent: () => current,
@@ -523,14 +613,22 @@ test("proof target refreshes stale evidence while explicit Land accepts its assu
   assert.equal((await prove.runtime().advanceThrough("demo", "proven")).reached, "proven");
   assert.equal(proofs, 1);
 
+  // Land's gate requires current proof, so a grant never short-circuits
+  // past stale evidence; the same call re-proves, then lands.
   let lands = 0;
-  const land = fixture({ proofIsCurrent: () => false, hasLandGrant: () => true,
-    runProof: async () => { throw new Error("explicit Land must not rerun proof"); },
-    runLand: async () => { lands++; land.setState({ status: "archived" }); }
+  let landCurrent = false;
+  let landProofs = 0;
+  const land = fixture({ proofIsCurrent: () => landCurrent, hasLandGrant: () => true,
+    runProof: async () => { landProofs++; landCurrent = true; return { status: "PASS" }; },
+    runLand: async () => {
+      assert.equal(landCurrent, true, "Land runs only on current proof");
+      lands++; land.setState({ status: "archived" });
+    }
   });
   land.setState({ status: "proven" });
   land.setCursor({ status: "PASS", workspaceHash: "original" });
   assert.equal((await land.runtime().advanceThrough("demo", "archived")).reached, "archived");
+  assert.equal(landProofs, 1);
   assert.equal(lands, 1);
 });
 
@@ -802,6 +900,17 @@ function recoveryHarness(initial = {}) {
     setSubject: (value) => { subject = value; }, state: () => stored };
 }
 
+test("a queued resource wait is never counted by the recovery ladder", () => {
+  const h = recoveryHarness();
+  const wait = { action: "WAIT", changeId: "demo", actor: "harness", legacyAction: "WAIT_RESOURCE",
+    boundary: "resource", reason: "queued behind active change other",
+    wait: { owner: "harness", condition: "other lands", checkCommand: "claude-foundation advance demo" } };
+  for (let index = 0; index < 6; index++)
+    assert.equal(h.recovery.observe("demo", wait).action, "WAIT");
+  assert.deepEqual(h.state().advanceRecovery?.attempts || [], []);
+  assert.equal(h.recovery.pending("demo"), null);
+});
+
 test("a Build verify that keeps failing identically is counted; changed output or content resets", () => {
   const h = recoveryHarness();
   const edit = (output, ms = 12) => ({ action: "EDIT", changeId: "demo", legacyAction: "EXECUTE_TASK",
@@ -811,11 +920,15 @@ test("a Build verify that keeps failing identically is counted; changed output o
   assert.equal(h.recovery.observe("demo", edit("expected 2 got 3", 10)).action, "EDIT");
   const alternate = h.recovery.observe("demo", edit("expected 2 got 3", 31));
   assert.equal(alternate.legacyAction, "TRY_ALTERNATE_APPROACH", "durations and timestamps are not progress");
-  const asked = h.recovery.observe("demo", edit("expected 2 got 3", 47));
-  assert.equal(asked.action, "ASK_USER");
-  assert.equal(asked.boundary, "repeated-no-progress");
-  assert.equal(asked.decision.repetition.rounds, 3);
-  assert.equal(asked.decision.repetition.verification[0].command, "npm test");
+  const changedStrategy = h.recovery.observe("demo", edit("expected 2 got 3", 47));
+  assert.equal(changedStrategy.action, "REPAIR", "a failing verify is the agent's code work");
+  assert.equal(changedStrategy.owner, "agent");
+  assert.equal(changedStrategy.boundary, "repeated-no-progress");
+  assert.equal(changedStrategy.repeatedAction, "EXECUTE_TASK");
+  assert.equal(changedStrategy.repetition.rounds, 3);
+  assert.equal(changedStrategy.repetition.verification[0].command, "npm test");
+  assert.equal(h.recovery.pending("demo"), null, "nothing waits on the user");
+  assert.equal(h.recovery.observe("demo", edit("expected 2 got 3", 52)).repetition.rounds, 4);
 
   const changed = recoveryHarness();
   changed.recovery.observe("demo", edit("expected 2 got 3"));

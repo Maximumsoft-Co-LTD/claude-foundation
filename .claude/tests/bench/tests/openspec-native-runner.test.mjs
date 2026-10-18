@@ -316,7 +316,7 @@ test("a no-dispatch proven resume keeps its preflight change identity", () => {
 });
 
 test("runner uses the registered internal Land operation", () => {
-  assert.deepEqual(backendLandArgs("change"), ["land-advance", "change"]);
+  assert.deepEqual(backendLandArgs("change"), ["advance", "change", "--through", "archived"]);
 });
 
 // "Run the canonical project test" sent the agent to raw `npm test` and
@@ -1427,7 +1427,7 @@ test('oracle repair receives a cumulative cost allowance and retains session env
   write(runtime, {id:'todo',status:'building'});
   write(join(project, '.claude/harness/foundation.mjs'), `
 import {writeFileSync} from 'node:fs';
-if (process.argv[2] === 'land-advance') writeFileSync(${JSON.stringify(runtime)},JSON.stringify({id:'todo',status:'archived'}));
+if (process.argv[2] === 'advance') writeFileSync(${JSON.stringify(runtime)},JSON.stringify({id:'todo',status:'archived'}));
 `);
   write(host, `#!/usr/bin/env node
 const fs=require('node:fs');

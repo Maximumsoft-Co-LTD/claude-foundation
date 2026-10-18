@@ -194,6 +194,7 @@ test("prepared Land rejects missing and stale preparation identities", () => {
   };
   const proofFile = join(root, "proof.json");
   const runtime = createLandRuntime({
+    assertApproval: () => {},
     root, transactions,
     loadRuntime: () => state,
     proofPath: () => proofFile,
@@ -258,6 +259,7 @@ test("Land resume refreshes child statuses and emits the resumable plan", () => 
   const written = [];
   const logs = [];
   const runtime = createLandRuntime({
+    assertApproval: () => {},
     root: "/target", transactions: "/transactions",
     loadRuntime: () => state,
     saveRuntime: (value) => saved.push(structuredClone(value)),
@@ -310,6 +312,7 @@ test("multi-repository archive readiness accepts settled plans and names blocker
     }
   ];
   const runtime = createLandRuntime({
+    assertApproval: () => {},
     root: "/target", transactions: "/transactions",
     loadRuntime: () => state,
     selectedRepositories: () => repositories,

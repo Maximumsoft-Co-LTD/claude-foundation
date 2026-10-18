@@ -215,6 +215,8 @@ test("advance settles a copy conflict once the agent's merge is provable, never 
       identityOf(join(fixture.root, "merge.txt"));
     // The agent's edit is progress: it changes the sandbox workspace hash.
     const workspaceHash = () => digest(join(fixture.sandbox, "merge.txt"));
+    let provenHash = workspaceHash();
+    let proofs = 0;
     const runtime = () => createAdvanceRuntime({
       loadRuntime: () => structuredClone(stored),
       saveRuntime: (value) => { stored = structuredClone(value); },
@@ -223,10 +225,13 @@ test("advance settles a copy conflict once the agent's merge is provable, never 
       authorityStatusValue: () => ({ requests: [] }),
       readJson: () => ({ status: "PASS", workspaceHash: workspaceHash() }),
       proofAdvancePath: () => "unused", output: () => {}, hasLandGrant: () => true,
-      proofIsCurrent: () => false,
-      runProof: async () => { throw new Error("explicit Land must not rerun proof"); },
+      // Land requires current proof: the agent's merge edit re-proves before
+      // the next Land attempt instead of landing stale evidence.
+      proofIsCurrent: () => provenHash === workspaceHash(),
+      runProof: async () => { proofs += 1; provenHash = workspaceHash(); return { status: "PASS" }; },
       recoverSandbox: async () => fixture.sync(),
       runLand: async () => {
+        assert.equal(provenHash, workspaceHash(), "Land never runs on stale proof");
         lands += 1;
         if (!settled()) return { status: "BLOCKED", decision: targetHeadMovedDecision({ changeId: "demo" }) };
         stored = { ...stored, status: "archived" };
@@ -243,6 +248,7 @@ test("advance settles a copy conflict once the agent's merge is provable, never 
     write(join(fixture.sandbox, "merge.txt"), BOTH_EDITS);
     assert.equal((await runtime().advanceThrough("demo", "archived")).reached, "archived");
     assert.equal(settled(), true);
+    assert.equal(proofs, 2, "each agent merge edit is re-proven once");
     assert.equal(readFileSync(join(fixture.sandbox, "merge.txt"), "utf8"), BOTH_EDITS);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });

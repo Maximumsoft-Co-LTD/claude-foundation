@@ -466,19 +466,29 @@ assert.equal(rejectedResult.cursor.stage, "review-rejected");
 assert.deepEqual(rejectedResult.cursor.requestIds, ["review-rejected"]);
 assert.equal(rejected.requests.length, 1,
   "a rejected unchanged review must not create a doomed follow-up request");
+// One unchanged repair cycle is a strategy change for the agent, never a
+// user question: repetition counting belongs to the advance recovery ladder.
 const rejectedAgain = await quiet(() => rejected.runtime.proofAdvance("change-a"));
-assert.equal(rejectedAgain.status, "NEEDS_USER_DECISION");
-assert.equal(rejectedAgain.route, "NO_PROGRESS_DECISION");
+assert.equal(rejectedAgain.status, "ACTION_REQUIRED");
+assert.notEqual(rejectedAgain.route, "NO_PROGRESS_DECISION");
+assert.equal(rejectedAgain.route, rejectedResult.route,
+  "the no-progress cycle keeps the gate's own route");
 assert.equal(rejectedAgain.progressed, false);
-assert.equal(rejectedAgain.decision.kind, "repair-no-progress");
-assert.equal(rejectedAgain.cursor.route, "NO_PROGRESS_DECISION");
-assert.deepEqual(rejectedAgain.cursor.decision, rejectedAgain.decision,
-  "the durable cursor preserves the exact work decision");
+assert.equal(rejectedAgain.decision, undefined,
+  "an unchanged coding repair cycle raises no user decision");
+assert.equal(rejectedAgain.noProgress.reason, "NO_PROGRESS");
+assert.equal(rejectedAgain.noProgress.progressFingerprint, rejectedAgain.progressFingerprint);
+assert.equal(rejectedAgain.next[0].kind, "change-strategy");
+assert.equal(rejectedAgain.next[0].unchanged, true);
+assert.equal(rejectedAgain.next[0].progressFingerprint, rejectedAgain.progressFingerprint,
+  "the strategy change carries the unchanged fingerprint the gate returned");
+assert.ok(Array.isArray(rejectedAgain.next[0].findings),
+  "the strategy change carries the findings the gate returned");
 assert.deepEqual(rejectedAgain.cursor.next, rejectedAgain.next,
   "the durable cursor preserves the exact resume choices");
 assert.equal(rejectedAgain.next[0].command,
   "claude-foundation packet change-a --phase build",
-  "an unchanged rejected review pauses with supported choices and a resume route");
+  "an unchanged rejected review returns to Build with a different strategy");
 
 // Two overlapping advances (issue #42): B decided to run proof from the cursor
 // before A's failing pass; A's pass is not B's "no progress".
@@ -499,8 +509,9 @@ assert.equal(passB.status, "ACTION_REQUIRED",
 assert.notEqual(passB.route, "NO_PROGRESS_DECISION");
 const passC = await quiet(() => overlapping.runtime.proofAdvance("change-a",
   { "cursor-token": proofCursorToken(passB.cursor) }));
-assert.equal(passC.route, "NO_PROGRESS_DECISION",
-  "an unchanged rerun decided from the current cursor still reaches the boundary");
+assert.equal(passC.progressed, false,
+  "an unchanged rerun decided from the current cursor is still a no-progress round");
+assert.equal(passC.next[0].kind, "change-strategy");
 
 const failedReceipt = fixture({
   receiptOverrides: { review: "fail" },
@@ -521,11 +532,15 @@ assert.deepEqual(failedReceiptResult.repairBatch.findingIds, ["F-BLOCK"],
   "a real failed review receipt reaches the bounded repair route");
 const failedReceiptAgain = await quiet(() =>
   failedReceipt.runtime.proofAdvance("change-a"));
-assert.equal(failedReceiptAgain.status, "NEEDS_USER_DECISION",
-  "a repeated failed receipt pauses against the stable review subject");
-assert.equal(failedReceiptAgain.route, "NO_PROGRESS_DECISION");
+assert.equal(failedReceiptAgain.status, "ACTION_REQUIRED",
+  "a repeated failed receipt returns a strategy change against the stable review subject");
+assert.equal(failedReceiptAgain.route, "AUTO_REPAIR");
+assert.equal(failedReceiptAgain.progressed, false);
+assert.equal(failedReceiptAgain.next[0].kind, "change-strategy");
+assert.deepEqual(failedReceiptAgain.next[0].findingIds, ["F-BLOCK"],
+  "the strategy change carries the findings the gate returned");
 assert.equal(failedReceiptAgain.repairPlan.tasks.length, 1,
-  "the no-progress decision preserves the claim-bound repair plan");
+  "the no-progress repair preserves the claim-bound repair plan");
 assert.deepEqual(failedReceiptAgain.cursor.repairPlan, failedReceiptAgain.repairPlan,
   "the durable cursor preserves the repair plan across process restarts");
 
@@ -541,10 +556,13 @@ assert.equal(failedTestResult.stage, "evidence-failed");
 assert.equal(failedTestResult.repairPlan.tasks[0].findingIds[0], "test:fail");
 const failedTestAgain = await quiet(() =>
   failedTestEvidence.runtime.proofAdvance("change-a"));
-assert.equal(failedTestAgain.status, "NEEDS_USER_DECISION");
-assert.equal(failedTestAgain.route, "NO_PROGRESS_DECISION");
+assert.equal(failedTestAgain.status, "ACTION_REQUIRED");
+assert.equal(failedTestAgain.route, "AUTO_REPAIR");
+assert.equal(failedTestAgain.decision, undefined,
+  "unchanged failed evidence never asks the user after one cycle");
 assert.equal(failedTestAgain.progressed, false,
-  "unchanged failed evidence pauses instead of repeating an identical repair");
+  "unchanged failed evidence asks for a different strategy instead of repeating an identical repair");
+assert.equal(failedTestAgain.next[0].kind, "change-strategy");
 assert.equal(failedTestAgain.next[0].command,
   "claude-foundation packet change-a --phase build");
 
@@ -1335,7 +1353,7 @@ function realClosure(criticalCases) {
 {
   // Behavior-changing work whose tests pass on the base source is an agent
   // repair before the proof is finalized; changed tests are progress, an
-  // unchanged rerun reaches the existing no-progress boundary, and tests that
+  // unchanged rerun returns a change-strategy repair, and tests that
   // fail on base let the same gate finalize.
   const priorExitCode = process.exitCode;
   let verdict = "fail";
@@ -1363,8 +1381,11 @@ function realClosure(criticalCases) {
   assert.deepEqual(repair.repairPlan.tasks[0].paths, ["test/new.test.js"]);
   assert.equal(flow.counters().finalizations, 0);
   const unchanged = await quiet(() => flow.runtime.proofAdvance("change-a"));
-  assert.equal(unchanged.status, "NEEDS_USER_DECISION");
-  assert.equal(unchanged.route, "NO_PROGRESS_DECISION");
+  assert.equal(unchanged.status, "ACTION_REQUIRED");
+  assert.equal(unchanged.route, "AUTO_REPAIR");
+  assert.equal(unchanged.progressed, false);
+  assert.equal(unchanged.next[0].kind, "change-strategy");
+  assert.deepEqual(unchanged.next[0].findingIds, ["test-discrimination:root"]);
   flow.moveWorkspace("workspace-b");
   flow.setPhase("ready");
   verdict = "pass";

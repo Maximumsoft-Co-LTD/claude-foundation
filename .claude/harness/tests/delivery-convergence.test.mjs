@@ -270,13 +270,13 @@ function fixture({ status = "building", proofCursor = {}, runProof, runLand } = 
 test("resume during partial Land preserves the current route without applying again", () => {
   let calls = 0;
   const { runtime, state } = fixture({
-    status: "landing", proofCursor: { status: "PASS", workspaceHash: "workspace-a" },
+    status: "proven", proofCursor: { status: "PASS", workspaceHash: "workspace-a" },
     runLand: async () => { calls += 1; }
   });
   state.land = { status: "prepared" };
   const action = runtime.advanceValue("change-a", { inspect: true });
   const value = resumePacketValue({
-    packet: { version: 11, changeId: "change-a", status: "landing",
+    packet: { version: 11, changeId: "change-a", status: "proven",
       workspaceHash: "workspace-a", pendingTaskCount: 0, providers: [] },
     action, tasks: [], leases: [], stableHash, limit: 16_384
   });
@@ -582,6 +582,24 @@ test("advance preserves a proof decision returned by a quiet operation", async (
       "--decision-ref <user-answer> --reason <chosen-approach>");
   assert.deepEqual(value.user.decision.options.map(({ id, outcome }) => ({ id, outcome })),
     decision.options);
+});
+
+test("an unchanged proof repair cycle stays agent work, not a user question", async () => {
+  const { runtime } = fixture({
+    runProof: async () => ({
+      status: "ACTION_REQUIRED", route: "AUTO_REPAIR", progressed: false,
+      noProgress: { reason: "NO_PROGRESS", progressFingerprint: "fp-same", findingIds: ["F-1"] },
+      next: [{
+        kind: "change-strategy", reason: "choose a different in-scope repair",
+        unchanged: true, progressFingerprint: "fp-same", findingIds: ["F-1"],
+        command: "claude-foundation packet change-a --phase build"
+      }]
+    })
+  });
+  const value = await runtime.advanceThrough("change-a", "proven");
+  assert.equal(value.action, "REPAIR");
+  assert.equal(value.owner, "agent");
+  assert.notEqual(value.action, "ASK_USER");
 });
 
 test("an active proof lock becomes harness-owned working state", async () => {

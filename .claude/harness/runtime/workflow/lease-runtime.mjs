@@ -48,11 +48,34 @@ export function taskNodeOutputSchema(plan, taskId) {
   return undefined;
 }
 
+// A resource another lease holds is queued work, not a defect: the error names
+// its holder and carries a harness-owned wait boundary, so `advance` waits and
+// resumes instead of handing anyone a repair.
+export const LEASE_RESOURCE_HELD = "LEASE_RESOURCE_HELD";
+
+export function leaseWaitError(message, { changeId = null, taskId = null, key = null, held = null } = {}) {
+  const holder = [changeId, taskId].filter(Boolean).join("/") || "the holding lease";
+  const wait = {
+    owner: "harness", kind: "lease-resource",
+    holder: { changeId, taskId }, key, held,
+    condition: `${holder} releases ${held || key || "the shared resource"} (its task finishes, ` +
+      "its change lands or is abandoned, or its lease expires)."
+  };
+  return Object.assign(new Error(message), {
+    code: LEASE_RESOURCE_HELD, owner: "harness", boundary: "resource", wait, details: { wait }
+  });
+}
+
 export function leaseAcquisitionRequest(context, id, taskId, flags) {
   const owner = flags.owner;
   if (!taskId || !owner || !/^[a-zA-Z0-9._-]+$/.test(owner))
     context.fail("agents acquire requires <change> <task> --owner <agent-id>");
   const plan = context.agentPlanValue(id);
+  const queued = !plan.dispatchable && !(plan.blockingReasons || []).length
+    ? (plan.resourceWaits || [])[0] : null;
+  if (queued)
+    throw leaseWaitError(`change '${id}' is queued: ${queued.reason}`,
+      { changeId: queued.changeId, key: queued.key, held: queued.key });
   if (!plan.dispatchable)
     context.fail(`change '${id}' conflicts with active repository work`);
   const normalizedTaskId = taskId.toUpperCase();
@@ -85,14 +108,19 @@ export function acquireLeaseUnderLock(context) {
   const occupied = (context.workspaceLeases?.() || []).find((lease) =>
     lease.taskId !== task.id && (lease.repository || "root") === (task.repository || "root"));
   if (occupied)
-    throw new Error(`workspace '${task.repository || "root"}' conflicts with active task '${occupied.taskId}'`);
+    throw leaseWaitError(`workspace '${task.repository || "root"}' conflicts with active task '${occupied.taskId}'`,
+      { changeId: occupied.changeId || id, taskId: occupied.taskId,
+        key: `workspace:${task.repository || "root"}`, held: `workspace:${task.repository || "root"}` });
   const descriptors = context.resourceDescriptors();
   const renewal = leaseRenewalRows(descriptors, id, task.id, owner);
   const conflicts = leaseResourceConflicts(keys, descriptors, id, task.id, owner);
   if (conflicts.length) {
     const conflict = conflicts[0];
-    throw new Error(`scope '${conflict.key}' conflicts with '${conflict.held}' held by ${
-      conflict.descriptor.changeId || "unknown"}/${conflict.descriptor.taskId || "unknown"}`);
+    throw leaseWaitError(`scope '${conflict.key}' conflicts with '${conflict.held}' held by ${
+      conflict.descriptor.changeId || "unknown"}/${conflict.descriptor.taskId || "unknown"}`, {
+      changeId: conflict.descriptor.changeId || null, taskId: conflict.descriptor.taskId || null,
+      key: conflict.key, held: conflict.held
+    });
   }
   const sameRenewal = sameLeaseRenewalAuthority(
     renewal, keys, prior, owner, plan);
@@ -265,13 +293,15 @@ export function observedLeaseWrites(context, id, taskLease, force) {
     const others = (context.workspaceLeases?.() || []).filter((lease) =>
       lease.taskId !== taskLease.taskId && (lease.paths || []).length);
     const contested = [];
-    for (const path of observedWrites)
-      if (!leasePathIsAllowed(path, allowed) &&
-          others.some((lease) => leasePathIsAllowed(path, lease.paths)))
-        contested.push(path);
+    for (const path of observedWrites) {
+      if (leasePathIsAllowed(path, allowed)) continue;
+      const owners = others.filter((lease) => leasePathIsAllowed(path, lease.paths))
+        .map((lease) => lease.taskId);
+      if (owners.length) contested.push(`${path} (owned by ${[...new Set(owners)].join(", ")})`);
+    }
     if (contested.length)
       context.fail(`task '${taskLease.taskId}' changed outside granted scope: ${contested.join(", ")}; result and proof were not accepted. ` +
-        `These paths belong to another active task; revert them, then release again ` +
+        `These paths belong to the named active task; revert them, then release again ` +
         "(the lease is still held, so no re-acquire is needed)");
   }
   return observedWrites;

@@ -129,6 +129,9 @@ export function agentPlanGroupSummaries(groups, stableHash) {
 }
 
 export function agentPlanNext(output, id) {
+  if (!output.dispatchable && !output.blockingReasons?.length && output.resourceWaits?.length)
+    return `queued behind ${[...new Set(output.resourceWaits.map((row) => row.changeId))].join(", ")}; ` +
+      `claude-foundation advance ${id} resumes once the shared resource is released`;
   if (!output.dispatchable) return "resolve blockingReasons before dispatch";
   if (output.recommendedExecution === "proof-ready")
     return `claude-foundation proof readiness ${id}`;
@@ -154,6 +157,9 @@ export function agentPlanSummaryView(context, id, path, output) {
     planPath: relative(context.root, path).replaceAll("\\", "/"),
     dispatchable: output.dispatchable,
     blockingReasons: context.compactStrings(output.blockingReasons, 10),
+    // Shared resources another active change holds: queued, not blocked.
+    resourceWaits: context.compactStrings((output.resourceWaits || []).map((row) =>
+      `${row.changeId}: ${row.key}`), 10),
     // Scope shared with another active change is information, not a block:
     // name it so the session knows a later landing will synchronize.
     overlaps: context.compactStrings((output.overlaps || []).map((row) =>
@@ -225,7 +231,8 @@ export function showAgentTask(context, id, taskId, flags = {}) {
   if (!task && taskId && flags.allowCompleted)
     return context.showPacket(id, { task: taskId, pretty: flags.pretty, completedTask: true });
   if (!plan.dispatchable)
-    context.fail(`change '${id}' is not dispatchable: ${plan.blockingReasons.join("; ")}`);
+    context.fail(`change '${id}' is not dispatchable: ${[...plan.blockingReasons,
+      ...(plan.resourceWaits || []).map((row) => `queued: ${row.reason}`)].join("; ")}`);
   if (!task) context.fail(`unknown pending task '${taskId || ""}'`);
   context.showPacket(id, {
     repo: task.repository, task: task.id,
@@ -465,16 +472,28 @@ export function recoverCompletedTasksForExecution({
   };
 }
 
-export function agentPlanBlockingReasons(state, conflicts, authority = null) {
+// Defects of this change's own plan. A shared resource another active change
+// holds is not one: it is queued (see agentPlanResourceWaits).
+export function agentPlanBlockingReasons(state, authority = null) {
   return [
     ...(state.ambiguity === "unclear" ? ["ambiguity requires /investigate"] : []),
     ...(authority && authority.status !== "READY"
       ? authority.blockers.map((blocker) =>
         `${blocker.kind || "authority"}:${blocker.code}: ${blocker.summary}`)
-      : []),
-    ...conflicts.map((conflict) =>
-      `scope ${conflict.key} is active in ${conflict.changeId}`)
+      : [])
   ];
+}
+
+// Shared `[resources:]` another active change holds. The harness queues this
+// change behind the holder until it lands or is abandoned; nobody repairs it.
+export function agentPlanResourceWaits(conflicts) {
+  return conflicts.map((conflict) => ({
+    changeId: conflict.changeId,
+    key: conflict.key,
+    resource: String(conflict.key || "").split(" <> ")[0].replace(/^resource:/, "") || null,
+    status: conflict.status || null,
+    reason: `shared resource ${conflict.key} is held by active change ${conflict.changeId}`
+  }));
 }
 
 export function agentGraphProviderRows(context, id, contract) {
@@ -662,7 +681,8 @@ export function createAgentPlanner({
     }));
     const compiledContract = executionContract?.(id) || null;
     const authority = compiledContract?.authority || authorityPreflight(id);
-    const blockingReasons = agentPlanBlockingReasons(state, conflicts, authority);
+    const blockingReasons = agentPlanBlockingReasons(state, authority);
+    const resourceWaits = agentPlanResourceWaits(conflicts);
     const execution = agentExecutionSummary(tasks, singleAgent);
     const instructionManifest = options.inspect ? null : recordInstructionManifest?.(id, "build", {
       scope: "plan",
@@ -710,7 +730,10 @@ export function createAgentPlanner({
       authorityPreflight: authority,
       executionContract: compiledContract,
       blockingReasons,
-      dispatchable: blockingReasons.length === 0,
+      resourceWaits,
+      // A queued plan is not dispatchable yet, but it is not defective either:
+      // dispatch waits instead of reporting blockers.
+      dispatchable: blockingReasons.length === 0 && resourceWaits.length === 0,
       instructionProvenance: instructionManifest ? {
         schemaVersion: instructionManifest.schemaVersion,
         manifestDigest: instructionManifest.manifestDigest,

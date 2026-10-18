@@ -105,6 +105,20 @@ const phase = String(process.env.FOUNDATION_ACTIVE_PHASE ||
 const mode = devSession || landAuthorityCommand || deliverAuthorityCommand ||
   deliverInvocation || configuredMode === "block" ||
   (configuredMode === "auto" && Boolean(phase)) ? "block" : "audit";
+// `land advance` is a compatibility alias. It is rewritten to the public
+// proof-required route in every session and mode, /land included, so no
+// spelling reaches Land by a path other than `advance --through archived`.
+if (landAuthorityCommand && /\sland(?:-|\s+)advance\s/.test(harnessCommand)) {
+  const changeArgument = harnessCommand.trim().match(/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\s*$/)?.[1];
+  const routed = `claude-foundation advance ${changeArgument} --through archived`;
+  recordAudit({ phase: phase || "unknown", tool, mode, outcome: "routed",
+    reason: "land advance is an alias of advance --through archived",
+    command: String(input.command || "") });
+  respond({ ...input, command: routed },
+    `phase guard routed '${harnessCommand.trim()}' to '${routed}', the public Land route. ` +
+    "Land only on an explicit user instruction to land.");
+  process.exit(0);
+}
 const recordedRuntime = recorded?.changeId ? runtimeState(recorded.changeId) : null;
 const recordedWorkspace = recordedRuntime?.workspace?.path
   ? canonicalTarget(recordedRuntime.workspace.path, projectRoot) || "" : "";

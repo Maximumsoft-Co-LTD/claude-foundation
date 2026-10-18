@@ -2,10 +2,22 @@ import { gateDigest } from "../core/convergent-gate.mjs";
 
 const text = (value) => typeof value === "string" ? value.trim() : "";
 
-// The recovery ladder: the agent repairs, then tries one materially different
-// approach, then the user is asked. Each rung is one unchanged round.
+// The recovery ladder: the owner repairs, then tries one materially different
+// approach, then receives a bounded strategy change carrying every attempt and
+// the output that kept repeating. Each rung is one unchanged round. Only a
+// boundary the user owns (approval, Land, external side effect, product
+// meaning, spend) becomes a question; repeated code, harness, or setup work
+// stays with its owner.
 export const ALTERNATE_AFTER_ROUNDS = 2;
 export const ASK_AFTER_ROUNDS = 3;
+export const STRATEGY_AFTER_ROUNDS = ASK_AFTER_ROUNDS;
+
+// Boundaries only the user may cross.
+export const USER_AUTHORITY_BOUNDARIES = new Set([
+  "user-authority", "land-authority", "spec-approval", "approval",
+  "external-side-effect", "product-decision", "product-meaning",
+  "budget", "budget-no-progress", "spend"
+]);
 
 // Lifecycle primitives AGENT.md does not let the agent run. A route that names
 // one is rewritten to the `advance` route that performs the same step.
@@ -222,6 +234,47 @@ const REPAIR_INSTRUCTIONS = {
   NO_PROGRESS_BOUNDARY: "Change the input that keeps the operation idempotent (code, agreement, or evidence wiring)"
 };
 
+// The third unchanged round changes strategy instead of asking. The agent
+// gets a bounded set of different approaches; a harness-owned route keeps its
+// own step and is told not to repeat it unchanged.
+function strategyChangeInstruction(value, owner, rounds) {
+  const route = value.legacyAction || value.action;
+  const last = text(value.instruction) || (text(value.command) ? `run \`${text(value.command)}\`` : "");
+  const approaches = owner === "agent"
+    ? "Choose exactly one approach not listed in attemptedStrategies[]: reproduce the failure " +
+      "in isolation from repetition.output, revert the last repair and fix the cause at a " +
+      "different layer, or correct the test or evidence wiring that reports it. Stay inside the " +
+      "approved agreement and the task paths; a needed behavior change is one semantic amendment."
+    : "Do not rerun the same step unchanged: run its command, read repetition.output, and fix " +
+      "what it reports in the workspace, the declared setup in foundation.json, or the sandbox.";
+  return `${route} returned the same result ${rounds} times without progress.` +
+    `${last ? ` The last route was: ${last}.` : ""} ${approaches} Then run the resume command; ` +
+    "repetition.rounds keeps counting until the delivery state changes.";
+}
+
+function repetitionEvidence(value, attempt) {
+  return {
+    rounds: attempt.count,
+    firstObservedAt: attempt.firstObservedAt || attempt.observedAt,
+    lastObservedAt: attempt.observedAt,
+    output: String(value.reason || "").slice(0, 2000),
+    ...(value.details ? { details: boundedJson(value.details) } : {}),
+    ...(value.verificationFailures?.length ? {
+      verification: value.verificationFailures.slice(0, 8).map((row) => ({
+        taskId: row.taskId || null, command: row.command || null,
+        exitCode: row.exitCode ?? null, output: String(row.output || "").slice(-1000)
+      }))
+    } : {})
+  };
+}
+
+function boundedJson(value) {
+  try {
+    const encoded = JSON.stringify(value);
+    return encoded.length <= 4000 ? value : encoded.slice(0, 4000);
+  } catch { return null; }
+}
+
 function repairInstruction(value) {
   const base = REPAIR_INSTRUCTIONS[value.legacyAction] ||
     `Fix the reported cause${value.repairTarget?.field ? ` in '${value.repairTarget.field}'` : ""}`;
@@ -369,18 +422,7 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       attemptedStrategies: strategies(record),
       // The evidence of repetition the user decides on: how many unchanged
       // rounds, since when, and the output that kept repeating.
-      ...(attempt ? { repetition: {
-        rounds: attempt.count,
-        firstObservedAt: attempt.firstObservedAt || attempt.observedAt,
-        lastObservedAt: attempt.observedAt,
-        output: String(value.reason || "").slice(0, 2000),
-        ...(value.verificationFailures?.length ? {
-          verification: value.verificationFailures.slice(0, 8).map((row) => ({
-            taskId: row.taskId || null, command: row.command || null,
-            exitCode: row.exitCode ?? null, output: String(row.output || "").slice(-1000)
-          }))
-        } : {})
-      } } : {}),
+      ...(attempt ? { repetition: repetitionEvidence(value, attempt) } : {}),
       wait: null
     };
   }
@@ -493,16 +535,45 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
         recoveryType: "EDIT"
       };
     }
-    if (force || attempt.count >= ASK_AFTER_ROUNDS) {
-      const pending = record.pending?.key === key ? record.pending : {
-        key, decision: decision(id, value, record, attempt), through: routeThrough(value)
-      };
-      record.pending = pending;
+    if (force || attempt.count >= STRATEGY_AFTER_ROUNDS) {
+      // A user-owned boundary is the user's to cross; everything else is
+      // repaired by its owner with a changed strategy and is never asked.
+      if (USER_AUTHORITY_BOUNDARIES.has(value.boundary)) {
+        const pending = record.pending?.key === key ? record.pending : {
+          key, decision: decision(id, value, record, attempt), through: routeThrough(value),
+          legacyAction: "NO_PROGRESS_BOUNDARY", boundary: value.boundary
+        };
+        record.pending = pending;
+        save(state, record);
+        return ask(value, pending);
+      }
       save(state, record);
-      return ask(value, pending);
+      return strategyChange(value, record, attempt);
     }
     save(state, record);
     return value;
+  }
+
+  // Owner-preserving: the agent keeps code work; a harness, operator, or
+  // reviewer-infrastructure route stays harness-owned with its own command
+  // and automatic recovery, so the harness keeps automating it.
+  function strategyChange(value, record, attempt) {
+    const declared = value.owner || value.actor;
+    const owner = declared && !["agent", "user"].includes(declared) ? "harness" : "agent";
+    const { command: _command, ...agentValue } = value;
+    const recoveryType = owner === "agent" ? "EDIT" : "HANDOFF";
+    return { ...(owner === "harness" ? value : agentValue), action: "REPAIR", actor: owner, owner,
+      legacyAction: "NO_PROGRESS_BOUNDARY", boundary: "repeated-no-progress",
+      repeatedAction: value.legacyAction || value.action,
+      reason: `The same ${value.action === "EDIT" ? "verify failure" : "repair"} returned ${
+        attempt.count} times without progress: ${value.reason}`,
+      instruction: strategyChangeInstruction(value, owner, attempt.count),
+      attemptedStrategies: strategies(record),
+      repetition: repetitionEvidence(value, attempt),
+      recoveryType,
+      recovery: { type: recoveryType, statePreserved: true,
+        alternatives: ["change strategy using repetition and attemptedStrategies, then resume"] }
+    };
   }
 
   function pending(id) {
@@ -511,7 +582,12 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
     // require complete repository bindings before Build can repair them.
     if (!state.advanceRecovery?.pending) return null;
     const { record } = read(id, state);
-    return record.pending || null;
+    // An unanswered repetition question recorded before repeated repair
+    // stopped asking carries no user boundary and no longer holds delivery.
+    // Typed, budget, and user-authority questions record their boundary.
+    const current = record.pending;
+    if (current && !current.paused && !current.boundary && !current.legacyAction) return null;
+    return current || null;
   }
 
   function resolve(id, flags) {

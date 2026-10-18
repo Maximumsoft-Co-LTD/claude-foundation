@@ -1020,7 +1020,7 @@ export function terminalChangeId(execution, fallback = null) {
 }
 
 export function backendLandArgs(changeId) {
-  return ["land-advance", changeId];
+  return ["advance", changeId, "--through", "archived"];
 }
 
 // Raw test runners are deliberately not pre-allowed in consumers, so the

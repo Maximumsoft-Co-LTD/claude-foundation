@@ -301,7 +301,7 @@ function activeWorkspace(projectRoot, changeId, git = null) {
   try { runtime = JSON.parse(readFileSync(runtimePath, "utf8")); }
   catch { return { root: null, binding: null,
     issues: [`active change '${changeId}' runtime state is unreadable`] }; }
-  if (["landing", "applied", "archived"].includes(text(runtime.status).toLowerCase()))
+  if (["applied", "archived"].includes(text(runtime.status).toLowerCase()))
     return { root: null, binding: null,
       issues: [`active change '${changeId}' has already entered Land`] };
   const workspace = runtime.workspace || {};
@@ -546,8 +546,19 @@ export function createInvestigationRuntime({
     const openDecisions = (record?.decisions || []).filter(isOpen);
     const outcome = derivedConclusionStatus(record);
     const frontier = intakeFrontier(record);
+    // A missing, stale, or unreadable Build sandbox is a harness fault: the
+    // record cannot repair it, so it goes to the harness on the first run. A
+    // change that already entered Land is a stale record binding instead.
+    const sandboxIssues = workspace.issues.filter((issue) => !/already entered Land/.test(issue));
     let action;
-    if (issues.length) action = { action: "EDIT", owner: "agent", boundary: "investigation-record",
+    if (sandboxIssues.length) action = {
+      action: "EDIT", owner: "harness", boundary: "investigation-workspace",
+      reason: "The active change's Build sandbox is missing, stale, or unreadable; " +
+        "repair the harness or sandbox, then rerun the same record.",
+      investigation: { kind: "repair-harness", issues: unique(sandboxIssues),
+        recordIssues: unique(issues.filter((issue) => !sandboxIssues.includes(issue))) }, resume
+    };
+    else if (issues.length) action = { action: "EDIT", owner: "agent", boundary: "investigation-record",
       reason: "Repair the investigation record and evidence bindings.",
       investigation: { kind: "repair-record", issues: unique(issues) }, resume };
     else if (outcome === "not-worth-changing" && !(record.facts || []).length) action = {
@@ -602,6 +613,13 @@ export function createInvestigationRuntime({
       action: "EDIT", owner: "agent", boundary: "investigation-synthesis",
       reason: "Synthesize the settled evidence into a terminal investigation conclusion.",
       investigation: { kind: "conclude" }, resume
+    };
+    else if (outcome === "needs-user-decision") action = {
+      action: "EDIT", owner: "agent", boundary: "investigation-questions",
+      reason: "A material question is blocked and cannot be asked yet; " +
+        "answer, defer, or unlink the questions it depends on.",
+      investigation: { kind: "resolve-blocked-questions",
+        keys: (frontier.open || []).filter((q) => q.material).map((q) => q.key) }, resume
     };
     else action = { action: "DONE", owner: "harness", boundary: "investigation",
       reason: "The investigation is source-grounded and has a terminal conclusion.", resume };
@@ -714,6 +732,14 @@ export function createInvestigationRuntime({
       reason: `Investigation state is preserved, but the readable report is unavailable: ${report.reason}`,
       resume, investigation: { kind: "regenerate-report", outcome: action.action }
     };
+    // The persisted status must match what was presented: a report failure
+    // never leaves a DONE state that a Change handoff binding would accept.
+    if (presentation !== action) {
+      state.status = presentation.action;
+      state.action = presentation;
+      state.stateDigest = investigationStateDigest(state);
+      writeJson(path, state);
+    }
     const result = { ...presentation, state: { path: relative(projectRoot, path).replaceAll("\\", "/"),
       revision: state.revision, digest: state.stateDigest }, noProgress: state.noProgress,
       metrics: state.metrics, handoff: report.status === "current" ? handoff : null, report };

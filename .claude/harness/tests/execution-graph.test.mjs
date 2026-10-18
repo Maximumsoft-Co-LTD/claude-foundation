@@ -282,7 +282,16 @@ test("lease: independent workspaces acquire atomically with increasing fencing",
   assert.equal(one.executionAttempt, 3);
   assert.equal(two.executionAttempt, 1);
   assert.ok(existsSync(join(root, "tasks", "c", "T001.json")));
-  assert.throws(() => runtime.acquire("c", "T003", { owner: "c" }), /conflicts with/);
+  assert.throws(() => runtime.acquire("c", "T003", { owner: "c" }), (error) => {
+    assert.match(error.message, /conflicts with/);
+    assert.equal(error.code, "LEASE_RESOURCE_HELD", "a held resource is queued, not a runtime failure");
+    assert.equal(error.owner, "harness");
+    assert.equal(error.wait.kind, "lease-resource");
+    assert.equal(error.wait.holder.changeId, "c");
+    assert.match(error.wait.holder.taskId, /^T00[12]$/);
+    assert.match(error.wait.condition, /releases/);
+    return true;
+  });
   assert.equal(existsSync(join(root, "tasks", "c", "T003.json")), false);
   runtime.release("c", "T002", { owner: "b" });
   assert.equal(existsSync(join(root, "tasks", "c", "T002.json")), false,

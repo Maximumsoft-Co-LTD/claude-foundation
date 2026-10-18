@@ -3,8 +3,8 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 
 import {
-  coordinatorAction, createAdvanceRuntime, envelopeContextFiles, hasValidLandGrant,
-  prepareAdvanceBuild, proofOperationAction, runAdvanceProof
+  advanceFailureAction, coordinatorAction, createAdvanceRuntime, envelopeContextFiles,
+  hasValidLandGrant, noProgressOutput, prepareAdvanceBuild, proofOperationAction, runAdvanceProof
 } from "../runtime/workflow/advance-runtime.mjs";
 
 test("a running proof's WORKING action carries its progress to the caller", () => {
@@ -294,6 +294,43 @@ test("Land readiness forbids implicit delivery authority", () => {
   assert.equal(value.action, "ASK_USER");
   assert.equal(value.legacyAction, "LAND_READY");
   assert.deepEqual(value.forbidden, ["commit", "push", "publish", "open-pr", "waive"]);
+  assert.equal(value.command, "claude-foundation advance change-a --through archived",
+    "Land readiness names the public advance route, never `land advance`");
+});
+
+test("the retired `landing` status is not read as proven", () => {
+  const value = coordinatorAction({ ...base, state: { status: "landing" }, proofIsCurrent: false });
+  assert.notEqual(value.legacyAction, "RUN_INVALIDATED_EVIDENCE");
+  assert.notEqual(value.legacyAction, "LAND_READY");
+});
+
+test("a shared resource another change holds queues Build as a harness wait", () => {
+  const value = coordinatorAction({ ...base, state: { status: "building" }, dispatch: {
+    action: "wait", waitKind: "cross-change-resource", reason: "queued behind active change other",
+    holders: ["other"], resourceWaits: [{ changeId: "other", key: "resource:staging-db <> resource:staging-db" }]
+  } });
+  assert.equal(value.action, "WAIT");
+  assert.equal(value.legacyAction, "WAIT_RESOURCE");
+  assert.equal(value.owner, "harness");
+  assert.equal(value.wait.kind, "cross-change-resource");
+  assert.deepEqual(value.wait.holders, ["other"]);
+  assert.match(value.wait.condition, /other lands/);
+  assert.equal(value.wait.checkCommand, "claude-foundation advance change-a");
+  assert.equal(value.userState, "WORKING", "a queued change never reaches the user");
+});
+
+test("a held lease resource is a harness wait, not a runtime repair", () => {
+  const error = Object.assign(new Error("scope 'resource:db' conflicts with 'resource:db' held by other/T001"), {
+    code: "LEASE_RESOURCE_HELD", owner: "harness", boundary: "resource",
+    wait: { owner: "harness", kind: "lease-resource", holder: { changeId: "other", taskId: "T001" },
+      condition: "other/T001 releases resource:db" }
+  });
+  const value = advanceFailureAction("change-a", error, { stage: "build", through: "build" });
+  assert.equal(value.action, "WAIT");
+  assert.equal(value.legacyAction, "WAIT_RESOURCE");
+  assert.equal(value.owner, "harness");
+  assert.equal(value.wait.holder.changeId, "other");
+  assert.equal(value.wait.checkCommand, "claude-foundation advance change-a --through build");
 });
 
 test("successful proof and current review request supersede stale review failure", () => {
@@ -502,6 +539,48 @@ test("advance --through runs deterministic proof and Land until archived", async
   assert.equal(proofRuns, 1);
   assert.equal(landRuns, 1);
   assert.equal(grants, 1);
+});
+
+test("a Land grant over a change returned to Build re-proves before Land in the same call", async () => {
+  // Root-pointer staging or a target-edit/sandbox sync sent the change back
+  // to Build while a Land transaction holds a valid grant: proof is stale.
+  const state = { status: "building", workspace: { path: "/tmp/change" } };
+  let hash = "workspace-b";
+  let proofRuns = 0;
+  let landRuns = 0;
+  let saves = 0;
+  const runtime = createAdvanceRuntime({
+    loadRuntime: () => structuredClone(state),
+    saveRuntime: (next) => { saves += 1; Object.assign(state, next); },
+    agentDispatchValue: () => ({ action: "build-complete" }),
+    relevantHash: () => hash,
+    deliveredAiAttempts: () => [],
+    authorityStatusValue: () => ({ requests: [] }),
+    readJson: () => ({ status: "PASS", workspaceHash: proofRuns ? hash : "workspace-a" }),
+    proofAdvancePath: () => "/proof.json",
+    stableHash,
+    hasLandGrant: () => true,
+    proofIsCurrent: () => proofRuns > 0,
+    authorizeLand: () => { throw new Error("the retained grant is reused, never reissued"); },
+    runProof: async () => {
+      assert.equal(landRuns, 0, "stale proof is refreshed before Land");
+      proofRuns += 1;
+      state.status = "proven";
+      return { progressed: true, completed: true };
+    },
+    runLand: async () => {
+      assert.equal(state.status, "proven", "Land only runs on current proof");
+      landRuns += 1;
+      state.status = "archived";
+    }
+  });
+  const value = await runtime.advanceThrough("change-a", "archived");
+  assert.equal(value.action, "DONE");
+  assert.equal(value.reached, "archived");
+  assert.equal(proofRuns, 1);
+  assert.equal(landRuns, 1);
+  assert.equal(state.advanceRecovery, undefined, "re-proving never enters the recovery ladder");
+  assert.ok(saves >= 1);
 });
 
 test("advance --through build stops before proof and preserves one resume route", async () => {
@@ -714,18 +793,34 @@ test("advance convergence stops only after repeated unchanged automation", async
     relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
     authorityStatusValue: () => ({ requests: [] }), readJson: () => ({}),
     proofAdvancePath: () => "/proof.json", stableHash,
-    runProof: async () => { proofRuns += 1; return { progressed: false }; }
+    runProof: async () => {
+      proofRuns += 1;
+      return { progressed: false, issues: ["provider 'test' has no command in execution.yaml"],
+        next: [{ reason: "wire the test provider", command: "claude-foundation evidence init change-a --write" }] };
+    }
   });
   const value = await runtime.advanceThrough("change-a", "proven");
   // Unchanged automation hands the stuck step to the agent with what it
-  // returned; the recovery ladder asks the user only after repeated repair.
+  // returned; repeated rounds stay agent repair (the ladder changes strategy).
   assert.equal(value.action, "REPAIR");
   assert.equal(value.owner, "agent");
   assert.equal(value.boundary, "repeated-no-progress");
   assert.equal(value.recovery.type, "HANDOFF");
   assert.match(value.reason, /RUN_PROOF/);
-  assert.equal(value.command, "claude-foundation advance change-a --inspect");
+  assert.equal(value.command, undefined, "no constant inspect-only route");
+  assert.match(value.instruction, /provider 'test' has no command in execution\.yaml/);
+  assert.match(value.instruction, /wire the test provider/);
+  assert.match(value.step.output, /no command in execution\.yaml/);
+  assert.doesNotMatch(value.instruction, /claude-foundation evidence init/,
+    "a primitive the step named is routed through advance");
   assert.equal(proofRuns, 2);
+});
+
+test("unchanged-step output is one bounded actionable line", () => {
+  assert.equal(noProgressOutput(null), "");
+  assert.equal(noProgressOutput({ reason: " r ", issues: ["a", { message: "b" }],
+    next: [{ reason: "c", command: "x" }, { command: "y" }, {}] }), "r; a; b; c (x); next (y)");
+  assert.ok(noProgressOutput({ issues: ["z".repeat(5000)] }).length <= 2000);
 });
 
 test("a weak host can finish by reading one action and calling its resume", async () => {

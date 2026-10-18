@@ -81,13 +81,15 @@ test("a fresh proof carries no recovery hint", () => {
   assert.doesNotMatch(result.stdout + result.stderr, /finish contract and code edits/);
 });
 
-test("a stale proof remains landable and is reported truthfully", () => {
+test("a stale proof is not landable and names the proving route", () => {
   const { fixture, workspacePath } = proven();
   appendFileSync(join(workspacePath, "app.txt"), "post-prove edit\n");
   const result = cli(fixture, "land-check", "stale-probe");
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /LAND READY stale-probe/);
-  assert.match(result.stdout, /assurance: stale/);
+  assert.notEqual(result.status, 0);
+  const output = result.stdout + result.stderr;
+  assert.doesNotMatch(output, /LAND READY/);
+  assert.match(output, /Land requires current passing proof .*assurance: stale/);
+  assert.match(output, /advance stale-probe --through archived/);
 });
 
 test("a stale authority request is re-requested by the harness, never recorded", () => {

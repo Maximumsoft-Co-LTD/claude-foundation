@@ -14,8 +14,10 @@ const PREFLIGHT_SCAN_MAX_BYTES = 1024 * 1024;
 // More out-of-scope paths than this is almost always generated output that
 // belongs in .gitignore, not work the change means to land.
 const SURFACE_ADDITION_LIMIT = 100;
-// Control-plane, CI, and secret paths are never recorded silently: an edit to
-// hook wiring or CI must be declared in a task's `[paths:]` to land.
+// Control-plane, CI, and secret paths are never recorded silently: an edit
+// outside every task's `[paths:]` is recorded with `protected: true`, reported
+// in readiness, and carried to Land, which presents it before applying. Only
+// the path is ever reported; a secret file's contents are never read here.
 const PROTECTED_SURFACE = [
   /^\.claude\//, /^\.codex\//, /^\.github\//, /^\.gitlab-ci\.yml$/,
   /^foundation\.json$/, /^openspec\/[^/]+\.ya?ml$/, /^openspec\/schemas\//,
@@ -24,6 +26,19 @@ const PROTECTED_SURFACE = [
 ];
 export function protectedSurfacePath(path) {
   return PROTECTED_SURFACE.some((pattern) => pattern.test(path));
+}
+
+// The smallest ignore rules that cover a spill: each path's top-level
+// directory, or the file itself at the repository root.
+export function generatedOutputPatterns(paths = []) {
+  return [...new Set(paths.map((path) => {
+    const separator = path.indexOf("/");
+    return separator === -1 ? `/${path}` : `/${path.slice(0, separator)}/`;
+  }))].sort();
+}
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
 
 export function filesystemLiteralSearch(root, literal, inputs = ["*"]) {
@@ -749,14 +764,18 @@ export function createProofReadinessRuntime({
   // `[paths:]` is bookkeeping inside the isolated sandbox, so an edit outside
   // it no longer blocks Prove. The path is recorded in `surfaceAdditions`,
   // which puts it in the proven hash and the Land projection, and `recorded`
-  // (when supplied) collects it for the readiness output. A misplaced sandbox,
-  // an implausibly large spill, a deletion (Land's deletion guard must keep
-  // meaning something), and a control-plane, CI, or secret path still block.
+  // (when supplied) collects it for the readiness output. Land is the single
+  // hard gate, so a control-plane, CI, or secret path is recorded with
+  // `protected: true` and a path the sandbox removed with `deleted: true`;
+  // both stay visible in readiness and in the Land projection. A deletion is
+  // recorded only as the exact path the sandbox's own change surface reports
+  // removed, so Land's deletion guard still never deletes an unrelated target
+  // path. A misplaced sandbox and an implausibly large spill still raise an
+  // issue, with `details` naming the concrete repair (`reason`).
   // Read-only inspection reports additions without persisting them.
   function changedSurfaceIssues(id, details = null, recorded = null, { persist = true } = {}) {
     const state = loadRuntime(id);
     const additions = surfaceAdditionEntries(state.surfaceAdditions);
-    const before = additions.length;
     const recordedEntries = [];
     const tasks = taskBlocks(readFileSync(join(activeChangePath(id), "tasks.md"), "utf8"))
       .map(taskMetadata);
@@ -794,23 +813,44 @@ export function createProofReadinessRuntime({
             "workspace under .foundation/sandboxes/ is a different checkout)"
           : "";
         const workspace = repository.workspacePath;
-        const recordable = misplacedHint || outside.length > SURFACE_ADDITION_LIMIT
-          ? [] : outside.filter((path) => !protectedSurfacePath(path) &&
-            (!workspace || existsSync(join(workspace, path))));
-        if (recordable.length) {
-          for (const path of recordable)
-            recordedEntries.push({ repositoryId: repository.id, path });
-          recorded?.push({ repositoryId: repository.id, paths: recordable });
+        const oversized = outside.length > SURFACE_ADDITION_LIMIT;
+        if (!misplacedHint && !oversized) {
+          const protectedPaths = outside.filter(protectedSurfacePath);
+          // Without a known workspace the removal cannot be observed, so the
+          // path is recorded without a deletion claim.
+          const deletedPaths = workspace
+            ? outside.filter((path) => !existsSync(join(workspace, path))) : [];
+          for (const path of outside)
+            recordedEntries.push({
+              repositoryId: repository.id, path,
+              ...(protectedPaths.includes(path) ? { protected: true } : {}),
+              ...(workspace ? { deleted: deletedPaths.includes(path) } : {})
+            });
+          recorded?.push({
+            repositoryId: repository.id, paths: outside,
+            ...(protectedPaths.length ? { protected: protectedPaths } : {}),
+            ...(deletedPaths.length ? { deleted: deletedPaths } : {})
+          });
+          continue;
         }
-        const refused = outside.filter((path) => !recordable.includes(path));
-        if (!refused.length) continue;
         issues.push(`repository '${repository.id}' changed outside task paths: ${
-          refused.join(", ")}${misplacedHint}`);
-        details?.push({ repositoryId: repository.id, paths: refused });
+          outside.join(", ")}${misplacedHint}${oversized && !misplacedHint
+          ? `; ${outside.length} paths exceed the ${SURFACE_ADDITION_LIMIT}-path ` +
+            "recording limit — ignore generated output in .gitignore" : ""}`);
+        details?.push({
+          repositoryId: repository.id, paths: outside,
+          reason: misplacedHint ? "misplaced-sandbox" : "oversized-spill",
+          workspacePath: workspace || null,
+          ...(misplacedHint ? {
+            targets: selectedRepositories(id, state)
+              .filter((row) => childTaskIds.includes(row.id))
+              .map((row) => ({ repositoryId: row.id, workspacePath: row.workspacePath || null }))
+          } : {})
+        });
       }
     }
     const merged = mergeSurfaceAdditions(additions, recordedEntries);
-    if (persist && merged.length !== before) {
+    if (persist && JSON.stringify(merged) !== JSON.stringify(additions)) {
       state.surfaceAdditions = merged;
       saveRuntime?.(state);
       clearSnapshotCache(id);
@@ -948,15 +988,59 @@ export function createProofReadinessRuntime({
     }];
   }
 
+  function surfaceRepair(id, fixit) {
+    const verify = `claude-foundation proof readiness ${id}`;
+    if (fixit.reason === "misplaced-sandbox") {
+      const targets = fixit.targets || [];
+      const destination = targets.length
+        ? targets.map((row) => `'${row.repositoryId}' at ${
+          row.workspacePath || `.foundation/repository-sandboxes/${id}/${row.repositoryId}`}`)
+          .join(" or ")
+        : `.foundation/repository-sandboxes/${id}/<repository>`;
+      return {
+        kind: "move-to-repository-sandbox",
+        reason: `the root workspace${fixit.workspacePath ? ` (${fixit.workspacePath})` : ""
+        } carries work that every implementation task assigns to a child repository`,
+        repositoryId: fixit.repositoryId,
+        paths: fixit.paths,
+        targets,
+        instruction: `Move each listed path out of the root workspace into the owning repository sandbox ${
+          destination} (same path relative to that repository), restore the root workspace copy, then rerun readiness.`,
+        command: verify,
+        verify
+      };
+    }
+    const patterns = generatedOutputPatterns(fixit.paths);
+    const gitignore = fixit.workspacePath ? join(fixit.workspacePath, ".gitignore") : ".gitignore";
+    return {
+      kind: "ignore-generated-output",
+      reason: `${fixit.paths.length} paths changed outside task paths in repository '${
+        fixit.repositoryId}', over the ${SURFACE_ADDITION_LIMIT}-path recording limit; this is almost always generated output`,
+      repositoryId: fixit.repositoryId,
+      paths: fixit.paths,
+      patterns,
+      instruction: `Add the generated-output patterns to ${gitignore} (or stop the step that writes them), then rerun readiness. If these paths are intended work, amend the change scope with /change ${id} instead.`,
+      command: `printf '%s\\n' ${patterns.map(shellQuote).join(" ")} >> ${shellQuote(gitignore)}`,
+      agentCommand: `/change ${id}`,
+      verify
+    };
+  }
+
   function configurationRecovery(id, issues, surfaceFixits = []) {
+    const declared = surfaceFixits.filter((fixit) => !fixit.reason);
     return [
+      // A misplaced sandbox or an oversized spill is agent work with a
+      // concrete repair, never a bare diagnosis: name the exact move or the
+      // exact ignore rule, plus the readiness rerun that confirms it.
+      ...surfaceFixits.filter((fixit) => fixit.reason)
+        .map((fixit) => surfaceRepair(id, fixit)),
       // The changed-surface blocker already names every offending path; this
       // entry restates them in the exact form `tasks.md` accepts, so clearing
       // the block is a paste instead of a reconstruction.
-      ...(surfaceFixits.length ? [{
+      ...(declared.length ? [{
         kind: "declare-surface",
         reason: `append each listed annotation to the owning task's [paths:] in openspec/changes/${id}/tasks.md, then rerun readiness`,
-        choices: surfaceFixits.map((fixit) => ({
+        choices: declared.map((fixit) => ({
           instruction: `repository '${fixit.repositoryId}': [paths:${fixit.paths.join(",")}]`
         }))
       }] : []),

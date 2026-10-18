@@ -66,14 +66,36 @@ test("Land grant cannot cross a session or stale proof identity", () => {
   assert.equal(runtime.valid("change-a").reason, "stale-land-grant");
 });
 
-test("Land grant binds the current workspace even without proof", () => {
-  const f = fixture({ proofMissing: true });
+test("Land grant is never issued without passing proof", () => {
+  // landCheck owns the proof gate; a refused check leaves no grant behind.
+  const f = fixture({ proofMissing: true, landCheck: () => {
+    throw new Error("Land requires current passing proof for 'change-a' (assurance: missing; no-proof)");
+  } });
+  assert.throws(() => f.runtime.issue("change-a"), /Land requires current passing proof/);
+  assert.equal(f.runtime.read("change-a"), null);
+  assert.equal(f.runtime.valid("change-a").reason, "missing-land-grant");
+});
+
+test("Land grant binds the current workspace hash", () => {
+  const f = fixture();
   const grant = f.runtime.issue("change-a");
-  assert.equal(grant.binding.proofRunId, null);
   assert.equal(grant.binding.workspaceHash, "hash-a");
-  assert.equal(f.runtime.valid("change-a").valid, true);
   f.setWorkspaceHash("hash-b");
   assert.equal(f.runtime.valid("change-a").reason, "stale-land-grant");
+});
+
+test("Land grant carries protected and deleted paths for presentation", () => {
+  const surface = {
+    protected: [{ repositoryId: "root", path: ".env" }],
+    deleted: [{ repositoryId: "api", path: "src/gone.js" }],
+    requiresPresentation: true
+  };
+  const f = fixture({ landCheck: () => ({ archived: false, surface }) });
+  const grant = f.runtime.issue("change-a");
+  assert.deepEqual(grant.surface, { protected: surface.protected, deleted: surface.deleted });
+  assert.equal(f.runtime.valid("change-a").valid, true);
+  const plain = fixture();
+  assert.equal("surface" in plain.runtime.issue("change-a"), false);
 });
 
 test("consumed Land authority cannot be reused", () => {

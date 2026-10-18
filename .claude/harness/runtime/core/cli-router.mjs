@@ -75,7 +75,6 @@ export async function routeRuntimeCommand(command, values, api) {
     prove,
     landCheck,
     grantLand,
-    grantLandQuietly = null,
     advanceLand,
     recoverLand,
     showLandPlan,
@@ -833,10 +832,10 @@ export async function routeRuntimeCommand(command, values, api) {
       landCheck(values[0], { preflight: "inspect" });
     },
     "land-advance": async () => {
+      // Compatibility alias for `advance <id> --through archived`. It grants
+      // nothing up front: a pre-issued grant would let advance skip straight
+      // to Land, so the alias takes the same proof-required route.
       if (showAdvance) {
-        // The envelope is this route's whole stdout, first run included.
-        if (grantLandQuietly) grantLandQuietly(values[0]);
-        else if (grantLand) grantLand(values[0]);
         await showAdvance(values[0], { through: "archived" });
         return;
       }

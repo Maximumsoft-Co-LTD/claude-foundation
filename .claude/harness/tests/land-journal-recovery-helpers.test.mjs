@@ -25,6 +25,7 @@ test("land recovery requires authority and settles automatic and manual journals
   let pending = [];
   const recoveries = [];
   const runtime = createLandRuntime({
+    assertApproval: () => {},
     pendingApplyTransactions: () => pending,
     recoverPendingApply: (id, state, options) => {
       recoveries.push({ id, state, options });

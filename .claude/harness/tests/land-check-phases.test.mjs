@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { agreementIdentity, assertSpecApproval } from "../runtime/core/user-decisions.mjs";
 import { automaticRecoveryAction } from "../runtime/workflow/advance-recovery.mjs";
 import {
   advanceLandOperation, createLandRuntime, landTransactionStarted
@@ -148,6 +149,7 @@ test("land check phases preserve every refusal and ready route", () => {
     const written = [];
     const decisions = [];
     const runtime = createLandRuntime({
+      assertApproval: options.assertApproval || (() => {}),
       root,
       transactions: join(root, "transactions"),
       loadRuntime: () => state,
@@ -345,35 +347,90 @@ test("land check phases preserve every refusal and ready route", () => {
     });
     assert.equal(cleanDependency.runtime.landCheck(cleanDependency.id).archived, false);
 
+    // Spec approval that went stale after proof refuses Land even though the
+    // proof itself is current: a Land grant is never consent to the agreement.
+    const approvalId = `land-${sequence + 1}`;
+    const packet = join(root, "openspec", "changes", approvalId);
+    mkdirSync(packet, { recursive: true });
+    writeFileSync(join(packet, "proposal.md"), "approved text\n");
+    const approvedIdentity = agreementIdentity(root, approvalId);
+    writeFileSync(join(packet, "proposal.md"), "edited after proof\n");
+    const staleApproval = make({
+      state: { contractRevision: 1, specApproval: {
+        required: true, revision: 1, identity: approvedIdentity
+      } },
+      assertApproval: (id, state, options) => assertSpecApproval(root, id, state, options)
+    });
+    assert.equal(staleApproval.id, approvalId);
+    assert.throws(() => staleApproval.runtime.landCheck(staleApproval.id),
+      (error) => error.code === "SPEC_APPROVAL_REQUIRED");
+    assert.throws(() => staleApproval.runtime.landCheck(staleApproval.id, { preflight: "apply" }),
+      (error) => error.code === "SPEC_APPROVAL_REQUIRED");
+    writeFileSync(join(packet, "proposal.md"), "approved text\n");
+    assert.equal(staleApproval.runtime.landCheck(staleApproval.id).archived, false);
+
+    // A matching proof hash does not make a change returned to Build landable.
+    const rebuilt = make({ state: { status: "building" } });
+    assert.throws(() => rebuilt.runtime.landCheck(rebuilt.id),
+      /Land requires current passing proof .*lifecycle is 'building', not proven/);
+    const legacyLanding = make({ state: { status: "landing" } });
+    assert.equal(legacyLanding.runtime.landCheck(legacyLanding.id).archived, false);
+
+    // Protected-path edits and deletions Prove recorded are presented at Land
+    // as paths only.
+    const surfaced = make({ state: { surfaceAdditions: [
+      { repositoryId: "root", path: ".github/workflows/ci.yml", protected: true },
+      { repositoryId: "api", path: "src/old.js", deleted: true },
+      { repositoryId: "root", path: "src/plain.js" }
+    ] } });
+    const surfacedResult = surfaced.runtime.landCheck(surfaced.id);
+    assert.deepEqual(surfacedResult.surface, {
+      protected: [{ repositoryId: "root", path: ".github/workflows/ci.yml" }],
+      deleted: [{ repositoryId: "api", path: "src/old.js" }],
+      requiresPresentation: true
+    });
+    assert.ok(output.some((message) =>
+      message.includes("protected paths changed: .github/workflows/ci.yml") &&
+      message.includes("paths deleted: api:src/old.js")));
+    assert.equal(base.runtime.landCheck(base.id).surface.requiresPresentation, false);
+
     const missingProof = make({ proofMissing: true });
-    assert.equal(missingProof.runtime.landCheck(missingProof.id).assurance.status, "missing");
+    assert.throws(() => missingProof.runtime.landCheck(missingProof.id),
+      /Land requires current passing proof .*assurance: missing/);
     const badAudit = make({ audit: { valid: false, reason: "bad audit" } });
-    assert.equal(badAudit.runtime.landCheck(badAudit.id).assurance.status, "invalid");
+    assert.throws(() => badAudit.runtime.landCheck(badAudit.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const stale = make({ currentHash: "different-hash" });
-    assert.equal(stale.runtime.landCheck(stale.id).assurance.status, "stale");
+    assert.throws(() => stale.runtime.landCheck(stale.id),
+      /Land requires current passing proof .*assurance: stale/);
 
     const graph = { identity: "graph-a", revision: "r1" };
     const graphMissing = make({ graph });
-    assert.equal(graphMissing.runtime.landCheck(graphMissing.id).assurance.status, "invalid");
+    assert.throws(() => graphMissing.runtime.landCheck(graphMissing.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const graphStale = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "other", graphRevision: "r1", workspaceHash: HASH
     } } });
-    assert.equal(graphStale.runtime.landCheck(graphStale.id).assurance.status, "invalid");
+    assert.throws(() => graphStale.runtime.landCheck(graphStale.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const graphIncomplete = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH,
       requiredNodes: ["a"], coveredNodes: [], requiredEdges: ["a>b"], coveredEdges: []
     } } });
-    assert.equal(graphIncomplete.runtime.landCheck(graphIncomplete.id).assurance.status, "invalid");
+    assert.throws(() => graphIncomplete.runtime.landCheck(graphIncomplete.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const graphNodesOnly = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH,
       requiredNodes: ["a"], coveredNodes: []
     } } });
-    assert.equal(graphNodesOnly.runtime.landCheck(graphNodesOnly.id).assurance.status, "invalid");
+    assert.throws(() => graphNodesOnly.runtime.landCheck(graphNodesOnly.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const graphEdgesOnly = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH,
       requiredEdges: ["a>b"], coveredEdges: []
     } } });
-    assert.equal(graphEdgesOnly.runtime.landCheck(graphEdgesOnly.id).assurance.status, "invalid");
+    assert.throws(() => graphEdgesOnly.runtime.landCheck(graphEdgesOnly.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const graphWithoutCoverageLists = make({ graph, proof: { aggregateGraphProof: {
       status: "pass", graphIdentity: "graph-a", graphRevision: "r1", workspaceHash: HASH
     } } });
@@ -386,9 +443,11 @@ test("land check phases preserve every refusal and ready route", () => {
     assert.equal(graphComplete.runtime.landCheck(graphComplete.id).archived, false);
 
     const invalidReceipt = make({ providers: ["test"], validity: { test: "stale" } });
-    assert.equal(invalidReceipt.runtime.landCheck(invalidReceipt.id).assurance.status, "invalid");
+    assert.throws(() => invalidReceipt.runtime.landCheck(invalidReceipt.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const changedReceipt = make({ providers: ["test"], receiptDigest: "changed" });
-    assert.equal(changedReceipt.runtime.landCheck(changedReceipt.id).assurance.status, "invalid");
+    assert.throws(() => changedReceipt.runtime.landCheck(changedReceipt.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const compiled = make({
       providers: ["test"], executionContract: {
         evidence: { providers: ["test"] }, land: { signedCiRequired: false }
@@ -400,8 +459,8 @@ test("land check phases preserve every refusal and ready route", () => {
         evidence: { providers: ["other"] }, land: { signedCiRequired: false }
       }
     });
-    assert.equal(contractProviderMismatch.runtime.landCheck(contractProviderMismatch.id)
-      .assurance.status, "invalid");
+    assert.throws(() => contractProviderMismatch.runtime.landCheck(contractProviderMismatch.id),
+      /Land requires current passing proof .*assurance: invalid/);
     const signedCi = make({
       providers: ["ci"], signedCi: true,
       state: { riskBasedCiRequired: true, impact: "high" }
@@ -410,7 +469,8 @@ test("land check phases preserve every refusal and ready route", () => {
     const missingCi = make({
       providers: ["test"], state: { riskBasedCiRequired: true, impact: "high" }
     });
-    assert.equal(missingCi.runtime.landCheck(missingCi.id).assurance.status, "invalid");
+    assert.throws(() => missingCi.runtime.landCheck(missingCi.id),
+      /Land requires current passing proof .*assurance: invalid/);
 
     const blockedHandoff = make({ handoffs: {
       blocking: ["op"], tracked: [], status: "WAITING_EXTERNAL",
@@ -418,8 +478,8 @@ test("land check phases preserve every refusal and ready route", () => {
         validity: "valid", status: "pending", timing: "post-land", activation: "manual",
         landBlocking: true }]
     } });
-    assert.equal(blockedHandoff.runtime.landCheck(blockedHandoff.id)
-      .assurance.status, "inconclusive");
+    assert.throws(() => blockedHandoff.runtime.landCheck(blockedHandoff.id),
+      /Land requires current passing proof .*assurance: inconclusive/);
     const invalidApplied = make({
       state: { workspace: { applied: true } }, applied: { valid: false, reason: "projection drift" }
     });
@@ -430,12 +490,14 @@ test("land check phases preserve every refusal and ready route", () => {
       taskId: "T001", taskKind: "security", requestedTier: "deep",
       actualModel: "fast", reason: "downgrade"
     }] });
-    assert.equal(drifted.runtime.landCheck(drifted.id).assurance.status, "failed");
+    assert.throws(() => drifted.runtime.landCheck(drifted.id),
+      /Land requires current passing proof .*assurance: failed/);
     const fallbackDrift = make({ drift: [
       { blockingTasks: ["T002"], requestedTier: "deep", reason: "downgrade" },
       { blockingTasks: [], requestedTier: "standard", reason: "unknown actor" }
     ] });
-    assert.equal(fallbackDrift.runtime.landCheck(fallbackDrift.id).assurance.status, "failed");
+    assert.throws(() => fallbackDrift.runtime.landCheck(fallbackDrift.id),
+      /Land requires current passing proof .*assurance: failed/);
 
     const rich = make({
       branch: "main",

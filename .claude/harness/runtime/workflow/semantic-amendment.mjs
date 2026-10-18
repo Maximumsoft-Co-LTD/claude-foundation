@@ -905,6 +905,39 @@ function amendmentIssues(amendment) {
   return issues;
 }
 
+// The merged ledger (updated, kept, and added tasks) must stay acyclic, so a
+// cycle is an amendment repair rather than a Build-time planning failure.
+function amendedTaskCycleIssues(taskLines, addTasks, resolveTaskId) {
+  const graph = new Map();
+  for (const line of taskLines) {
+    const id = line === null ? null : taskId(line);
+    if (id) graph.set(id, taskDepends(line));
+  }
+  const addedKeys = new Set(addTasks.map(keyOf).filter(Boolean));
+  for (const task of addTasks) {
+    if (!keyOf(task)) continue;
+    graph.set(`key:${keyOf(task)}`, stringList(task?.dependsOn).map((dependency) =>
+      addedKeys.has(dependency) ? `key:${dependency}` : resolveTaskId(dependency))
+      .filter(Boolean));
+  }
+  const label = (node) => node.startsWith("key:") ? `'${node.slice(4)}'` : node;
+  const visiting = [];
+  const visited = new Set();
+  const cycles = [];
+  const visit = (node) => {
+    const at = visiting.indexOf(node);
+    if (at >= 0) { cycles.push([...visiting.slice(at), node]); return; }
+    if (visited.has(node) || !graph.has(node)) return;
+    visiting.push(node);
+    for (const dependency of graph.get(node)) visit(dependency);
+    visiting.pop();
+    visited.add(node);
+  };
+  for (const node of graph.keys()) visit(node);
+  return cycles.map((cycle) => `amendment task dependencies contain a cycle: ` +
+    `${cycle.map(label).join(" -> ")}; update dependsOn so the tasks form an order`);
+}
+
 export function compileSemanticAmendment({
   amendment, contract, tasksContent, slugify, renderTask, semanticDraftVersion = 3,
   loadCanonicalSpec = null, provenClaimIds = [], retiredTaskIds = [],
@@ -1229,6 +1262,8 @@ export function compileSemanticAmendment({
           "add a task, or remove the requirement with removeRequirements");
     }
   }
+  issues.push(...amendedTaskCycleIssues(taskLines, amendmentList(amendment, "addTasks"),
+    resolveTaskId));
   if (issues.length) return { issues };
 
   const newTasks = [];

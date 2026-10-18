@@ -66,7 +66,7 @@ function phasePlan(changeId, phase, pendingTaskCount) {
   };
   if (phase === "land") return {
     boundary: "land",
-    command: `claude-foundation land advance ${changeId}`,
+    command: `claude-foundation advance ${changeId} --through archived`,
     includes: ["proof-freshness", "handoffs", "apply-recovery", "archive"],
     avoidBefore: [
       `claude-foundation land check ${changeId}`,

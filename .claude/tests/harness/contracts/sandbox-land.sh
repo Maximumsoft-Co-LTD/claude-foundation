@@ -226,8 +226,8 @@ node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
 node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
 rm .foundation/sandboxes/sandbox-copy/current-link
 ln -s target-a.txt .foundation/sandboxes/sandbox-copy/current-link
-stale_symlink_land="$(node .claude/harness/foundation.mjs land-check sandbox-copy 2>&1)"
-assert_contains "dirty symlink target change makes assurance stale" \
+stale_symlink_land="$(node .claude/harness/foundation.mjs land-check sandbox-copy 2>&1 || true)"
+assert_contains "dirty symlink target change refuses Land as stale assurance" \
   "$stale_symlink_land" "assurance: stale"
 rm .foundation/sandboxes/sandbox-copy/current-link
 ln -s target-b.txt .foundation/sandboxes/sandbox-copy/current-link
@@ -239,8 +239,10 @@ node .claude/harness/foundation.mjs receipt sandbox-copy discovery pass \
 node .claude/harness/foundation.mjs prove sandbox-copy >/dev/null
 printf '\nSecond revision after proof.\n' >> openspec/changes/sandbox-copy/proposal.md
 node .claude/harness/foundation.mjs sandbox sync sandbox-copy >/dev/null
-stale_revision_land="$(node .claude/harness/foundation.mjs land-check sandbox-copy 2>&1)"
-assert_contains "sandbox revision remains Land-ready with non-passing assurance" \
+stale_revision_land="$(node .claude/harness/foundation.mjs land-check sandbox-copy 2>&1 || true)"
+assert_contains "a sandbox revision after proof refuses Land until proven again" \
+  "$stale_revision_land" "Land requires current passing proof for 'sandbox-copy'"
+assert_not_contains "a revised, unproven sandbox is never LAND READY" \
   "$stale_revision_land" "LAND READY sandbox-copy"
 node .claude/harness/foundation.mjs receipt sandbox-copy test pass \
   --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null

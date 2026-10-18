@@ -36,6 +36,23 @@ function fixture(t) {
   return { root, runtime, changes, snapshots, state, writeJson };
 }
 
+test("loading a runtime record reads the legacy landing status as proven without rewriting it", (t) => {
+  const f = fixture(t);
+  const id = "change-a";
+  mkdirSync(join(f.changes, id));
+  const path = f.state.runtimePath(id);
+  f.writeJson(path, { version: 2, id, status: "landing" });
+  const before = readFileSync(path, "utf8");
+  assert.equal(f.state.loadRuntime(id).status, "proven");
+  assert.equal(f.state.loadRuntime(id, { shared: true }).status, "proven");
+  assert.equal(readFileSync(path, "utf8"), before, "loading never rewrites the file");
+
+  // The last valid copy restored after a corrupt write is normalized too.
+  f.writeJson(`${path}.prev`, { version: 2, id, status: "landing" });
+  writeFileSync(path, "{");
+  assert.equal(f.state.loadRuntime(id).status, "proven");
+});
+
 test("state paths resolve active, isolated, and archived change packets", (t) => {
   const f = fixture(t);
   const id = "change-a";
@@ -273,6 +290,44 @@ test("saving a stale state keeps surface additions recorded since it was loaded"
     assert.deepEqual(JSON.parse(readFileSync(join(runtime, "demo.json"), "utf8")).surfaceAdditions, [
       { repositoryId: "app", path: "README.md" }, { repositoryId: "root", path: "README.md" }
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("protected and deleted surface additions survive saves and reach the Land report", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-surface-flags-"));
+  try {
+    const runtime = join(root, "runtime");
+    mkdirSync(runtime);
+    const { saveRuntime, surfaceAdditionReport } = createStateRuntime({
+      root, runtime,
+      writeJson: (path, value) => writeFileSync(path, JSON.stringify(value)),
+      now: () => "2026-09-29T00:00:00.000Z"
+    });
+    saveRuntime({ id: "demo", surfaceAdditions: [
+      { repositoryId: "root", path: ".github/workflows/ci.yml", protected: true },
+      { repositoryId: "app", path: "old.js", deleted: true },
+      { repositoryId: "root", path: "README.md" }
+    ] });
+    // A stale caller without the flags must not erase them.
+    saveRuntime({ id: "demo", surfaceAdditions: [
+      { repositoryId: "root", path: ".github/workflows/ci.yml" }
+    ] });
+    const stored = JSON.parse(readFileSync(join(runtime, "demo.json"), "utf8"));
+    assert.deepEqual(stored.surfaceAdditions, [
+      { repositoryId: "app", path: "old.js", deleted: true },
+      { repositoryId: "root", path: ".github/workflows/ci.yml", protected: true },
+      { repositoryId: "root", path: "README.md" }
+    ]);
+    const report = surfaceAdditionReport(stored);
+    assert.equal(report.requiresPresentation, true);
+    assert.deepEqual(report.protected.map((row) => row.path), [".github/workflows/ci.yml"]);
+    assert.deepEqual(report.deleted, [{ repositoryId: "app", path: "old.js", deleted: true }]);
+    const rootOnly = surfaceAdditionReport(stored, "root");
+    assert.deepEqual(rootOnly.deleted, [],
+      "a deletion recorded for 'app' never reaches the root projection");
+    assert.equal(surfaceAdditionReport({}).requiresPresentation, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

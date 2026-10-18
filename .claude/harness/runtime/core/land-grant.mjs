@@ -61,13 +61,19 @@ export function createLandGrantRuntime({
     // not mutate product files. Avoid asking landCheck to announce an archived
     // success before that recovery has rejected a corrupt spec-sync result.
     if (loadRuntime(id).status === "archived") return null;
-    if (!archiveRecoveryReady?.(id)) landCheck(id);
+    const readiness = archiveRecoveryReady?.(id) ? null : landCheck(id);
     const binding = currentBinding(id);
+    // Protected-path edits and deletions Prove recorded travel with the grant
+    // (paths only) so the user sees exactly what the authorized Land touches.
+    const surface = readiness?.surface?.requiresPresentation ? {
+      protected: readiness.surface.protected, deleted: readiness.surface.deleted
+    } : null;
     const body = {
       version: LAND_GRANT_VERSION,
       status: "active",
       sessionId: sessionId(env),
       binding,
+      ...(surface ? { surface } : {}),
       forbidden: ["stage", "commit", "push", "publish", "deploy", "open-pr"],
       issuedAt: now()
     };

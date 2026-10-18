@@ -39,9 +39,11 @@ check(() => assert.equal(nextCommand("building", "demo"),
 check(() => assert.equal(nextCommand("stale-proof", "demo"),
   "claude-foundation advance demo --through proven",
   "stale proof returns to the exact proof target"));
-check(() => assert.equal(nextCommand("landing", "demo"),
+check(() => assert.equal(nextCommand("applied", "demo"),
   "claude-foundation advance demo --through archived",
   "an authorized in-flight Land resumes to archived"));
+check(() => assert.ok(!LIFECYCLE_STATUSES.includes("landing"),
+  "no writer produces 'landing'; the map names only reachable statuses"));
 check(() => assert.match(nextCommand("no-such-status", "demo"), /doctor --change demo/,
   "an unknown status falls back to diagnosis rather than a dead entry"));
 

@@ -204,15 +204,19 @@ cp .foundation/receipts/profile-owner-update/test.json "$TMP/test-receipt.json"
 jq '.providerFingerprint = "tampered"' .foundation/receipts/profile-owner-update/test.json \
   > "$TMP/tampered.json"
 cp "$TMP/tampered.json" .foundation/receipts/profile-owner-update/test.json
-tampered_land="$(node .claude/harness/foundation.mjs land-check profile-owner-update 2>&1)"
-assert_contains "tampered provider fingerprint lowers Land assurance" \
+tampered_land="$(node .claude/harness/foundation.mjs land-check profile-owner-update 2>&1 || true)"
+assert_contains "tampered provider fingerprint refuses Land as invalid assurance" \
   "$tampered_land" "assurance: invalid"
+assert_not_contains "tampered provider fingerprint is never LAND READY" \
+  "$tampered_land" "LAND READY"
 cp "$TMP/test-receipt.json" .foundation/receipts/profile-owner-update/test.json
 
 printf '\nContract revision after proof.\n' >> openspec/changes/profile-owner-update/proposal.md
-stale_packet_land="$(node .claude/harness/foundation.mjs land-check profile-owner-update 2>&1)"
-assert_contains "change packet edit makes assurance stale without blocking Land" \
+stale_packet_land="$(node .claude/harness/foundation.mjs land-check profile-owner-update 2>&1 || true)"
+assert_contains "change packet edit after proof refuses Land as stale assurance" \
   "$stale_packet_land" "assurance: stale"
+assert_not_contains "a stale packet is never LAND READY" \
+  "$stale_packet_land" "LAND READY"
 node .claude/harness/foundation.mjs receipt profile-owner-update test pass \
   --observed "fixture test evidence" --source harness-test --artifact app.txt >/dev/null
 node .claude/harness/foundation.mjs receipt profile-owner-update discovery pass \

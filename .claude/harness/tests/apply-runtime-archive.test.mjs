@@ -47,7 +47,8 @@ function archiveRuntime(root, state, overrides = {}) {
     cleanupAppliedSandbox: () => ({ status: "removed" }),
     cleanupRepositorySandboxes: () => ({ status: "removed" }),
     recoverPendingApply: () => {},
-    landCheck: () => ({ archived: false, state, hash: "workspace-hash" }),
+    landCheck: () => ({ archived: false, state, hash: "workspace-hash",
+      assurance: { status: "passed", workspaceHash: "workspace-hash" } }),
     assertMultiRepositoryArchiveReady: () => {},
     archivedChangeRelativePath: (id) => {
       const relative = join("openspec", "changes", "archive", `2026-08-26-${id}`);
@@ -517,14 +518,18 @@ test("a successful archive records completion despite a failed proof audit", () 
   rmSync(fixture.root, { recursive: true, force: true });
 });
 
-test("explicit Land archives without a proof and records missing assurance", () => {
-  const fixture = activeArchiveFixture("missing-proof", { proofMissing: true });
+test("Land refuses to archive without a passing proof", () => {
+  for (const status of ["missing", "failed", "inconclusive", "invalid", "stale"]) {
+    const fixture = activeArchiveFixture(`unproven-${status}`, {
+      assurance: { status, workspaceHash: "workspace-hash" }
+    });
 
-  quiet(() => fixture.run());
-  assert.equal(fixture.state.status, "archived");
-  assert.equal(fixture.state.land.assurance.status, "missing");
-  assert.equal(fixture.state.land.proofRunId, null);
-  rmSync(fixture.root, { recursive: true, force: true });
+    assert.throws(() => quiet(() => fixture.run()),
+      new RegExp(`Land requires current passing proof .*assurance: ${status}`));
+    assert.equal(fixture.state.status, "proven");
+    assert.equal(fixture.state.land?.assurance, undefined);
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
 });
 
 test("finalization records repository and apply cleanup warnings", () => {

@@ -7,11 +7,12 @@ import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   declaredPathMatcher, isChangePacketPath, isExcludedPath, mergeSurfaceAdditions,
-  surfaceAdditionPaths, trackedPathSet
+  surfaceAdditionEntries, surfaceAdditionPaths, trackedPathSet
 } from "./workspace-surface.mjs";
 import { gitRepositoryAbsent, resolveGitHead } from "./git-head.mjs";
 import { withoutGitIgnored } from "./git-ignore.mjs";
 import { taskBlocks, taskMetadata } from "../contracts/change-artifacts.mjs";
+import { normalizeLifecycleState } from "./lifecycle-reducer.mjs";
 
 // Read-only git subcommands that need a repository to answer at all.
 const NO_REPOSITORY_QUERIES = new Set([
@@ -119,7 +120,10 @@ export function createStateRuntime({
     const identity = statIdentity(path);
     const hit = identity ? runtimeParses.get(path) : null;
     if (hit && hit.identity === identity) return shared ? hit.value : structuredClone(hit.value);
+    // Legacy statuses are read in their current form; the file is rewritten
+    // only by the next ordinary save.
     const value = JSON.parse(readFileSync(path, "utf8"));
+    normalizeLifecycleState(value);
     if (identity && identity === statIdentity(path) && statSettled(path, RUNTIME_RACY_WINDOW_MS))
       runtimeParses.set(path, { identity, value: structuredClone(value) });
     else runtimeParses.delete(path);
@@ -166,6 +170,7 @@ export function createStateRuntime({
     try { state = JSON.parse(readFileSync(previous, "utf8")); }
     catch { return null; }
     if (state?.id !== id) return null;
+    normalizeLifecycleState(state);
     renameSync(path, `${path}.corrupt-${Date.now()}`);
     copyFileSync(previous, path);
     console.error(`RECOVERED: ${runtimeRelativePath(id)} was unreadable (${error.message}); ` +
@@ -385,6 +390,21 @@ export function createStateRuntime({
       target,
       tracked: trackedPathSet(listed.stdout.split("\0").filter(Boolean)),
       withoutIgnored: (paths) => withoutGitIgnored(target, paths)
+    };
+  }
+
+  // What Land must present before it applies: recorded additions Prove did
+  // not refuse but flagged. `protected` paths are control-plane, CI, or secret
+  // paths; `deleted` paths are exact removals the sandbox's own change surface
+  // reported. Paths only — never file contents, so a secret is never printed.
+  function surfaceAdditionReport(state = {}, repositoryId = null) {
+    const entries = surfaceAdditionEntries(state.surfaceAdditions)
+      .filter((entry) => !repositoryId || entry.repositoryId === repositoryId);
+    return {
+      entries,
+      protected: entries.filter((entry) => entry.protected),
+      deleted: entries.filter((entry) => entry.deleted),
+      requiresPresentation: entries.some((entry) => entry.protected || entry.deleted)
     };
   }
 
@@ -770,6 +790,7 @@ export function createStateRuntime({
     inspectSnapshots,
     writeSnapshot,
     declaredSurfaceMatcher,
+    surfaceAdditionReport,
     workspaceRepositoryId,
     clearSnapshotCache,
     registerPolicyCacheClearer,

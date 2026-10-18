@@ -74,6 +74,24 @@ export function createAgentDispatchRuntime({
       nextCommand: command(`agents dispatch ${id}`)
     };
 
+    // A shared resource another active change holds is queued, never a plan
+    // defect: the harness waits for the holder and resumes on its own.
+    const resourceWaits = Array.isArray(plan.resourceWaits) ? plan.resourceWaits : [];
+    if (!plan.dispatchable && !(plan.blockingReasons || []).length && resourceWaits.length) {
+      const holders = [...new Set(resourceWaits.map((row) => row.changeId).filter(Boolean))];
+      return {
+        ...base,
+        action: "wait",
+        waitKind: "cross-change-resource",
+        reason: `queued behind active change ${holders.join(", ")}: ${
+          resourceWaits.map((row) => row.reason).slice(0, 5).join("; ")}`,
+        resourceWaits: resourceWaits.slice(0, 20),
+        holders,
+        activeWorkers: [],
+        nextCommand: command(`advance ${id}`)
+      };
+    }
+
     if (!plan.dispatchable) return {
       ...base,
       action: "blocked",

@@ -74,6 +74,7 @@ function scenario({ id, tasks, manifests = [], executions = [] }) {
 
 function landRuntime(overrides = {}) {
   return createLandRuntime({
+    assertApproval: () => {},
     root: workspace,
     loadRuntime: (id) => ({ id, status: "proven" }),
     pendingApplyTransactions: () => [],
@@ -181,18 +182,14 @@ try {
   });
   const gated = landRuntime({ blockingDrift: (id) => inspector.blockingDrift(id) });
 
-  // 1. A proven downgrade on a risk-sensitive task lowers assurance but does
-  // not override explicit Land authority.
+  // 1. A proven downgrade on a risk-sensitive task fails assurance, and Land
+  // never accepts failed assurance.
   const blocked = land(gated, BLOCKED);
-  check(blocked.landed, true, "a downgrade on a security task remains landable");
-  check(blocked.result.assurance.status, "failed",
-    "the downgrade is preserved as failed assurance");
-  check(blocked.result.assurance.reason, "model-tier-drift",
-    "the assurance reason identifies model drift");
-  matches(blocked.log, /LAND READY blocked-security/,
-    "the explicitly authorized change is announced ready");
-  matches(blocked.log, /assurance: failed/,
-    "the ready announcement exposes the failed assurance");
+  check(blocked.landed, false, "a downgrade on a security task is not landable");
+  matches(blocked.error, /assurance: failed; model-tier-drift/,
+    "the refusal names failed assurance and the model-drift reason");
+  check(blocked.log.includes("LAND READY"), false,
+    "a refused change is never announced ready");
 
   // 2. The same downgrade on a task kind the policy does not protect.
   const unblocked = land(gated, UNBLOCKED);
@@ -226,12 +223,10 @@ try {
 
   // 6. Ambiguous attribution remains visible without becoming authority.
   const ambiguous = land(gated, AMBIGUOUS);
-  check(ambiguous.landed, true,
-    "an ambiguous downgrade remains landable under explicit authority");
-  check(ambiguous.result.assurance.status, "failed",
-    "ambiguous risk-sensitive drift lowers assurance");
-  check(ambiguous.result.assurance.reason, "model-tier-drift",
-    "ambiguous drift retains the model-drift assurance reason");
+  check(ambiguous.landed, false,
+    "an ambiguous risk-sensitive downgrade is not landable");
+  matches(ambiguous.error, /assurance: failed; model-tier-drift/,
+    "ambiguous drift refuses with the model-drift assurance reason");
   check(inspector.blockingDrift(AMBIGUOUS)[0].blockingTasks, ["T101"],
     "only the risk-sensitive candidate is reported as blocking");
   check(inspector.blockingDrift(AMBIGUOUS)[0].taskId, null,

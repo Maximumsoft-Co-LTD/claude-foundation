@@ -5,6 +5,7 @@ import {
   gateProgressValue,
   gateRepairPlan,
   noProgressDecision,
+  noProgressRepair,
   normalizeGateFindings
 } from "../runtime/core/convergent-gate.mjs";
 
@@ -94,3 +95,29 @@ assert.ok(decision.decision.options.length >= 4,
   "the user receives supported alternatives instead of raw failure");
 assert.equal(decision.next[0].command,
   "claude-foundation packet change-a --phase build");
+
+// A coding stall is agent work: an automatic repair whose next step is a
+// different strategy carrying what the gate returned, never a user decision.
+const stall = noProgressRepair({
+  changeId: "change-a",
+  phase: "build",
+  gate: "focused-checks",
+  progress: same,
+  findings,
+  attemptedStrategies: [{ id: "normalize-input", result: "same-findings" }],
+  resumeCommand: "claude-foundation packet change-a --phase build"
+});
+assert.equal(stall.status, "ACTION_REQUIRED");
+assert.equal(stall.route, "AUTO_REPAIR");
+assert.equal(stall.reason, "NO_PROGRESS");
+assert.equal("decision" in stall, false, "a coding stall raises no user decision");
+assert.equal(stall.progressFingerprint, same.fingerprint);
+assert.equal(stall.next.length, 1);
+assert.equal(stall.next[0].kind, "change-strategy");
+assert.equal(stall.next[0].unchanged, true);
+assert.equal(stall.next[0].progressFingerprint, same.fingerprint);
+assert.deepEqual(stall.next[0].findingIds.sort(), ["F-1", "F-2"]);
+assert.deepEqual(stall.next[0].attemptedStrategies,
+  [{ id: "normalize-input", result: "same-findings" }]);
+assert.match(stall.next[0].reason, /different in-scope repair/);
+assert.equal(stall.next[0].command, "claude-foundation packet change-a --phase build");

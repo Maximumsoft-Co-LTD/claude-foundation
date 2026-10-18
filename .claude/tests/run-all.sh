@@ -81,6 +81,7 @@ proof loop end to end|sh "$HERE/harness/run-proof-loop-tests.sh"
 installed repository recovery|sh "$HERE/harness/run-installed-recovery-tests.sh"
 proof service lifecycle|node "$HERE/harness/run-service-session-tests.mjs"
 stale recovery hints|node --test "$HERE/harness/run-stale-recovery-tests.mjs"
+blocking policy|node --test "$HERE/harness/run-blocking-policy-tests.mjs"
 workspace surface|node "$HERE/harness/run-workspace-surface-tests.mjs"
 target drift|sh "$HERE/harness/run-target-drift-tests.sh"
 base-move rebind|sh "$HERE/harness/run-base-move-rebind-tests.sh"
@@ -379,7 +380,7 @@ if [ "${1:-}" = "--suite" ]; then
     # The proof loop validates ~90 compiled rapid packets, each now linted by
     # the real OpenSpec CLI (~1.3s) when one is on PATH.
     case "${line%%|*}" in
-      'harness contracts (topology planning)'|'pull request delivery'|'proof loop end to end') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
+      'harness contracts (topology planning)'|'pull request delivery'|'proof loop end to end'|'apply conflict') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
     esac
     (
       sleep "$timeout"

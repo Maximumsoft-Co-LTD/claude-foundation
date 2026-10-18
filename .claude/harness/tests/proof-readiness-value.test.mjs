@@ -340,19 +340,29 @@ test("an edit outside task paths is recorded into the change surface, not refuse
     // Already recorded: nothing to persist on the next readiness pass.
     runtime.changedSurfaceIssues("demo");
     assert.equal(saves.length, 1);
-    // A spill this large is generated output, not work to land: still refused.
+    // A spill this large is generated output, not work to land: still an
+    // agent repair, now with a concrete ignore rule instead of a bare doctor.
     surface = Array.from({ length: 101 }, (_, index) =>
       ({ repositoryId: "root", path: `build/out-${index}.js` }));
     const fixits = [];
     assert.match(runtime.changedSurfaceIssues("demo", fixits)[0],
-      /changed outside task paths: build\/out-0\.js/);
+      /changed outside task paths: build\/out-0\.js.*exceed the 100-path recording limit/);
     assert.equal(fixits[0].paths.length, 101);
+    assert.equal(fixits[0].reason, "oversized-spill");
+    const [repair] = runtime.configurationRecovery("demo", ["issue"], fixits);
+    assert.equal(repair.kind, "ignore-generated-output");
+    assert.deepEqual(repair.patterns, ["/build/"]);
+    assert.equal(repair.command, "printf '%s\\n' '/build/' >> '.gitignore'");
+    assert.equal(repair.verify, "claude-foundation proof readiness demo");
+    assert.equal(repair.agentCommand, "/change demo");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("deletions and control-plane paths outside task paths still block", () => {
+// Land is the single hard gate: Prove records protected and deleted paths
+// with a flag instead of refusing them, and keeps them visible.
+test("deletions and control-plane paths outside task paths are recorded with flags", () => {
   const root = mkdtempSync(join(tmpdir(), "foundation-surface-protected-"));
   try {
     writeFileSync(join(root, "tasks.md"), "- [x] T001 [paths:src/**]\n");
@@ -377,17 +387,37 @@ test("deletions and control-plane paths outside task paths still block", () => {
       providerConfig: () => ({}),
       fail: (message) => { throw new Error(message); }
     });
+    const paths = [
+      ".claude/settings.json", ".env", ".env.example", "README.md", "fixtures/gone.json"
+    ];
     // Read-only inspection reports but does not persist.
     const inspected = [];
-    runtime.changedSurfaceIssues("demo", null, inspected, { persist: false });
+    assert.deepEqual(runtime.changedSurfaceIssues("demo", null, inspected, { persist: false }), []);
     assert.equal(saves.length, 0);
-    assert.deepEqual(inspected, [{ repositoryId: "root", paths: [".env.example", "README.md"] }]);
+    assert.deepEqual(inspected, [{
+      repositoryId: "root", paths,
+      protected: [".claude/settings.json", ".env"],
+      deleted: ["fixtures/gone.json"]
+    }]);
     const fixits = [];
-    const issues = runtime.changedSurfaceIssues("demo", fixits);
-    assert.equal(issues.length, 1);
-    assert.deepEqual(fixits[0].paths, [".claude/settings.json", ".env", "fixtures/gone.json"]);
-    assert.deepEqual(state.surfaceAdditions, [".env.example", "README.md"]
-      .map((path) => ({ repositoryId: "root", path })));
+    assert.deepEqual(runtime.changedSurfaceIssues("demo", fixits), [],
+      "protected paths and sandbox deletions no longer block Prove");
+    assert.deepEqual(fixits, []);
+    assert.deepEqual(state.surfaceAdditions, [
+      { repositoryId: "root", path: ".claude/settings.json", protected: true },
+      { repositoryId: "root", path: ".env", protected: true },
+      { repositoryId: "root", path: ".env.example" },
+      { repositoryId: "root", path: "README.md" },
+      { repositoryId: "root", path: "fixtures/gone.json", deleted: true }
+    ]);
+    // Only paths are reported; a secret file's contents never appear.
+    assert.doesNotMatch(JSON.stringify({ inspected, state }), /TOKEN=x/);
+    // A deletion is the sandbox's own observation: restoring the file clears it.
+    mkdirSync(join(root, "fixtures"), { recursive: true });
+    writeFileSync(join(root, "fixtures", "gone.json"), "{}\n");
+    runtime.changedSurfaceIssues("demo");
+    assert.deepEqual(state.surfaceAdditions.find((row) => row.path === "fixtures/gone.json"),
+      { repositoryId: "root", path: "fixtures/gone.json" });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

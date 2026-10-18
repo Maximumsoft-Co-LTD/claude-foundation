@@ -177,8 +177,11 @@ export function intakeFrontier(record) {
   if (record?.version !== 2) return { questions: [], independentWork: [], staleExperiments: [], pendingExperiments: [], unresolved: [] };
   const open = rows(record.questions).filter((q) => q && q.status !== "answered");
   const answered = new Set(rows(record.questions).filter((q) => q?.status === "answered" && text(q.key)).map((q) => q.key));
+  // A nonmaterial question is never asked, so a material question that depends
+  // on one would otherwise stay unaskable; only material dependencies gate it.
+  const nonmaterial = new Set(open.filter((q) => q.material === false && text(q.key)).map((q) => q.key));
   const questions = open.filter((q) => q.material === true && dependencyList(q.dependsOn) &&
-    rows(q.dependsOn).every((key) => answered.has(key)));
+    rows(q.dependsOn).every((key) => answered.has(key) || nonmaterial.has(key)));
   const independentWork = rows(record.work).filter((w) => w && text(w.key) && text(w.outcome) &&
     dependencyList(w.questionKeys) && rows(w.questionKeys).every((key) => answered.has(key)));
   const current = new Set(currentRequirements(record).map(ref));

@@ -258,6 +258,19 @@ test("a sandbox copy that carries the target edit lands over it", () => {
   lines[17] = "second edit";
   const merged = lines.join("\n");
   writeFileSync(join(second.workspace.path, "app.txt"), merged);
+  // The merged bytes were never proven: Land refuses them until proof is current.
+  const unproven = cli(fixture, "sandbox", "apply", "second-probe");
+  assert.notEqual(unproven.status, 0);
+  assert.match(unproven.stdout + unproven.stderr,
+    /Land requires current passing proof .*assurance: stale/);
+  assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), firstContent);
+  cli(fixture, "receipt", "second-probe", "test", "pass",
+    "--observed", "fixture test evidence", "--source", "harness-test", "--artifact", "app.txt");
+  cli(fixture, "receipt", "second-probe", "discovery", "pass",
+    "--discovered", "1", "--minimum", "1", "--observed", "1 test discovered",
+    "--source", "harness-test", "--artifact", "app.txt");
+  const reproved = cli(fixture, "prove", "second-probe");
+  assert.equal(reproved.status, 0, reproved.stderr);
   const applied = cli(fixture, "sandbox", "apply", "second-probe");
   assert.equal(applied.status, 0, applied.stderr);
   assert.equal(readFileSync(join(fixture.root, "app.txt"), "utf8"), merged);

@@ -438,9 +438,14 @@ test("Prove returns REPAIR performance-regression and repeats reach the recovery
   assert.deepEqual(finding, ["perf:performance-regression"]);
   assert.match(first.next[0].reason, /25% slower than base/);
   const again = await quietly(() => runtime.proofAdvance("change-a"));
-  assert.equal(again.status, "NEEDS_USER_DECISION");
-  assert.equal(again.route, "NO_PROGRESS_DECISION",
-    "an unchanged regression enters the existing no-progress decision");
+  // One unchanged cycle asks the agent for a different strategy; counting
+  // repeats belongs to the advance recovery ladder, not a user question here.
+  assert.equal(again.status, "ACTION_REQUIRED");
+  assert.equal(again.route, "AUTO_REPAIR");
+  assert.equal(again.progressed, false);
+  assert.equal(again.next[0].kind, "change-strategy",
+    "an unchanged regression returns a change-strategy repair");
+  assert.deepEqual(again.next[0].findingIds, ["perf:performance-regression"]);
 });
 
 test("Prove keeps evidence-failed when the benchmark head itself failed", async () => {

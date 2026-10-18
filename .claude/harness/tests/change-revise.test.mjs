@@ -552,7 +552,7 @@ test(`an approved ${initialStatus} change keeps its approval across an additive 
 }
 
 for (const landedState of [
-  { status: "landing" }, { status: "applied" }, { status: "archived" },
+  { status: "applied" }, { status: "archived" },
   { status: "proven", land: { status: "evidence-snapshotted" } },
   { status: "building", land: { status: "code-applied" } },
   { status: "proven", workspace: { applied: true } }

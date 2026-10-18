@@ -14,7 +14,8 @@ console.log = () => {};
 const fail = (message) => { throw new Error(message); };
 
 function fixture(overrides = {}) {
-  let state = overrides.state || {
+  // Apply runs only on proven work; the reducer refuses any earlier status.
+  let state = overrides.state ? { status: "proven", ...overrides.state } : {
     id: "c",
     status: "proven",
     workspace: { mode: "copy", path: "/sandbox" }
@@ -153,7 +154,7 @@ try {
   assert.throws(() => applySandboxOperation(rollbackFailure.context, "c"),
     /copy failed; rollback failed/);
 
-  const state = appliedRuntimeState({ workspace: { mode: "worktree", path: "/s" } }, "/r", {
+  const state = appliedRuntimeState({ status: "proven", workspace: { mode: "worktree", path: "/s" } }, "/r", {
     transactionId: "t", projectionHash: "h", entries: []
   });
   assert.equal(state.workspace.sandboxPath, "/s");
