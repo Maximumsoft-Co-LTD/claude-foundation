@@ -18,11 +18,13 @@ import {
   copyTrackedRootMetadata,
   createSandbox,
   createSandboxRuntime,
+  dependencyDigest,
   executeSandboxSetupBatch,
   ignoredSandboxPaths,
   inspectSandbox,
   isolateSelectedRepositories,
   prepareBuildSandbox,
+  refreshChangedSandboxDependencies,
   repairSelectedRepositories,
   reportMultiRepositorySandbox,
   retryFailedSandboxSetups,
@@ -1244,6 +1246,59 @@ test("without a setup command the harness installs from the workspace lockfile",
     "\n  setup: failed (npm ci, detected from package-lock.json)");
   assert.equal(sandboxSetupLine({ status: "ok", command: "make deps" }), "\n  setup: ok");
   assert.equal(sandboxSetupLine(null), "");
+});
+
+// A paid dependency-upgrade Build edited package.json and the lockfile after
+// setup ran `npm ci`; the check then loaded the old package, the guard refused
+// the agent's relinking, and the Build stopped to ask the user.
+test("a Build edit to the manifest or lockfile reruns the workspace setup before the next check", (t) => {
+  const ws = mkdtempSync(join(tmpdir(), "sandbox-dependency-refresh-"));
+  t.after(() => rmSync(ws, { recursive: true, force: true }));
+  writeFileSync(join(ws, "package.json"), "{\"dependencies\":{\"slugkit\":\"1.0.0\"}}\n");
+  writeFileSync(join(ws, "package-lock.json"), "{\"v\":1}\n");
+  const runs = [];
+  const runSetupCommand = (record, command, timeoutMs, cwd, label) => {
+    runs.push({ command, cwd, label });
+    record.setup = { command, status: "ok", exitCode: 0 };
+  };
+  const state = { status: "building", workspace: { path: ws } };
+  const plan = workspaceSetupPlan({ sandbox: {}, workspace: ws, pathExists: existsSync });
+  runWorkspaceSetupPlan(runSetupCommand, state.workspace, plan, 50, ws, null, dependencyDigest);
+  const recorded = state.workspace.setup.dependencies;
+  assert.match(recorded, /^sha256:[0-9a-f]{64}$/);
+  let saved = 0;
+  const context = {
+    loadRuntime: () => state, saveRuntime: () => { saved += 1; }, policy: () => ({}),
+    runSetupCommand, pathExists: existsSync, dependencyDigest
+  };
+
+  // Unchanged dependency files never repeat a valid install.
+  assert.equal(refreshChangedSandboxDependencies(context, "change"), false);
+  assert.equal(runs.length, 1);
+
+  writeFileSync(join(ws, "package.json"), "{\"dependencies\":{\"slugkit\":\"2.0.0\"}}\n");
+  assert.equal(refreshChangedSandboxDependencies(context, "change"), true);
+  assert.deepEqual(runs[1], { command: "npm ci", cwd: ws, label: "root" });
+  assert.equal(saved, 1);
+  assert.equal(state.workspace.setup.source, "lockfile");
+  assert.notEqual(state.workspace.setup.dependencies, recorded);
+  assert.equal(state.workspace.setup.dependencies, dependencyDigest(ws));
+  assert.equal(refreshChangedSandboxDependencies(context, "change"), false);
+
+  // A lockfile edit alone is a change too.
+  writeFileSync(join(ws, "package-lock.json"), "{\"v\":2}\n");
+  assert.equal(refreshChangedSandboxDependencies(context, "change"), true);
+  assert.equal(runs.length, 3);
+
+  // Outside Build, without a recorded digest, or after a failed setup the
+  // refresh stays out of the way; the failed record belongs to the retry route.
+  writeFileSync(join(ws, "package-lock.json"), "{\"v\":3}\n");
+  for (const variant of [
+    { ...state, status: "proven" },
+    { ...state, workspace: { ...state.workspace, setup: { command: "npm ci", status: "ok" } } },
+    { ...state, workspace: { ...state.workspace, setup: { ...state.workspace.setup, status: "failed" } } }
+  ]) assert.equal(refreshChangedSandboxDependencies(context, "change", variant), false);
+  assert.equal(runs.length, 3);
 });
 
 test("grounding that cites an untracked investigation record never blocks the sandbox or asks for a commit", (t) => {

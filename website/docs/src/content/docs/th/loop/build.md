@@ -56,7 +56,8 @@ anchor ให้เมื่ออยู่ใน workspace แล้ว) Worktr
 command Harness จะรันคำสั่งติดตั้งตาม lockfile ของ workspace เอง (`npm ci` หรือคำสั่ง
 frozen-lockfile ของ pnpm, yarn, bun) ตั้ง `sandbox.installDependencies: false` เพื่อปิด
 และ `sandbox.setupCommand` หรือ setup command ราย repository ใช้แทนได้ การติดตั้งที่ล้ม
-ไม่ block Build: agent จะได้รับคำสั่ง directory และ log ไปทำต่อ ส่วนการ link หรือ copy
+ไม่ block Build: agent จะได้รับคำสั่ง directory และ log ไปทำต่อ เมื่อ Build แก้
+`package.json` หรือ lockfile, harness จะรัน setup ใหม่ก่อนการตรวจครั้งถัดไป ส่วนการ link หรือ copy
 `node_modules` ของ checkout เข้า workspace จะถูกปฏิเสธ
 
 Phase hook และ `claude-foundation exec` ใช้ containment policy เดียวกัน ทั้งคู่

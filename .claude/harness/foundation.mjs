@@ -1447,9 +1447,12 @@ const {
   sync: syncSandbox
 } = sandboxRuntime;
 // Root checks consume declared nested repositories through their root path.
-// Every exec, task check, and proof run first brings those paths current.
+// Every exec, task check, and proof run first brings those paths current, and
+// reinstalls Build dependencies whose manifest or lockfile changed since setup.
 function projectRootRepositories(id) {
-  return sandboxRuntime.projectRepositories(id);
+  const projected = sandboxRuntime.projectRepositories(id);
+  sandboxRuntime.refreshChangedDependencies(id);
+  return projected;
 }
 function rollbackAtomicStart(id) {
   const issues = [];

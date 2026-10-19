@@ -165,7 +165,7 @@ out="$(invoke build block "$TMP/workspace" \
   "$(bash_event "cd $TMP/workspace && ln -sfn $TMP/outside/node_modules node_modules")")"
 assert_contains "Build refuses borrowing the checkout's dependencies" "$out" '"decision":"block"'
 assert_contains "Build routes a borrowed dependency link to sandbox setup" "$out" \
-  'sandbox.setupCommand'
+  'harness reruns the workspace install'
 
 for command in \
   "touch $TMP/outside/touched.txt" \
@@ -218,7 +218,7 @@ assert_contains "Build still refuses an unanchored write when no cwd is reported
 out="$(invoke build block "$TMP/workspace" \
   "$(bash_event_at "$TMP/workspace" "ln -sfn $TMP/outside/node_modules node_modules")")"
 assert_contains "a pin never widens containment: outside operands still refuse" "$out" \
-  'sandbox.setupCommand'
+  'harness reruns the workspace install'
 out="$(invoke build block "$TMP/workspace" \
   "$(bash_event_at "$TMP/workspace" "echo x > $TMP/outside/o.txt")")"
 assert_contains "a pin never widens containment: outside targets still refuse" "$out" \

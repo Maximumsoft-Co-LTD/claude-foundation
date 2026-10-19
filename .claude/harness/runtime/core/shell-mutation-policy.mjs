@@ -452,8 +452,8 @@ export function shellMutationViolation(phase, environment, command = null, inspe
     if (escape !== null && copySourceOperands(text).includes(escape))
       return "Build shell mutation copies or links from outside the isolated workspace " +
         `(\`${escape}\`); a workspace never borrows the checkout's files or dependencies. ` +
-        "Declare sandbox.setupCommand in foundation.json (for example \"npm ci\") so the " +
-        `harness prepares every workspace, or run that install once after \`cd ${root} && \``;
+        "To change dependencies, edit the manifest or lockfile; the harness reruns the " +
+        `workspace install before the next check, or run that install once after \`cd ${root} && \``;
     if (escape !== null)
       return "Build shell mutation contains an obvious path outside the isolated workspace " +
         `(\`${escape}\`); keep every mutation target inside ${root}`;

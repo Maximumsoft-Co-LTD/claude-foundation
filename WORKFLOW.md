@@ -869,7 +869,10 @@ or `bun install --frozen-lockfile`) and records it like a configured setup;
 `sandbox.installDependencies: false` opts out. If that install fails or its
 tool is missing, Build is not blocked ([blocking policy](#blocking-policy)):
 `advance` returns a `REPAIR` handoff with
-the command, workspace directory, and log tail for the agent to finish.
+the command, workspace directory, and log tail for the agent to finish. When a
+Build edit changes the workspace manifest or lockfile after a successful setup,
+the harness reruns that setup before the next check, task check, or proof run
+reads the workspace.
 
 Before Build, the harness compiles and persists an execution-preparation plan
 from selected repositories, setup commands, provider wiring, and tool identity.

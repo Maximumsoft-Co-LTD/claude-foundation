@@ -157,8 +157,8 @@ const DYNAMIC = "Build shell mutation contains a dynamic path that cannot be pro
 const ESCAPE = "Build shell mutation contains an obvious path outside the isolated workspace";
 const BORROW = "Build shell mutation copies or links from outside the isolated workspace";
 const borrowRepair = (workspace) => "a workspace never borrows the checkout's files or " +
-  "dependencies. Declare sandbox.setupCommand in foundation.json (for example \"npm ci\") so " +
-  `the harness prepares every workspace, or run that install once after \`cd ${workspace} && \``;
+  "dependencies. To change dependencies, edit the manifest or lockfile; the harness reruns " +
+  `the workspace install before the next check, or run that install once after \`cd ${workspace} && \``;
 const WS = { FOUNDATION_WORKSPACE_ROOT: "/workspace" };
 
 test("shell mutation policy requires an isolated Build workspace", () => {

@@ -119,8 +119,9 @@ later directory changes, redirection targets, and canonical symlink targets;
 literal paths outside that workspace are blocked before execution. A copy or
 link whose source lies outside the workspace (`cp ../x .`,
 `ln -s <checkout>/node_modules node_modules`) is refused with a reason that
-names `sandbox.setupCommand` and an in-workspace install as the routes: a
-workspace never borrows the checkout's files. The
+names a manifest or lockfile edit, which the harness reinstalls before the next
+check, and an in-workspace install as the routes: a workspace never borrows the
+checkout's files. The
 `claude-foundation exec` runtime uses the same policy, derives its phase from
 change state, and starts Build children in the canonical workspace. Use
 structured Edit/Write operations where possible.

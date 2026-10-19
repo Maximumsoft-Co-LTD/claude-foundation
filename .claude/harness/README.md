@@ -637,8 +637,11 @@ Without it, the harness runs the install the workspace lockfile pins
 records it on the workspace like a configured setup (`source: "lockfile"`).
 `{ "sandbox": { "installDependencies": false } }` opts out. A failed or missing
 install never blocks: preparation retries it, then `advance` hands it to the
-agent as a `REPAIR` with the command, directory, and log tail. The phase guard
-still refuses linking or copying the checkout's `node_modules` into the sandbox.
+agent as a `REPAIR` with the command, directory, and log tail. Setup records a
+digest of `package.json` and the lockfiles; when a Build edit changes them, the
+next `exec`, task check, or proof run reruns the same setup first. The phase
+guard still refuses linking or copying the checkout's `node_modules` into the
+sandbox.
 
 In a multi-repository topology, each `openspec/repositories.yaml` row may
 declare its own `setupCommand`, which runs inside that repository's sandbox;

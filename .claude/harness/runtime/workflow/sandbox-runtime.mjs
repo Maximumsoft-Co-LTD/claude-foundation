@@ -357,17 +357,58 @@ export function sandboxSetupLine(setup) {
     ? ` (${setup.command}, detected from ${setup.lockfile})` : ""}`;
 }
 
+// The manifest and lockfiles whose bytes decide what the setup installs.
+export const SETUP_DEPENDENCY_FILES = Object.freeze(
+  ["package.json", ...DEPENDENCY_LOCKFILES.map(([file]) => file)]);
+
+export function dependencyDigest(workspace, readFile = readFileSync) {
+  const hash = createHash("sha256");
+  for (const file of SETUP_DEPENDENCY_FILES) {
+    let bytes = null;
+    try { bytes = readFile(join(workspace, file)); } catch { bytes = null; }
+    hash.update(`${file}\0${bytes === null ? "-" : createHash("sha256").update(bytes).digest("hex")}\n`);
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
 // A failed or retried run replaces record.setup; keep where the command came
 // from so retries and the preparation plan still treat a detected install
-// exactly like a configured one.
-export function runWorkspaceSetupPlan(runSetupCommand, record, plan, timeoutMs, cwd, label) {
+// exactly like a configured one. `digest` records the manifest and lockfile
+// the install read, so a later Build edit to them is detectable.
+export function runWorkspaceSetupPlan(runSetupCommand, record, plan, timeoutMs, cwd, label,
+  digest = null) {
   runSetupCommand(record, plan.command, timeoutMs, cwd, label);
   const setup = record.setup;
   if (setup && plan.source === "lockfile") {
     setup.source = "lockfile";
     setup.lockfile = plan.lockfile;
   }
+  if (setup && digest) setup.dependencies = digest(cwd);
   return setup;
+}
+
+// Build may change the manifest or lockfile after setup installed from the old
+// ones, leaving the installed dependencies stale. The agent's only recourse
+// would be an install or link the phase guard can refuse, and a dependency
+// upgrade Build stopped to ask the user. Rerun the same setup as Harness work
+// before the next check reads the workspace. A failed rerun is recorded like a
+// failed creation setup, so the existing retry route owns it.
+export function refreshChangedSandboxDependencies(context, id,
+  state = context.loadRuntime(id)) {
+  const workspace = state.workspace;
+  const setup = workspace?.setup;
+  if (state.status !== "building" || setup?.status !== "ok" || !setup.dependencies ||
+      !workspace.path) return false;
+  if (context.dependencyDigest(workspace.path) === setup.dependencies) return false;
+  const configured = context.policy().sandbox || {};
+  const plan = workspaceSetupPlan({
+    sandbox: configured, workspace: workspace.path, pathExists: context.pathExists
+  });
+  if (!plan) return false;
+  runWorkspaceSetupPlan(context.runSetupCommand, workspace, plan,
+    configured.setupTimeoutMs, workspace.path, "root", context.dependencyDigest);
+  context.saveRuntime(state);
+  return true;
 }
 
 export function carrySandboxIgnoredArtifacts(context, sourcePath, stagingPath) {
@@ -1145,7 +1186,7 @@ export function retryFailedSandboxSetups(context, id,
   const rootPlan = rootCommand ? { command: rootCommand, source: "configured" } : detected;
   if (prior?.status === "failed" && rootPlan && state.workspace?.path) {
     runWorkspaceSetupPlan(context.runSetupCommand, state.workspace, rootPlan,
-      configured.setupTimeoutMs, state.workspace.path, "root");
+      configured.setupTimeoutMs, state.workspace.path, "root", context.dependencyDigest);
     attempted.push("root");
   } else if (prior?.status === "failed" && prior.source === "lockfile" && !rootPlan) {
     // Opting out after a failed detected install withdraws that install.
@@ -1480,7 +1521,7 @@ export function createSandboxRuntime({
     });
     if (!plan) return null;
     return runWorkspaceSetupPlan(runSetupCommand, state.workspace, plan,
-      configured.setupTimeoutMs, state.workspace.path, null);
+      configured.setupTimeoutMs, state.workspace.path, null, dependencyDigest);
   }
 
   // Per-file digests of a packet directory. `sync` copies the target's packet
@@ -2419,7 +2460,11 @@ export function createSandboxRuntime({
 
   const retryFailedSetups = retryFailedSandboxSetups.bind(null, {
     loadRuntime, saveRuntime, selectedRepositories, policy, runSetupCommand,
-    runSetupBatch, git
+    runSetupBatch, git, dependencyDigest
+  });
+  const refreshChangedDependencies = refreshChangedSandboxDependencies.bind(null, {
+    loadRuntime, saveRuntime, policy, runSetupCommand, pathExists: existsSync,
+    dependencyDigest
   });
 
   // Brings an intentionally revised target agreement into Build. Returns
@@ -2455,8 +2500,8 @@ export function createSandboxRuntime({
 
   return {
     createChallenge, workspaceInspection, inspect, showInspection,
-    createSingle, create, retryFailedSetups, prepareBuild, mergeTaskProgress, sync,
-    projectRepositories,
+    createSingle, create, retryFailedSetups, refreshChangedDependencies, prepareBuild,
+    mergeTaskProgress, sync, projectRepositories,
     synchronizeAgreement, agreementStale,
     recoverReplay: (id) => recoverReplay(id, loadRuntime(id)),
     changeDiffIdentity

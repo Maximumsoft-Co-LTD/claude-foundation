@@ -63,8 +63,9 @@ lockfile's pinned install itself (`npm ci`, or the pnpm, yarn, or bun
 frozen-lockfile install); `sandbox.installDependencies: false` opts out, and
 `sandbox.setupCommand` or a per-repository setup command replaces it. A failed
 install never blocks Build: the agent receives its command, directory, and log
-to finish it. Linking or copying the checkout's `node_modules` into the
-workspace is refused.
+to finish it. When Build changes `package.json` or the lockfile, the harness
+reruns the setup before the next check. Linking or copying the checkout's
+`node_modules` into the workspace is refused.
 
 The phase hook and `claude-foundation exec` use the same containment policy.
 They reject absolute outside operands, later directory escapes, and writes
