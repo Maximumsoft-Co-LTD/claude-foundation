@@ -508,6 +508,23 @@ test("a keyed v5 draft receives the derived capability and outcome only", () => 
   assert.equal(expandMinimalSemanticDraft(named), named);
 });
 
+// A paid library-cli-flag run quoted `{"file":<the path given>}` in a scenario;
+// the outcome derived from it read as a placeholder and the agent was asked to
+// repair a field it never wrote.
+test("a derived outcome never carries placeholder-shaped scenario text", () => {
+  const full = startChangeJson();
+  const { capability: _cap, outcome: _out, ...bare } = full.requirements[0];
+  const quoted = { when: "wordstat --json runs", then: "stdout is {\"file\":<the path given>}" };
+  const description = "The system SHALL print the counts as one JSON object when --json is given";
+  const derive = (scenarios) => expandMinimalSemanticDraft({ ...full,
+    requirements: [{ ...bare, description, scenarios }] },
+    { listCanonicalCapabilities: () => [], loadCanonicalSpec: () => "" }).requirements[0].outcome;
+  const plain = { when: "wordstat --json runs on one file", then: "stdout is one JSON object" };
+  assert.equal(derive([quoted, plain]), plain.then);
+  const fromClause = derive([quoted]);
+  assert.ok(fromClause && !/<[^>]+>/.test(fromClause), fromClause);
+});
+
 // Decisions renders under its English heading in every language; a Thai
 // author may still write its Thai heading, and the prose lands there once.
 test("a Thai heading for a section that renders in English is accepted as that section", (t) => {

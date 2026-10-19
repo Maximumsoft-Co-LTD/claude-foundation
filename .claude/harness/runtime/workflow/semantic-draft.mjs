@@ -965,8 +965,14 @@ function draftCapabilityChoice(source, named, {
 }
 
 // A first scenario's result is a requirement's outcome when it states none.
+// A scenario's expected text may quote a literal such as `<the path given>`;
+// only the outcome the author wrote is checked for placeholders. A derived one
+// skips placeholder-shaped text, else falls back to the requirement clause, so
+// the agent is never asked to repair a field it did not write.
 function derivedOutcome(row) {
-  return text(rawScenarioEntries(row).find((scenario) => text(scenario?.then))?.then);
+  const thens = rawScenarioEntries(row).map((scenario) => text(scenario?.then)).filter(Boolean);
+  return thens.find((then) => !PLACEHOLDER.test(then)) ||
+    requirementClause(row.description) || thens[0] || "";
 }
 
 // A keyed v5 draft keeps full-draft semantics (its keys, decisions, and
