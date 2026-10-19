@@ -17,16 +17,17 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
-### Candidate `9f1c09bf2` after v3.6.5 — 2026-10-19 (blocked)
+### Candidate `9f1c09bf2` + `e1518a1` after v3.6.5 — 2026-10-19
 
 The [2026-10-19 checkpoint](scenario-checkpoint-candidate-9f1c09bf2-2026-10-19.md)
 ([ภาษาไทย](scenario-checkpoint-candidate-9f1c09bf2-2026-10-19.th.md)) tests
 clean `9f1c09bf2` on all 28 paid scenarios in the Change Loop and no-harness
-arms (n=1). Strict delivery is 27/28: dependency-upgrade stops at `building`
-because the sandbox does not refresh dependencies after a manifest change in
-Build. That is a checkpoint blocker. Against retained v3.6.5, wall time is
-+0.5% and cost +0.9%. The rapid-tier no-harness ratio is 2.03× against a 1.5×
-target. Measured host cost: US$21.3012.
+arms (n=1). There, dependency-upgrade stopped at `building` because the sandbox
+did not refresh dependencies after a manifest change in Build. `e1518a1` fixes
+that, and a clean `f3ad30df0` rerun reaches archived 8/8, so strict delivery is
+28/28. Against retained v3.6.5, wall time is +0.5% and cost +0.9%. The
+rapid-tier no-harness ratio is 2.03× against a 1.5× target and remains an open
+release decision. Measured host cost: US$21.7435.
 
 ### Verified v3.6.5 publication — 2026-10-18
 

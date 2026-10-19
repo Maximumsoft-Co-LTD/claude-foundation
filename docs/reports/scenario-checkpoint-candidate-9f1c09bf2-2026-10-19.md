@@ -113,6 +113,33 @@ paired rows). Neither median counts the two rows whose no-harness run failed.
 4. **The rapid-tier no-harness ratio misses its target** (2.03× against 1.5×).
    This is recorded for the decision, not used as a stop rule.
 
+## Dependency-upgrade rerun after the fix
+
+- `e1518a1` changes how setup works. Setup records a digest of `package.json`
+  and the lockfiles. Every `exec`, task check and proof run now reruns that
+  setup when the digest changes during Build. The borrow refusal no longer
+  suggests editing `foundation.json`.
+- Gates before the rerun: the full suite passed and the website build passed.
+  On clean `f3ad30df0`, the sentinel passed 29/29.
+- The paid rerun was one run on `f3ad30df0` (`source.dirty: false`). Result:
+  `completed`, archived, 0 pending tasks, oracle 8/8, 70.3 s, US$0.4423
+  measured, 12 requests.
+- During the run, the agent never installed or linked dependencies itself, and
+  reached proven with a single `advance --through proven`.
+- The recorded setup digest (`sha256:df125ccc…`) differs from the seed
+  manifest digest (`sha256:5eca5cd7…`). So the harness reinstalled after the
+  edit.
+- This clears the checkpoint blocker for this row with n=1. The other 27 rows
+  ran on `9f1c09bf2`. The fix only changes behaviour when a Build edits the
+  manifest or lockfile, and in the matrix only dependency-upgrade does.
+- Measured spend for the whole checkpoint, including the rerun:
+  **US$21.7435**.
+
+```text
+~/.local/share/changeloop/benchmarks/2026-10-19-rerun-dependency-upgrade-f3ad30df0.tar.gz
+sha256 65d1911a6761e27409104ffa7c23a17deb1dc26ee57048d29d490b0c74b0e92c
+```
+
 ## Retained runs
 
 ```text
@@ -126,9 +153,10 @@ The archive contains `checkpoint-9f1c09bf2-candidate/` and
 
 Resume:
 
-1. Fix the sandbox dependency refresh during Build, and the `ln` escape
-   false-positive, with unit regressions.
-2. Rerun `dependency-upgrade` on clean source until it reaches `archived`.
+1. Done in `e1518a1`: dependency refresh during Build and the refusal text.
+   The `ln` operand check is unchanged, because the isolation rule
+   deliberately refuses links.
+2. Done: `dependency-upgrade` reached `archived` on clean `f3ad30df0`.
 3. Repeat `refactor-no-reproduction`, `library-cli-flag` and
    `bare-node-boundary` before claiming a speed difference.
 4. Decide whether the rapid-tier ratio blocks release.

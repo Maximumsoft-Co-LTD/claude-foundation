@@ -117,6 +117,32 @@ no-harness
 4. **อัตราส่วนเทียบ no-harness ของ tier rapid ไม่ถึงเป้า** (2.03× เทียบกับ 1.5×)
    บันทึกไว้ประกอบการตัดสินใจ ไม่ได้ใช้เป็นเกณฑ์หยุด
 
+## รัน dependency-upgrade ซ้ำหลังแก้
+
+- `e1518a1` เปลี่ยนการทำงานของ setup ดังนี้
+  - setup บันทึก digest ของ `package.json` และ lockfile ไว้
+  - ระหว่าง Build ถ้า digest เปลี่ยน ทุก `exec`, task check และ proof run จะรัน setup เดิมซ้ำก่อน
+  - ข้อความปฏิเสธเรื่อง borrow ไม่แนะนำให้แก้ `foundation.json` อีกต่อไป
+- ก่อนรันซ้ำ: full suite ผ่าน, website build ผ่าน, sentinel ผ่าน 29/29 บน `f3ad30df0`
+  ที่ไม่มีการแก้ค้าง
+- รันซ้ำแบบเสียเงินหนึ่งรอบบน `f3ad30df0` (`source.dirty: false`)
+  - ผลคือ `completed` ถึง archived, ไม่มี task ค้าง, oracle 8/8
+  - ใช้ 70.3 s, ค่าใช้จ่ายที่วัดได้ US$0.4423, 12 requests
+- agent ไม่ได้ install หรือ link dependency เอง และไปถึง proven ด้วย
+  `advance --through proven` ครั้งเดียว
+- digest ที่ setup บันทึกไว้ (`sha256:df125ccc…`) ไม่ตรงกับ digest ของ manifest ใน
+  seed (`sha256:5eca5cd7…`) แปลว่า harness ติดตั้งใหม่เองหลังมีการแก้
+- ผลนี้ปลด checkpoint blocker ของแถวนี้ (n=1)
+  - อีก 27 แถวมาจาก `9f1c09bf2`
+  - การแก้นี้มีผลเฉพาะเมื่อ Build แก้ manifest หรือ lockfile และใน matrix มีแค่
+    dependency-upgrade ที่ทำแบบนั้น
+- ค่าใช้จ่ายที่วัดได้ทั้ง checkpoint รวมรอบรันซ้ำ: **US$21.7435**
+
+```text
+~/.local/share/changeloop/benchmarks/2026-10-19-rerun-dependency-upgrade-f3ad30df0.tar.gz
+sha256 65d1911a6761e27409104ffa7c23a17deb1dc26ee57048d29d490b0c74b0e92c
+```
+
 ## Run ที่เก็บไว้
 
 ```text
@@ -129,9 +155,9 @@ sha256 f33eddc21992cae8472f9d9766ec8e19c771295ceb382cc7ca95360bbebafe3d
 
 ขั้นต่อไป:
 
-1. แก้ให้ Build refresh dependency ของ sandbox และแก้ false positive เรื่อง `ln`
-   escape พร้อม unit regression
-2. รัน `dependency-upgrade` ซ้ำบน source ที่ไม่มีการแก้ค้างจนถึง `archived`
+1. เสร็จแล้วใน `e1518a1`: Build refresh dependency ให้เอง และแก้ข้อความปฏิเสธแล้ว
+   ส่วนการตรวจ operand ของ `ln` ยังเหมือนเดิม เพราะกฎ isolation ตั้งใจให้ปฏิเสธการ link
+2. เสร็จแล้ว: `dependency-upgrade` ถึง `archived` บน `f3ad30df0` ที่ไม่มีการแก้ค้าง
 3. รัน `refactor-no-reproduction`, `library-cli-flag` และ `bare-node-boundary`
    ซ้ำก่อนอ้างว่าความเร็วต่างกัน
 4. ตัดสินใจว่าอัตราส่วนของ tier rapid จะบล็อก release หรือไม่
