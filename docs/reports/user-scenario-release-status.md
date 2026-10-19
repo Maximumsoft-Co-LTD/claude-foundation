@@ -1,6 +1,7 @@
 # User scenario release status
 
-Latest publication: v3.6.5 on 2026-10-18. It reached strict delivery 28/28
+Latest publication: v3.6.6 on 2026-10-19 (strict delivery 28/28; rapid-tier
+ratio 2.01× recorded, not blocking). Previous: v3.6.5 on 2026-10-18. It reached strict delivery 28/28
 on every paid scenario (n=1) and is 18% faster than v3.6.4 on the same rows;
 repeated and production assurance remain open. v3.6.4 (2026-10-17) also
 reached 28/28; v3.6.3 (2026-10-11) was published under an explicit exception
@@ -16,6 +17,24 @@ Retained supplement: 2026-10-09, no-harness/v3.6.2; historical ten-scenario
 comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
+
+### Verified v3.6.6 publication — 2026-10-19
+
+The [release](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.6)
+and [publication workflow](https://github.com/Maximumsoft-Co-LTD/claude-foundation/actions/runs/39258777029)
+completed, including the docs deployment. Checkpoint source `5b850dd8b` maps
+through the workflow rewrite to tagged source `434248569`. Formula commit
+`661426bba` pins the tarball
+`sha256:37d3db30d88c3c706a85e9e6b4cccea20bfc16b2216ea90276b2a1309ff25d56`
+(downloaded and matched) and the `arm64_sequoia` bottle. On `5b850dd8b`:
+- The upgrade matrix passed 265/265, and release preflight and the local
+  rehearsal passed.
+- The full suite passed at `FOUNDATION_TEST_JOBS=6`.
+
+Strict delivery is 28/28. The paid rows come from the `9f1c09bf2` checkpoint,
+plus the dependency-upgrade rerun and the repeated rapid rows. The rapid-tier
+no-harness ratio of 2.01× against a 1.5× target is recorded, not blocking, by
+maintainer decision. Repeated and production assurance remain open.
 
 ### Candidate `9f1c09bf2` + `e1518a1` after v3.6.5 — 2026-10-19
 
