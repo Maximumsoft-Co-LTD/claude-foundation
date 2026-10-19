@@ -26,8 +26,14 @@ arms (n=1). There, dependency-upgrade stopped at `building` because the sandbox
 did not refresh dependencies after a manifest change in Build. `e1518a1` fixes
 that, and a clean `f3ad30df0` rerun reaches archived 8/8, so strict delivery is
 28/28. Against retained v3.6.5, wall time is +0.5% and cost +0.9%. The
-rapid-tier no-harness ratio is 2.03× against a 1.5× target and remains an open
-release decision. Measured host cost: US$21.7435.
+rapid-tier no-harness ratio is 2.03× against a 1.5× target. Measured host
+cost: US$21.7435.
+
+The [2026-10-19 rapid repeat](scenario-repeat-rapid-2026-10-19.md)
+([ภาษาไทย](scenario-repeat-rapid-2026-10-19.th.md)) reruns five rows three
+paired rounds each after the overhead fixes. The rapid median ratio is 2.01×.
+The maintainer recorded it rather than blocking the release. One config-flag
+oracle failure on `0660d1329` is retained. Measured host cost: US$13.5001.
 
 ### Verified v3.6.5 publication — 2026-10-18
 
