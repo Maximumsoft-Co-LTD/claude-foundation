@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     field it never wrote.
   - Fix: the derived outcome now skips placeholder-shaped text, falling back
     to the requirement clause. Outcomes the author writes are still checked.
+- **An unnamed `modified` requirement finds the canonical one it means.**
+  - When a `modified` requirement names no `requirement`, the harness now
+    matches a restated description, the key's slug (`loyalty-tiers` →
+    "Loyalty tiers"), or the capability's only requirement.
+  - If nothing matches, the repair lists the requirement names to choose from.
+  - Paid regression-fix runs had repaired the draft up to three times for
+    this.
 - **`--through` without `--approve-spec` names the call that works.**
   - The refusal now prints the full command for when the user approved the
     spec, and it still approves nothing.

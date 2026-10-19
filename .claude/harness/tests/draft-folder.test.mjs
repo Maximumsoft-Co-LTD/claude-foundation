@@ -508,6 +508,30 @@ test("a keyed v5 draft receives the derived capability and outcome only", () => 
   assert.equal(expandMinimalSemanticDraft(named), named);
 });
 
+// Paid regression-fix runs declared `operation: "modified"` with keys such as
+// `loyalty-tiers` for "Loyalty tiers" and repaired the draft up to three times.
+test("an unnamed modified requirement takes the canonical requirement it means", () => {
+  const spec = "## ADDED Requirements\n\n### Requirement: Loyalty tiers\n\nThe system SHALL " +
+    "grant tiers.\n\n#### Scenario: Gold\n\n- **WHEN** 5000 points\n- **THEN** gold\n\n" +
+    "### Requirement: Point validation\n\nThe system SHALL reject bad points.\n\n" +
+    "#### Scenario: Negative\n\n- **WHEN** -1\n- **THEN** rejected\n";
+  const full = startChangeJson();
+  const { outcome: _out, requirement: _req, ...bare } = full.requirements[0];
+  const expand = (row, text = spec) => expandMinimalSemanticDraft(
+    { ...full, requirements: [{ ...bare, capability: "pricing", operation: "modified", ...row }] },
+    { listCanonicalCapabilities: () => ["pricing"], loadCanonicalSpec: () => text }).requirements[0];
+  assert.equal(expand({ key: "loyalty-tiers" }).requirement, "Loyalty tiers", "the key's slug");
+  assert.equal(expand({ key: "x", description: "The system SHALL reject bad points." })
+    .requirement, "Point validation", "a restated description");
+  const only = spec.slice(0, spec.indexOf("### Requirement: Point"));
+  assert.equal(expand({ key: "tier-boundaries" }, only).requirement, "Loyalty tiers",
+    "the capability's only requirement");
+  assert.equal(expand({ key: "tier-boundaries" }).requirement, undefined,
+    "an ambiguous row stays the author's to name");
+  assert.equal(expand({ key: "loyalty-tiers", requirement: "Point validation" }).requirement,
+    "Point validation", "an authored name is kept");
+});
+
 // A paid library-cli-flag run quoted `{"file":<the path given>}` in a scenario;
 // the outcome derived from it read as a placeholder and the agent was asked to
 // repair a field it never wrote.

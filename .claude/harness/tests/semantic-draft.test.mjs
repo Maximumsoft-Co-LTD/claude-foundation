@@ -508,6 +508,11 @@ test("modified requirements merge every canonical scenario before rendering", ()
   assert.deepEqual(result.issues, []);
   assert.deepEqual(result.draft.specs[0].scenarios.map((row) => row.name),
     ["Existing success", "New rejection"]);
+  // An unknown name lists the requirements it could modify.
+  source.requirements[0].requirement = "Retry backoff";
+  const unknown = normalizeSemanticDraft(source, slugify, { loadCanonicalSpec: () => canonical });
+  assert.ok(unknown.issues.some((issue) => /cannot find canonical requirement 'Retry backoff' to modify; set requirement to one of: Retry policy$/.test(issue)),
+    JSON.stringify(unknown.issues));
 });
 
 test("semantic template is compact and delegates bookkeeping", () => {

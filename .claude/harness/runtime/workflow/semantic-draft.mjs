@@ -186,7 +186,10 @@ function mergeCanonicalScenarios(requirement, canonicalText, label, issues) {
   const current = parseSpecDocument(canonicalText).find((row) =>
     row.name.toLowerCase() === name.toLowerCase());
   if (!current) {
-    issues.push(`${label} cannot find canonical requirement '${name}' to modify`);
+    // Naming the choices saves the round an agent spent reading the spec.
+    const names = parseSpecDocument(canonicalText).map((row) => row.name);
+    issues.push(`${label} cannot find canonical requirement '${name}' to modify` +
+      (names.length ? `; set requirement to one of: ${names.join(", ")}` : ""));
     return semanticScenarios(requirement);
   }
   const canonical = canonicalScenarioDetails(current.body);
@@ -907,6 +910,25 @@ function canonicalRequirementMatch(row, rows) {
     (description && spec.body.includes(description)));
 }
 
+const requirementSlug = (value) =>
+  text(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+// A `modified` row that names no requirement: the paid regression-fix runs
+// declared keys such as `loyalty-tiers` for "Loyalty tiers" and repaired the
+// draft one to three times. Match a restated description, then the key's
+// slug, then the capability's only requirement; anything else stays the
+// author's to name (the repair lists the choices).
+function modifiedRequirementMatch(row, rows) {
+  const key = requirementSlug(row.key);
+  return canonicalRequirementMatch(row, rows) ||
+    (key && rows.find((spec) => requirementSlug(spec.name) === key)) ||
+    (rows.length === 1 ? rows[0] : null);
+}
+
+function unnamedModifiedRow(row) {
+  return text(row.operation).toLowerCase() === "modified" && !text(row.requirement || row.title);
+}
+
 // When the repository already has capabilities, a minimal draft belongs to
 // one of them. A requirement that restates a canonical requirement decides it;
 // otherwise the capability whose name and requirement titles share strictly
@@ -984,15 +1006,20 @@ function keyedFolderDraftDefaults(input, context) {
       input.claims !== undefined || input.specs !== undefined ||
       !Array.isArray(input.requirements) || !input.requirements.length ||
       !input.requirements.every(plainObject) ||
-      !input.requirements.some((row) => !text(row.capability) ||
+      !input.requirements.some((row) => !text(row.capability) || unnamedModifiedRow(row) ||
         (!text(row.outcome) && text(row.operation).toLowerCase() !== "removed")))
     return input;
   const source = structuredClone(input);
-  const { capability, choices } = draftCapabilityChoice(source, text(source.capability), context);
+  const { capability, choices, canonicalRows } =
+    draftCapabilityChoice(source, text(source.capability), context);
   if (choices) source._capabilityChoices = choices;
   source.requirements = source.requirements.map((input) => {
     const row = { ...input };
     if (!text(row.capability) && capability) row.capability = capability;
+    if (unnamedModifiedRow(row) && text(row.capability)) {
+      const match = modifiedRequirementMatch(row, canonicalRows(text(row.capability)));
+      if (match) row.requirement = match.name;
+    }
     if (!text(row.outcome) && text(row.operation).toLowerCase() !== "removed") {
       const outcome = derivedOutcome(row);
       if (outcome) row.outcome = outcome;
@@ -1058,6 +1085,9 @@ export function expandMinimalSemanticDraft(input, {
       const match = canonicalRequirementMatch(row, canonicalRows(row.capability));
       row.operation = match ? "modified" : "added";
       if (match && !text(row.requirement || row.title)) row.requirement = match.name;
+    } else if (unnamedModifiedRow(row) && text(row.capability)) {
+      const match = modifiedRequirementMatch(row, canonicalRows(row.capability));
+      if (match) row.requirement = match.name;
     }
     // A derived key reads as an identifier; the living spec's heading reads as
     // a title of the same clause.
