@@ -133,13 +133,24 @@ export const MEDIUM_TIER_SPEED_SAFE_TRIGGERS = Object.freeze([
   "independence-waived-self-review"
 ]);
 
+// A rapid-lane change whose only medium trigger is a declared `input-domain`
+// takes the fast class for its first round (user decision): the paid rapid
+// tier spent 10-16 s on a standard-class review of one validated CLI flag.
+// An explicit `review.modelByTier.medium` still wins.
+function rapidInputDomainOnly({ tier, rapid, triggers }) {
+  return tier === "medium" && rapid === true && Array.isArray(triggers) &&
+    triggers.length > 0 && triggers.every((trigger) => trigger === "input-domain");
+}
+
 export function reviewModelClass({
-  tier, deliveredAiCount = 0, triggers = [], declaredReview = false, settings = {}
+  tier, deliveredAiCount = 0, triggers = [], declaredReview = false, settings = {},
+  rapid = false
 } = {}) {
   if (!["low", "medium"].includes(tier) || Number(deliveredAiCount) > 0)
     return "configured";
   let chosen = DEFAULT_REVIEW_MODEL_BY_TIER[tier];
   if (tier === "low" && settings?.lowRiskModel === "configured") chosen = "configured";
+  if (rapidInputDomainOnly({ tier, rapid, triggers })) chosen = "fast";
   const mapped = settings?.modelByTier;
   if (mapped && typeof mapped === "object" && Object.hasOwn(mapped, tier))
     chosen = mapped[tier];

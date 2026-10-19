@@ -547,7 +547,9 @@ the fast model actually run (`fastModelFamily`, else the `models.fast.family`
 alias), so diversity and separation checks judge that model. The first round of
 a medium-tier review runs the faster `standard` class by default (the reviewer's
 `standardModelId`/`standardModelFamily`, else `models.standard.family` for
-`claude-cli`, at the configured effort), a deliberate speed/depth trade-off. The
+`claude-cli`, at the configured effort), a deliberate speed/depth trade-off. A
+`foundation-rapid` change whose only medium trigger is `input-domain` runs the
+`fast` class for that first round unless `review.modelByTier.medium` is set. The
 configured model keeps high, every later (delta/closure) round, a medium change
 with any trigger other than `medium-impact-or-coupling`, `review-risk`,
 `declared-medium-risk`, `input-domain`, or `independence-waived-self-review`

@@ -1309,7 +1309,8 @@ export function createAuthorityRuntime({
       tier: routing.tier, deliveredAiCount: deliveredAiAttempts(id).length,
       triggers: routing.triggers,
       declaredReview: Boolean(runtimeState.reviewRequired) && !runtimeState.reviewKeywordOnly,
-      settings: reviewSettings
+      settings: reviewSettings,
+      rapid: runtimeState.schema === "foundation-rapid"
     });
     let configured = authorityReviewerConfiguration(
       reviewerName, requestEntry.value, modelTier);

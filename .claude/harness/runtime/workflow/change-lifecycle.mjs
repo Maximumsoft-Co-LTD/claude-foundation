@@ -936,7 +936,8 @@ export function reviewRouteLabel({
     const model = reviewModelClass({
       tier, triggers: assembled.triggers,
       declaredReview: Boolean(state.reviewRequired) && !state.reviewKeywordOnly,
-      settings: { lowRiskModel, modelByTier }
+      settings: { lowRiskModel, modelByTier },
+      rapid: state.schema === "foundation-rapid"
     });
     return `risk-tiered AI review (${tier} tier, ${model} model)`;
   }
@@ -1829,7 +1830,9 @@ export function createChangeLifecycle({
         ".foundation/drafts/<id>/ (change.json with version 5, then proposal.md); that path " +
         "is pre-allowed and the tool creates the folder. Do not save it through the shell " +
         "(heredoc, cat >, echo >, mkdir chains): the host refuses those. Then run " +
-        "claude-foundation change start .foundation/drafts/<id>.",
+        "claude-foundation change start .foundation/drafts/<id>; when the request already " +
+        "approved the spec, add --approve-spec --decision-ref <ref> and any --through stage " +
+        "to that same call.",
       minimalDraft: minimalDraftFolderTemplate(),
       minimalDraftWorkType: "Set workType in change.json to every catalog type the change " +
         "is (feature, bugfix, api, ui, data, migration, …) and copy each type's block from " +
@@ -2647,6 +2650,10 @@ export function createChangeLifecycle({
           deferSessionBinding: true
         }));
         atomicStepOutput = true;
+        // Typed risk signals persist before resolve: its printed review route
+        // read the state without them and called an input-domain change
+        // "not required" even though Prove then ran a medium-tier review.
+        persistRiskSignals(id, draft.riskSignals);
         let resolution;
         try { resolution = measureStage("change.resolve", () => resolveChange(id, resolutionFlags)); }
         finally { atomicStepOutput = false; }
@@ -2655,7 +2662,6 @@ export function createChangeLifecycle({
         // upgrade needs a second projection; the common path was previously
         // rewritten unconditionally after createChange had already materialized it.
         if (resolution.upgraded) materializeDraft(id, draft);
-        persistRiskSignals(id, draft.riskSignals);
         persistFixes(id, draft.fixes);
         // Atomic start is a public Change gate. Use the same explicit validation
         // as `change validate`, including OpenSpec strict lint when available.
@@ -2967,12 +2973,13 @@ export function createChangeLifecycle({
         createChange(draft.intent, { rapid, id }, draft, {
           availabilityChecked: true, deferSessionBinding: true
         });
+        // Signals persist before resolve so its printed review route counts them.
+        persistRiskSignals(id, draft.riskSignals);
         atomicStepOutput = true;
         let resolution;
         try { resolution = resolveChange(id, resolutionFlags); }
         finally { atomicStepOutput = false; }
         if (resolution.upgraded) materializeDraft(id, draft);
-        persistRiskSignals(id, draft.riskSignals);
         persistFixes(id, draft.fixes);
         validate(id, "root");
         bindClaudeSession(id, "change");

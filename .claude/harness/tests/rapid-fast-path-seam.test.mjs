@@ -13,7 +13,7 @@ import test from "node:test";
 // review that runs is observable and can never pass by accident.
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-function consumer(intent) {
+function consumer(intent, draftExtra = {}) {
   const temp = mkdtempSync(join(tmpdir(), "foundation-rapid-fast-path-"));
   const project = join(temp, "consumer");
   mkdirSync(project, { recursive: true });
@@ -51,7 +51,8 @@ function consumer(intent) {
     requirements: [{ description: "The calc module SHALL export subtract(a, b) returning a minus b",
       scenarios: [{ when: "subtract(5, 3) is called", then: "it returns 2" }] }],
     tasks: [{ outcome: "Add subtract with a test", verify: "node --test",
-      paths: ["src/**", "test/**"] }]
+      paths: ["src/**", "test/**"] }],
+    ...draftExtra
   }));
   // The consumer's own `node --test` must not report into this runner.
   const env = { ...process.env };
@@ -128,6 +129,27 @@ test("a quiet rapid change left at applied resumes to archived through advance",
     assert.match(resumed.stdout, /"reached":"archived"/);
     assert.equal(JSON.parse(readFileSync(runtime, "utf8")).status, "archived");
     assert.equal(fixture.reviewerCalls(), 0, "recovery invokes no reviewer");
+  } finally {
+    rmSync(fixture.temp, { recursive: true, force: true });
+  }
+});
+
+// The resolve line was printed before the draft's risk signals were stored, so
+// an input-domain rapid change read "not required" while Prove reviewed it.
+// Its first review round runs on the fast tier (user decision).
+test("a rapid input-domain change names its medium fast-tier review at start", () => {
+  const fixture = consumer("Calc subtract rejects non-numeric CLI input", {
+    riskSignals: ["input-domain"],
+    requirements: [{ key: "subtract", description: "The calc module SHALL export subtract(a, b) " +
+      "returning a minus b and SHALL reject non-numeric input with a TypeError",
+    scenarios: [{ when: "subtract(5, 3) is called", then: "it returns 2" },
+      { kind: "failure", when: "subtract(\"x\", 3) is called", then: "it throws a TypeError",
+        recovery: "pass numbers" }] }],
+    discovery: { coverage: [{ dimension: "input-boundary", status: "covered", covers: ["subtract"] }] }
+  });
+  try {
+    assert.match(fixture.started.stdout, /schema: foundation-rapid/);
+    assert.match(fixture.started.stdout, /review: risk-tiered AI review \(medium tier, fast model\)/);
   } finally {
     rmSync(fixture.temp, { recursive: true, force: true });
   }

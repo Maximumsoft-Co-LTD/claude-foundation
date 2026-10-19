@@ -26,7 +26,8 @@ closure. After a fix, only invalidated/downstream checks rerun. A configured
 review that the harness can run starts in parallel with the tests for the same
 workspace hash, reads only the diff and the agreement's requirements, and uses
 the fast model tier for low risk and a faster standard tier for medium risk
-(high risk and security triggers keep the configured model; `review.modelByTier`
+(a rapid change whose only medium trigger is `input-domain` uses the fast tier;
+high risk and security triggers keep the configured model; `review.modelByTier`
 overrides it). When Build checks are reused, review still overlaps the
 asynchronous base-source test check without rerunning those Build checks;
 its findings and failed tests return as one
