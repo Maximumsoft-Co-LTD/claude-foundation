@@ -50,6 +50,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     dead after the holder had already released and a third process had
     acquired. It then deleted the live lock and let two writers in.
   - Fix: recovery now removes only the descriptor it judged dead.
+- **A derived outcome is no longer refused as a placeholder.**
+  - Problem: when a requirement had no `outcome`, the harness copied the
+    first scenario's `then`. Text like `<the path given>` in that sentence
+    then failed the placeholder check, and the agent was asked to repair a
+    field it never wrote.
+  - Fix: the derived outcome now skips placeholder-shaped text, falling back
+    to the requirement clause. Outcomes the author writes are still checked.
+- **`--through` without `--approve-spec` names the call that works.**
+  - The refusal now prints the full command for when the user approved the
+    spec, and it still approves nothing.
+  - `change.md` step 3 and the template's `save` text now put the approval
+    flags on the same `change start` call.
+- **Rapid input-domain review runs on the fast tier, and the start line says
+  so.**
+  - A `foundation-rapid` change whose only medium trigger is `input-domain`
+    runs its first review round on the fast model class.
+    `review.modelByTier.medium` still overrides this.
+  - Risk signals are stored before the change is resolved. Previously the
+    `review:` line printed "not required" for these changes even though
+    Prove then reviewed them.
 - **Preview and package work on real projects.**
   - `preview` runs before Build while the workspace is still the target. It
     refuses once a Build sandbox exists, and it rejects path-like provider
