@@ -17,6 +17,17 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+### Candidate `9f1c09bf2` after v3.6.5 — 2026-10-19 (blocked)
+
+The [2026-10-19 checkpoint](scenario-checkpoint-candidate-9f1c09bf2-2026-10-19.md)
+([ภาษาไทย](scenario-checkpoint-candidate-9f1c09bf2-2026-10-19.th.md)) tests
+clean `9f1c09bf2` on all 28 paid scenarios in the Change Loop and no-harness
+arms (n=1). Strict delivery is 27/28: dependency-upgrade stops at `building`
+because the sandbox does not refresh dependencies after a manifest change in
+Build. That is a checkpoint blocker. Against retained v3.6.5, wall time is
++0.5% and cost +0.9%. The rapid-tier no-harness ratio is 2.03× against a 1.5×
+target. Measured host cost: US$21.3012.
+
 ### Verified v3.6.5 publication — 2026-10-18
 
 The [release](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.5)
