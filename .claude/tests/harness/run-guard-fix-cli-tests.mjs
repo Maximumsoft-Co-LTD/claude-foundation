@@ -398,6 +398,11 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     await assert.rejects(route(command, [...values, "--through", "build"], {
       [method]: () => result
     }), /--through requires --approve-spec/);
+    // The refusal names the one call that works, without approving anything.
+    await assert.rejects(route(command, [...values, "--through", "proven"], {
+      [method]: () => { throw new Error("must not run"); }
+    }), new RegExp(`claude-foundation (?:change )?${command} <same arguments> --approve-spec ` +
+      "--decision-ref <ref> --through build\\|proven\\|archived"));
     await assert.rejects(route(command, [...values, "--approve-spec", "--decision-ref", "r",
       "--through", "land"], { [method]: () => result }), /--through must be build\|proven\|archived/);
     await assert.rejects(route(command, [...values, "--inspect", "--approve-spec",

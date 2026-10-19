@@ -128,7 +128,13 @@ export async function routeRuntimeCommand(command, values, api) {
   const sameCallApproval = (command, flags) => {
     if (!flags["approve-spec"]) {
       const stray = ["decision-ref", "through"].filter((flag) => flags[flag] !== undefined);
-      if (stray.length) die(`${command} --${stray.join(", --")} requires --approve-spec`);
+      // Agents that guessed `--through` alone spent a round finding the
+      // approval flags; the refusal names the one call that works when the
+      // user approved, and never approves on its own.
+      if (stray.length) die(`${command} --${stray.join(", --")} requires --approve-spec; ` +
+        `when the user approved the spec, rerun as \`claude-foundation ${command} <same arguments> ` +
+        "--approve-spec --decision-ref <ref> --through build|proven|archived`, otherwise " +
+        "drop those flags and ask for approval");
       return null;
     }
     const decisionRef = String(flags["decision-ref"] || "").trim();

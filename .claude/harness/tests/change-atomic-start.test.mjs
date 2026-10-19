@@ -1067,7 +1067,9 @@ test("the start template leads with the pre-allowed file-tool save route to a v5
   assert.match(template.save, /Write tool/);
   assert.match(template.save, /\.foundation\/drafts\/<id>\/ \(change\.json with version 5, then proposal\.md\)/);
   assert.match(template.save, /not .*shell.*heredoc/);
-  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>\.$/);
+  assert.match(template.save, /claude-foundation change start \.foundation\/drafts\/<id>;/);
+  // An approved request carries approval on that same call, not a second one.
+  assert.match(template.save, /approved the spec, add --approve-spec --decision-ref <ref> .*same call\.$/);
   assert.doesNotMatch(template.save, /<id>\.json/);
   // The minimal folder declares its work type, so required sections apply.
   const change = template.minimalDraft["change.json"];

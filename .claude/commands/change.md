@@ -12,9 +12,9 @@ Create or update **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
    `workType`, `requirements[{description with SHALL, scenarios[{when, then}]}]`,
    `tasks[{outcome, verify, paths}]`; `proposal.md` `## Why`. `verify` fails
    on wrong behavior. Prose: the requested language, else the request's.
-3. Run `claude-foundation change start .foundation/drafts/<id>`. If the
-   request approved the spec, add `--approve-spec --decision-ref <ref>` (`/dev` adds its
-   `--through`): one call starts, approves, continues.
+3. Run `claude-foundation change start .foundation/drafts/<id>`; if the
+   request approved the spec, append `--approve-spec --decision-ref <ref>`
+   (`/dev`: `--through proven` too): one call starts, approves, continues.
    - `EDIT`: fix every named field via Edit, rerun.
    - `ASK_USER`: ask, record answers in the draft, rerun.
    - `DONE`: packet files and tasks print; do not reopen them.
