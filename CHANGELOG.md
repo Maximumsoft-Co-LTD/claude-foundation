@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Approval package, pre-Build preview, and role lanes.** `package <change>`
+  writes a read-only HTML package for approvers before Build:
+  - The change is routed by intent, 28 technical domains, and risk level, all
+    taken from the existing `workType` and `riskSignals`.
+  - The package shows proof and preview labels, Mermaid diagrams (vendored
+    mermaid 11.4.1, with a text fallback), and suggested previews.
+  - The page text follows the draft's language.
+
+  `preview <change>` runs one provider in `.foundation/previews`. Its receipts
+  never satisfy Prove or Land, and an external provider needs a per-run
+  `--decision-ref`.
+
+  Opt-in `approval.roles` lanes require per-role approval with `--role`. Every
+  carried revision or amendment reroutes the lanes.
+
+  Drafts gain optional `scratch` (get/asIs/toBe/ifFail) and typed `examples`.
+  The package shows a plain-language summary and the examples before Build,
+  and the real result beside each example after Prove. `change start` prints a
+  non-blocking `NOTE: scratch` when a medium- or high-impact draft has no
+  examples, target number, or affected count.
+
+  Runtime API is now 42.
+
+### Fixed
+
+- **Build reinstalls dependencies after a manifest or lockfile edit.**
+  - Problem: setup ran only when the sandbox was created. After a Build edited
+    `package.json` or a lockfile, checks ran against stale `node_modules`. In
+    the paid dependency-upgrade scenario, the guard then refused the agent's
+    relink, and the Build stopped to ask the user.
+  - Fix: setup now records a digest of the manifest and lockfiles. Every
+    `exec`, task check, and proof run reruns the same setup when that digest
+    changes.
+  - The refusal for borrowing the checkout's dependencies now names a manifest
+    or lockfile edit as the route, not a `foundation.json` edit.
+- **A process lock is never taken from a live holder during dead-holder
+  recovery.**
+  - Problem: a contender could read a holder's descriptor, then see that pid
+    dead after the holder had already released and a third process had
+    acquired. It then deleted the live lock and let two writers in.
+  - Fix: recovery now removes only the descriptor it judged dead.
+- **Preview and package work on real projects.**
+  - `preview` runs before Build while the workspace is still the target. It
+    refuses once a Build sandbox exists, and it rejects path-like provider
+    names.
+  - `package` warns instead of exiting on invalid evidence wiring. It now shows
+    the agreement content under each artifact and each preview's status,
+    output, and artifact.
+
 ### Changed
 
 - **Only user decisions stop work before Land; Land is the single hard gate.**
