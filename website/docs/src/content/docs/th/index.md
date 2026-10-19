@@ -66,5 +66,5 @@ Change Loop ไม่รับคำพูดของ agent เป็นหล�
 - [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/) — เพิ่ม CRAP, mutation, baseline และ debt โดยไม่ขยาย Change scope
 
 :::note[เวอร์ชัน]
-เอกสารชุดนี้อ้างอิง Change Loop **v3.6.5** — runtime API 41, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+เอกสารชุดนี้อ้างอิง Change Loop **v3.6.6** — runtime API 41, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 :::
