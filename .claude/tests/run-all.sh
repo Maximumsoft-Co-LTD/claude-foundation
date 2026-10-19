@@ -180,6 +180,7 @@ adapter fingerprint|node --test "$ROOT/.claude/harness/tests/adapter-fingerprint
 provider workspace hash|node --test "$ROOT/.claude/harness/tests/provider-workspace-hash.test.mjs"
 agent plan view|node --test "$ROOT/.claude/harness/tests/agent-plan-view.test.mjs"
 agent dispatch|node --test "$ROOT/.claude/harness/tests/agent-dispatch.test.mjs"
+process lock|node --test "$ROOT/.claude/harness/tests/process-lock.test.mjs"
 budget continuation|node --test "$ROOT/.claude/harness/tests/budget-continuation.test.mjs"
 budget runtime|node --test "$ROOT/.claude/harness/tests/budget-runtime.test.mjs"
 repository topology|node --test "$ROOT/.claude/harness/tests/repository-topology.test.mjs" "$ROOT/.claude/harness/tests/submodule-repository-workspace.test.mjs"

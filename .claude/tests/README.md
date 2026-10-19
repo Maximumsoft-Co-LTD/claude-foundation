@@ -70,6 +70,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | Suite | Contract |
 |---|---|
 | `harness/installer-transaction.test.mjs` | Failed upgrade restores legacy and retired managed files; all installer dry-runs preserve absent targets |
+| `.claude/harness/tests/process-lock.test.mjs` | A dead holder's lock is recovered, and recovery never removes a descriptor a live process acquired after the dead holder was read |
 | `.claude/harness/tests/npm-lockfile-{check,auto-seam}.test.mjs` | Offline npm install-plan validation, missing dependency graphs, non-mutating checks, and automatic consumer proof wiring |
 | `bench/tests/openspec-native-{matrix,runner,scorecard,lab,workloads,cost,time-gate}.test.mjs` | Versioned scenario manifests, clean disposable consumer installation, lifecycle/oracle/quality scorecards, four cross-domain mutation-killing oracles, durable evidence preservation, cleanup, stream-derived token usage and the final-envelope grace (cost stays unknown, never zero), and the advisory 1.3x time gate against the baseline arm (pass, fail, missing baseline, per-tier grouping) |
 | `bench/tests/openspec-native-{aggregate,release-report}.test.mjs` | Arm-keyed aggregation, pairwise Change Loop/baseline comparison, and release promotion from Change Loop rows only |
