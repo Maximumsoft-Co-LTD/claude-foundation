@@ -62,14 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     spec, and it still approves nothing.
   - `change.md` step 3 and the template's `save` text now put the approval
     flags on the same `change start` call.
-- **Rapid input-domain review runs on the fast tier, and the start line says
-  so.**
-  - A `foundation-rapid` change whose only medium trigger is `input-domain`
-    runs its first review round on the fast model class.
-    `review.modelByTier.medium` still overrides this.
-  - Risk signals are stored before the change is resolved. Previously the
-    `review:` line printed "not required" for these changes even though
-    Prove then reviewed them.
+- **The start line names the review an input-domain change will get.** Risk
+  signals are now stored before the change is resolved. Previously the
+  `review:` line printed "not required" for these changes even though Prove
+  then ran a medium-tier review.
 - **Preview and package work on real projects.**
   - `preview` runs before Build while the workspace is still the target. It
     refuses once a Build sandbox exists, and it rejects path-like provider

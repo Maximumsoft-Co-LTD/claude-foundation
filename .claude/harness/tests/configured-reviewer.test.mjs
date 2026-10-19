@@ -752,21 +752,6 @@ try {
   "an unrecognized class fails closed to the configured model");
   assert.equal(reviewModelClass({ tier: "low", settings: { lowRiskModel: "configured" } }),
     "configured", "the older low-tier opt-out still works");
-  // A rapid change whose only medium trigger is input-domain reviews on fast.
-  const inputOnly = { tier: "medium", triggers: ["input-domain"] };
-  assert.equal(reviewModelClass({ ...inputOnly, rapid: true }), "fast",
-    "rapid input-domain first round: fast");
-  assert.equal(reviewModelClass(inputOnly), "standard", "a standard-lane change keeps standard");
-  assert.equal(reviewModelClass({ ...inputOnly, rapid: true,
-    triggers: ["input-domain", "medium-impact-or-coupling"] }), "standard",
-  "another medium trigger keeps standard");
-  assert.equal(reviewModelClass({ ...inputOnly, rapid: true, deliveredAiCount: 1 }),
-    "configured", "a later round keeps the configured model");
-  assert.equal(reviewModelClass({ ...inputOnly, rapid: true, declaredReview: true }),
-    "configured", "a declared review pins the configured model");
-  assert.equal(reviewModelClass({ ...inputOnly, rapid: true,
-    settings: { modelByTier: { medium: "configured" } } }), "configured",
-  "an explicit medium mapping wins");
   assert.equal(reviewModelClass({ tier: "low", settings: {
     lowRiskModel: "configured", modelByTier: { low: "standard" } } }), "standard",
   "an explicit per-tier class wins over the older opt-out");

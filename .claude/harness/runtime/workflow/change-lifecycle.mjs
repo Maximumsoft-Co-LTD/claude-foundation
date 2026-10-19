@@ -936,8 +936,7 @@ export function reviewRouteLabel({
     const model = reviewModelClass({
       tier, triggers: assembled.triggers,
       declaredReview: Boolean(state.reviewRequired) && !state.reviewKeywordOnly,
-      settings: { lowRiskModel, modelByTier },
-      rapid: state.schema === "foundation-rapid"
+      settings: { lowRiskModel, modelByTier }
     });
     return `risk-tiered AI review (${tier} tier, ${model} model)`;
   }

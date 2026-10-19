@@ -136,8 +136,8 @@ test("a quiet rapid change left at applied resumes to archived through advance",
 
 // The resolve line was printed before the draft's risk signals were stored, so
 // an input-domain rapid change read "not required" while Prove reviewed it.
-// Its first review round runs on the fast tier (user decision).
-test("a rapid input-domain change names its medium fast-tier review at start", () => {
+// Its first review round stays on the standard class (user decision).
+test("a rapid input-domain change names its medium-tier review at start", () => {
   const fixture = consumer("Calc subtract rejects non-numeric CLI input", {
     riskSignals: ["input-domain"],
     requirements: [{ key: "subtract", description: "The calc module SHALL export subtract(a, b) " +
@@ -149,7 +149,7 @@ test("a rapid input-domain change names its medium fast-tier review at start", (
   });
   try {
     assert.match(fixture.started.stdout, /schema: foundation-rapid/);
-    assert.match(fixture.started.stdout, /review: risk-tiered AI review \(medium tier, fast model\)/);
+    assert.match(fixture.started.stdout, /review: risk-tiered AI review \(medium tier, standard model\)/);
   } finally {
     rmSync(fixture.temp, { recursive: true, force: true });
   }
