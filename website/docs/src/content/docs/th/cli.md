@@ -39,6 +39,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
 | `changes` | แสดง change ที่ active สถานะ lifecycle และ action ถัดไปของแต่ละตัว |
+| `current` | แสดง change ที่ active เพียงตัวเดียวพร้อมสถานะและคำสั่งถัดไป ถ้าไม่มีหรือมีหลายตัวจะแสดงรายการตัวเลือกแล้วจบด้วย exit code ไม่ใช่ศูนย์ ขณะที่มี change active เพียงตัวเดียว `advance`, `packet`, `metrics`, `feedback` และ `package` เว้น `<change>` ได้ ส่วน flag ของ Land และการอนุมัติต้องระบุ id ชัดเจนเสมอ |
 | `doctor [--stage change\|build\|prove] [--change <id>]` | วินิจฉัยความพร้อมของโปรเจกต์ provider และ lifecycle |
 | `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | อ่าน handoff ของ operation ปัจจุบัน |
 | `metrics <change>` | ดูการใช้งาน ประสิทธิผล semantic intake งบ ต้นทุน และเวลาการรันที่วัดได้ |

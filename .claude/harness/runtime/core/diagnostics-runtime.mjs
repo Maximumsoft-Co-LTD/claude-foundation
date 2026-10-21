@@ -168,6 +168,24 @@ export function createDiagnosticsRuntime({
       console.log(`${orphan.id}\torphan-runtime\t${orphan.schema}\t${orphan.reason}`);
   }
 
+  // The one active change as `id readiness schema next-command`. None or
+  // several is a refusal that lists the candidates, so an agent that lost the
+  // id never has to guess it.
+  function showCurrent() {
+    const ids = activeChanges();
+    if (ids.length === 1) {
+      console.log(changeListingRow(ids[0], {
+        runtimePath, proofPath, readJson, readJsonOrNull, relevantHash
+      }));
+      return;
+    }
+    if (!ids.length) fail("no active change; start one with `claude-foundation change start`");
+    fail(`${ids.length} active changes; pass one explicitly:\n` +
+      ids.map((id) => `  ${changeListingRow(id, {
+        runtimePath, proofPath, readJson, readJsonOrNull, relevantHash
+      })}`).join("\n"));
+  }
+
   function showProviders() {
     for (const [provider, contract] of Object.entries(providerContracts))
       console.log(`${provider}\t${contract}`);
@@ -671,5 +689,5 @@ Commands:
   migrate [legacy-id] [--apply]`);
   }
 
-  return { doctor, migrate, showChanges, showProviders, usage };
+  return { doctor, migrate, showChanges, showCurrent, showProviders, usage };
 }

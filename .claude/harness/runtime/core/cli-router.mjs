@@ -23,6 +23,7 @@ export async function routeRuntimeCommand(command, values, api) {
     abandonChange,
     waiveGate,
     showChanges,
+    showCurrent,
     showProviders,
     showRepositories,
     foundationPolicy,
@@ -309,6 +310,9 @@ export async function routeRuntimeCommand(command, values, api) {
     },
     "changes": async () => {
       showChanges();
+    },
+    "current": async () => {
+      showCurrent();
     },
     "providers": async () => {
       showProviders();

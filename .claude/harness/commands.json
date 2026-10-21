@@ -18,6 +18,14 @@
       "description": "List active changes, lifecycle status, and their next useful action."
     },
     {
+      "name": "current",
+      "usage": "current",
+      "audience": "agent",
+      "kind": "read",
+      "idempotent": true,
+      "description": "Print the single active change with its status and next command; with none or several, list candidates and exit non-zero. advance, packet, feedback, and other read commands may omit <change> when exactly one is active."
+    },
+    {
       "name": "doctor",
       "usage": "doctor [--stage change|build|prove] [--change <id>] [--require-archive] [--unattended --attestation <file>] [--json]",
       "audience": "agent",
@@ -827,6 +835,7 @@
     "waive",
     "audit-change",
     "changes",
+    "current",
     "providers",
     "repos",
     "models",

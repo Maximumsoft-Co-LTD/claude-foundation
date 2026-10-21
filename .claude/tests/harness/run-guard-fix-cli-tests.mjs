@@ -111,6 +111,7 @@ for (const [command, method] of [["advance", "showAdvance"], ["land-advance", "a
     ["waive", ["change"], "waiveGate"],
     ["describe", ["change"], "describeCommand"],
     ["changes", [], "showChanges"],
+    ["current", [], "showCurrent"],
     ["providers", [], "showProviders"],
     ["repos", ["change"], "showRepositories"],
     ["agent-plan", ["change"], "showAgentPlan"],

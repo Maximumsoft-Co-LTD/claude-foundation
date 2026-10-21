@@ -83,6 +83,24 @@ try {
   assert.match(output, /stale\tstale-proof/);
   assert.match(output, /change\tchange/);
   assert.match(output, /orphan\torphan-runtime\t1\tpacket missing/);
+
+  // `current` names the one active change and refuses to guess among others.
+  const current = createDiagnosticsRuntime({
+    ...dependencies,
+    activeChanges: () => ids,
+    orphanRuntimeChanges: () => [],
+    fail: (message) => { throw new Error(message); }
+  });
+  ids = [];
+  assert.throws(() => current.showCurrent(), /no active change/);
+  ids = ["ready"];
+  output = "";
+  current.showCurrent();
+  assert.match(output, /^ready\tready-to-land\t2\t/);
+  assert.equal(output.trim().split("\n").length, 1);
+  ids = ["ready", "change"];
+  assert.throws(() => current.showCurrent(),
+    /2 active changes; pass one explicitly:\n {2}ready\tready-to-land[^]*\n {2}change\tchange/);
 } finally {
   console.log = priorLog;
   rmSync(root, { recursive: true, force: true });

@@ -305,14 +305,17 @@ case "${1:-}" in
   changes)
     shift; [ "$#" -eq 0 ] || fail "changes takes no arguments"
     run_runtime read changes ;;
+  current)
+    shift; [ "$#" -eq 0 ] || fail "current takes no arguments"
+    run_runtime read current ;;
   packet)
-    shift; need_arg "packet" "${1:-}"
+    shift
     run_runtime read packet "$@" ;;
   metrics)
-    shift; need_arg "metrics" "${1:-}"
+    shift
     run_runtime read metrics "$@" ;;
   feedback)
-    shift; need_arg "feedback" "${1:-}"
+    shift
     run_runtime read feedback "$@" ;;
   outcomes)
     shift
@@ -321,7 +324,7 @@ case "${1:-}" in
     shift
     run_runtime read lessons "$@" ;;
   package)
-    shift; need_arg "package" "${1:-}"
+    shift
     run_runtime read package "$@" ;;
   preview)
     shift; need_arg "preview" "${1:-}"
@@ -330,7 +333,7 @@ case "${1:-}" in
     shift; need_arg "investigate" "${1:-}"
     run_runtime write investigate "$@" ;;
   advance)
-    shift; need_arg "advance" "${1:-}"
+    shift
     run_runtime write advance "$@" ;;
   exec)
     shift; need_arg "exec" "${1:-}"

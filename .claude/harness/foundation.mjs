@@ -104,6 +104,7 @@ import {
   createChangeValidationRuntime, postReleaseRolloutGates
 } from "./runtime/workflow/change-validation.mjs";
 import { routeRuntimeCommand } from "./runtime/core/cli-router.mjs";
+import { impliedChangeValues } from "./runtime/core/implied-change.mjs";
 import { createProviderScheduler } from "./runtime/evidence/provider-scheduler.mjs";
 import { createReviewProtocol } from "./runtime/evidence/review-protocol.mjs";
 import { createArtifactStore } from "./runtime/evidence/artifact-store.mjs";
@@ -274,7 +275,7 @@ let operationFingerprint = null;
 // Lifecycle commands stay: metrics derives rework and typed-stop signals from
 // their rows, so proof-* and land-* are measurements, not inspections.
 const READ_ONLY_OPERATIONS = new Set([
-  "metrics", "feedback", "outcomes", "lessons", "hash", "changes", "providers", "repos", "models", "describe",
+  "metrics", "feedback", "outcomes", "lessons", "hash", "changes", "current", "providers", "repos", "models", "describe",
   "package", "budget-checkpoint",
   "packet", "agent-task", "audit-change", "authority-status",
   "handoff-list", "handoff-status", "handoff-packet", "evidence-detect", "evidence-doctor",
@@ -1638,6 +1639,7 @@ const {
   doctor,
   migrate,
   showChanges,
+  showCurrent,
   showProviders,
   usage
 } = createDiagnosticsRuntime({
@@ -2343,6 +2345,9 @@ if (values.includes("--help") || values.includes("-h")) {
   describeCommand(command, { json: values.includes("--json") });
   process.exit(0);
 }
+// An omitted `<change>` resolves to the one active change before telemetry and
+// the operation ledger read the id.
+values.splice(0, values.length, ...impliedChangeValues(command, values, activeChanges, die));
 const unattendedMentioned = command === "sandbox" &&
   ["create", "inspect"].includes(values[0]) &&
   values.slice(1).some((value) =>
@@ -2435,6 +2440,7 @@ await routeRuntimeCommand(command, values, {
   abandonChange,
   waiveGate,
   showChanges,
+  showCurrent,
   showProviders,
   showRepositories,
   foundationPolicy,

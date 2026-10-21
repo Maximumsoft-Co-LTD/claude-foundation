@@ -40,6 +40,7 @@ its own read-only HTML file.
 | Command | Purpose |
 |---|---|
 | `changes` | List active changes, lifecycle status, and each one's next useful action |
+| `current` | Print the single active change with its status and next command; with none or several, list the candidates and exit non-zero. While exactly one change is active, `advance`, `packet`, `metrics`, `feedback`, and `package` may omit `<change>`; Land and approval flags always need the explicit id |
 | `doctor [--stage change\|build\|prove] [--change <id>]` | Diagnose project, provider, and lifecycle readiness |
 | `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | Read the bounded machine handoff for the current operation |
 | `metrics <change>` | Inspect measured usage, semantic-intake effectiveness, active budget, cost, and execution timing |
