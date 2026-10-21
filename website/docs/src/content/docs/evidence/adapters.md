@@ -6,6 +6,8 @@ description: The five executable adapters, derived and custom wiring, and how re
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** a *provider* is the project tool that runs one check (a test run, a browser test, a linter), and an *adapter* is the small connector that tells Change Loop how to run that tool and read its result. This page is for agents and integrators wiring those tools. You need it only when the automatic wiring does not fit your project. You get a working setup where each check runs once and leaves a recorded result (a *receipt*). Terms are defined in the [glossary](/docs/glossary/).
+
 Change Loop separates the stable behavioral contract from replaceable execution wiring. It does not install test frameworks, browsers, or project dependencies — **your project owns and locks every executable an adapter names.**
 
 ## Derived wiring and execution.yaml

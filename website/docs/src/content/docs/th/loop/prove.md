@@ -6,6 +6,15 @@ description: ใช้และรัน evidence ที่ผูกกับเ
 <!-- docs-audience: agents-integrators -->
 **ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
 
+**พูดง่าย ๆ:** Prove ตรวจว่างานทำตามที่ข้อตกลงสัญญาไว้จริง harness รันเครื่องมือของโปรเจกต์เอง
+(เรียกว่า [provider](/docs/th/glossary/)) บันทึกผลแต่ละอย่างเป็น [receipt](/docs/th/glossary/)
+และให้ review อ่าน diff คุณเข้ามาเฉพาะเรื่องที่เป็นของคุณ เช่น acceptance หรือ waiver
+ผลที่ได้คือสถานะ `proven` เมื่อทุกข้อสัญญามีหลักฐานที่ยังสด **`proven` ไม่ใช่ส่งมอบแล้ว:**
+ยังไม่มีอะไรเข้าโปรเจกต์ของคุณ จะถือว่าจบก็ต่อเมื่อ [`/land`](/docs/th/loop/land/)
+ไปถึง `archived` เท่านั้น
+
+## สำหรับ agent และผู้ดูแล integration
+
 ```text
 /prove <change>
 ```

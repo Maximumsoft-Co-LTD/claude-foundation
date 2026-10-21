@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">Who does what during one change</title>
+  <desc id="d">A swimlane chart. Columns are the lifecycle steps Investigate, Change, Build, Prove and Land. Rows are You, the Agent and the Harness, plus the result of each step. You act at Change (describe and approve), Prove (review) and Land (authorize); the agent and harness do the routine work.</desc>
+  <rect x=".5" y=".5" width="959" height="439" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <!-- column headers -->
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="15" font-weight="500" text-anchor="middle">
+    <rect x="108" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c" stroke-dasharray="5 4"/><text x="188" y="41" fill="#17181c">/investigate?</text>
+    <rect x="276" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c"/><text x="356" y="41" fill="#17181c">/change</text>
+    <rect x="444" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c"/><text x="524" y="41" fill="#17181c">/build</text>
+    <rect x="612" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c"/><text x="692" y="41" fill="#17181c">/prove</text>
+    <rect x="780" y="16" width="160" height="40" rx="6" fill="#17181c"/><text x="860" y="41" fill="#f2eee5">/land</text>
+  </g>
+
+  <!-- lane labels -->
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="12" font-weight="500" letter-spacing="1.5" fill="#6a6c71">
+    <text x="22" y="110">YOU</text><text x="22" y="202">AGENT</text><text x="22" y="294">HARNESS</text><text x="22" y="366">RESULT</text>
+  </g>
+
+  <!-- lane: you -->
+  <g>
+    <rect x="108" y="64" width="160" height="84" rx="6" fill="#efe9dc"/>
+    <rect x="276" y="64" width="160" height="84" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+    <rect x="444" y="64" width="160" height="84" rx="6" fill="#efe9dc"/>
+    <rect x="612" y="64" width="160" height="84" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+    <rect x="780" y="64" width="160" height="84" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+  </g>
+  <!-- lane: agent -->
+  <g fill="#e8e1d4">
+    <rect x="108" y="156" width="160" height="84" rx="6"/><rect x="276" y="156" width="160" height="84" rx="6"/><rect x="444" y="156" width="160" height="84" rx="6"/><rect x="612" y="156" width="160" height="84" rx="6"/><rect x="780" y="156" width="160" height="84" rx="6"/>
+  </g>
+  <!-- lane: harness -->
+  <g fill="#e1ece6">
+    <rect x="108" y="248" width="160" height="84" rx="6"/><rect x="276" y="248" width="160" height="84" rx="6"/><rect x="444" y="248" width="160" height="84" rx="6"/><rect x="612" y="248" width="160" height="84" rx="6"/><rect x="780" y="248" width="160" height="84" rx="6"/>
+  </g>
+  <!-- result -->
+  <g fill="#fff" stroke="#bcb4a6">
+    <rect x="108" y="340" width="160" height="44" rx="6"/><rect x="276" y="340" width="160" height="44" rx="6"/><rect x="444" y="340" width="160" height="44" rx="6"/><rect x="612" y="340" width="160" height="44" rx="6"/>
+  </g>
+  <rect x="780" y="340" width="160" height="44" rx="6" fill="#17181c"/>
+
+  <g font-size="12" fill="#373a42" text-anchor="middle">
+    <!-- you -->
+    <text x="188" y="94">Ask the question</text><text x="188" y="112">Answer what is</text><text x="188" y="130">genuinely unclear</text>
+    <text x="356" y="88" font-weight="700" fill="#8f2a11">Describe the outcome</text><text x="356" y="108" font-weight="700" fill="#8f2a11">Approve the spec</text><text x="356" y="130">before any code</text>
+    <text x="524" y="102">Decide only when</text><text x="524" y="120">asked a real trade-off</text>
+    <text x="692" y="88" font-weight="700" fill="#8f2a11">Review result + diff</text><text x="692" y="108">Accept, or waive a</text><text x="692" y="126">check on the record</text>
+    <text x="860" y="94" font-weight="700" fill="#8f2a11">Say /land</text><text x="860" y="112">Explicit authority,</text><text x="860" y="130">nothing is implied</text>
+    <!-- agent -->
+    <text x="188" y="186">Reads code and docs</text><text x="188" y="204">Reports findings</text><text x="188" y="222">(no product edits)</text>
+    <text x="356" y="186">Drafts the agreement:</text><text x="356" y="204">scenarios, claims,</text><text x="356" y="222">tasks, risk</text>
+    <text x="524" y="186">Writes code + tests</text><text x="524" y="204">in the sandbox, not in</text><text x="524" y="222">your working tree</text>
+    <text x="692" y="186">Fixes findings in</text><text x="692" y="204">one ordered batch</text><text x="692" y="222">and re-checks</text>
+    <text x="860" y="194">Hands back a finished,</text><text x="860" y="212">reviewable diff</text>
+    <!-- harness -->
+    <text x="188" y="278">Records the</text><text x="188" y="296">investigation</text>
+    <text x="356" y="278">Compiles and validates</text><text x="356" y="296">the OpenSpec</text><text x="356" y="314">packet</text>
+    <text x="524" y="278">Creates the sandbox,</text><text x="524" y="296">guards scope, budget</text><text x="524" y="314">and authority</text>
+    <text x="692" y="278">Runs your tools, writes</text><text x="692" y="296">receipts, reuses what</text><text x="692" y="314">is still fresh</text>
+    <text x="860" y="278">Applies once, syncs</text><text x="860" y="296">specs, archives; resumes</text><text x="860" y="314">if interrupted</text>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="12" text-anchor="middle" fill="#17181c">
+    <text x="188" y="367">findings</text><text x="356" y="367">approved agreement</text><text x="524" y="367">code in sandbox</text><text x="692" y="367">proven</text>
+    <text x="860" y="367" fill="#f2eee5">archived ✓</text>
+  </g>
+
+  <rect x="22" y="404" width="12" height="12" rx="2" fill="#ffe3da" stroke="#ff5c35"/>
+  <text x="42" y="415" font-size="12" fill="#373a42">The moments that need you. Everything else is the agent's or the harness's job — you are not asked to run internal commands.</text>
+</svg>

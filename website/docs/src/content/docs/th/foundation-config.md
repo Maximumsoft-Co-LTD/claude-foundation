@@ -9,8 +9,28 @@ description: ทำความเข้าใจและปรับ policy �
 `foundation.json` คือ **policy ที่ commit ไว้สำหรับหนึ่งโปรเจกต์** มันบอก
 Change Loop ว่า agent ทำงานอัตโนมัติได้มากแค่ไหน, งานแต่ละแบบควรใช้ model tier
 ใด, เมื่อไรต้อง escalate, ใครรีวิวได้ และต้องเตรียม Build workspace ใหม่อย่างไร
+โปรเจกต์ส่วนใหญ่ไม่ต้องแก้ไฟล์นี้ หน้านี้ช่วยเมื่อคุณอยากให้พฤติกรรมใดเปลี่ยนไป
 
-ไฟล์นี้ไม่ได้เก็บ requirement ของผลิตภัณฑ์หรือสถานะงานปัจจุบัน:
+## เป้าหมายที่พบบ่อยและค่าที่ต้องแก้
+
+| ฉันต้องการ… | ตั้งใน `foundation.json` | หมายเหตุ |
+|---|---|---|
+| ใช้ model อื่นหรือ model ที่ถูกกว่าสำหรับงานบางประเภท | `models.routing: true` แล้วแก้ `models.fast`/`standard`/`deep` `.family` | routing **ปิด**เป็นค่าเริ่มต้น: ทุก task ใช้ tier `standard` ดูหัวข้อ `models` |
+| ให้ reviewer ต้องไม่ใช่คนเดียวกับผู้ implement | `review.independence: "required"` | identity และ AI session ของ reviewer ต้องต่างกัน |
+| ให้ AI คนละ provider มารีวิว | `review.diversity: "required"` และ `review.defaultReviewer: "codex-sol"` (หรือ `claude-opus` ถ้า Codex เป็นผู้ implement) | ถ้า reviewer ตรงกับผู้ implement จะ fail closed ดูหัวข้อ `review` |
+| รันคำสั่ง setup ของโปรเจกต์ในทุก workspace ใหม่ | `sandbox.setupCommand` (และ `sandbox.setupTimeoutMs`) | harness ติดตั้ง dependency จาก lockfile ให้อัตโนมัติ; ตั้ง `sandbox.installDependencies: false` เพื่อปิด |
+| จำกัดค่าใช้จ่ายของหนึ่ง autonomous run | `execution.tokenBudgets.rapid/standard`, `execution.requestBudgets.rapid/standard` | เป็นเพดาน ไม่ใช่เป้าหมาย ตั้ง `execution.budgetWatchdog: true` เพื่อให้ packet มีคำเตือนและขีดจำกัดการใช้จ่าย |
+| ลดจำนวน agent หรือ check ที่รันพร้อมกัน | `execution.maxParallelAgents`, `maxParallelProviders`, `maxParallelSetups` | จำนวนเต็ม 1 ถึง 16 |
+| ให้ build ที่ช้ามีเวลามากขึ้น | `execution.leaseMinutes` | 1 ถึง 1440 นาที |
+| ให้บทบาทที่ระบุต้องอนุมัติ spec | `approval.roles` | เช่น `["tech-lead", "qa"]` ดูหัวข้อ `approval` |
+| บังคับหลักฐาน coverage และ mutation ใน change เสี่ยงสูง | `quality.changeGate: "warn"` หรือ `"enforce-high-risk"` | ต้องมี [quality configuration](/docs/th/consumer-quality/) |
+| ตั้งชื่อ commit และ branch ของ `/deliver` | `deliver.commitSubject`, `deliver.branchPattern`, `deliver.ticketPattern` | ใช้เฉพาะขั้น Deliver ที่ไม่บังคับ |
+
+หลังแก้ให้รันตรวจตามหัวข้อ "ขั้นตอนแก้ที่ปลอดภัย"
+
+## Reference ฉบับเต็ม
+
+ส่วนที่เหลือของหน้านี้อธิบายทุก field ที่รองรับ `foundation.json` ไม่ได้เก็บ requirement ของผลิตภัณฑ์หรือสถานะงานปัจจุบัน:
 
 | เรื่อง | Source of truth |
 |---|---|
@@ -153,6 +173,9 @@ provider command ลง `foundation.json` ดูรายละเอียด�
   }
 }
 ```
+
+`models.routing` เป็น boolean และค่าเริ่มต้นคือ `false`: จนกว่าจะตั้งเป็น `true`
+ทุก task จะใช้ tier `standard` เว้นแต่ task เองขอ tier และตาราง tier ด้านล่างยังไม่มีผลต่อการวางแผน
 
 key `fast`, `standard` และ `deep` คือ portable tier ส่วน `family` ระบุ family
 ที่ต้องการ ขณะที่ native agent host เป็นตัวรัน model จริง `fallbackTier` ต้องเป็น
@@ -342,6 +365,17 @@ placeholder ที่ใช้ได้คือ `{changeId}`, `{title}`, `{comm
 หรือ branch ที่ใช้ไม่ได้ Deliver จะหยุดเป็น wait แบบ `delivery-policy` ก่อน commit
 ใด ๆ ให้แก้การตั้งค่าแล้วสั่ง `/deliver` อีกครั้ง กฎการตั้งชื่อฉบับเต็มอยู่ใน
 `WORKFLOW.md` (`/deliver <change>`)
+
+## field อื่น ๆ
+
+| Field | ค่าเริ่มต้น | ความหมาย |
+|---|---|---|
+| `execution.budgetWatchdog` | `false` | Boolean ถ้า `false` ยังบันทึก usage แต่ packet ไม่มี spend directive หรือขีดจำกัด; ถ้า `true` จะมี signal `budget-warning` เมื่อใช้ถึง 70% |
+| `review.fallbackReviewers` | `["codex-sol", "main-session"]` ในไฟล์ที่ติดตั้ง | reviewer ที่ลองตามลำดับเฉพาะเมื่อเกิด infrastructure error; verdict `fail` หรือ `inconclusive` ไม่ trigger fallback ชื่อต้องมีอยู่จริง ห้ามซ้ำ `defaultReviewer` และ `main-session` ต้องใช้คู่กับ `independence: "self"` |
+| `review.infraFailureThreshold` | `2` ในไฟล์ที่ติดตั้ง | จำนวนเต็ม `1..5` |
+| `telemetry.requireUsage` | `true` ในไฟล์ที่ติดตั้ง | Boolean; Land ต้องมี usage dimension ที่วัดได้จริง |
+| `land.riskBasedCi` | `false` | Boolean ดู contract ของ signed CI ใน [EVIDENCE.md](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/EVIDENCE.md) |
+| `workflow.handoffDefaultOwner` | `"devops-team"` | ชื่อทีมที่ไม่ว่างสำหรับ handoff ที่ต้องมีสิทธิ์ |
 
 ## จุดที่พลาดบ่อย
 

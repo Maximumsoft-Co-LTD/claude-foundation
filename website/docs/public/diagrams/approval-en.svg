@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">When Change Loop needs your decision</title>
+  <desc id="d">A timeline of Change, Build, Prove and Land with the user decisions at each point: approve the spec, decide real trade-offs, give an acceptance verdict or waive a check when required, and authorize Land. Commit, push or a pull request need separate authority. Setup, sync conflicts, shared-resource waits and repeated repair never ask the user.</desc>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#17181c"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="959" height="329" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <g stroke="#17181c" stroke-width="1.5" marker-end="url(#a)">
+    <path d="M190 49h37"/><path d="M377 49h37"/><path d="M564 49h37"/><path d="M751 49h37"/>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="16" font-weight="500" text-anchor="middle">
+    <rect x="40" y="26" width="150" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5"/><text x="115" y="55" fill="#17181c">/change</text>
+    <rect x="227" y="26" width="150" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5"/><text x="302" y="55" fill="#17181c">/build</text>
+    <rect x="414" y="26" width="150" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5"/><text x="489" y="55" fill="#17181c">/prove</text>
+    <rect x="601" y="26" width="150" height="46" rx="6" fill="#17181c"/><text x="676" y="55" fill="#f2eee5">/land</text>
+    <rect x="788" y="26" width="140" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5" stroke-dasharray="5 4"/><text x="858" y="55" fill="#17181c">after Land</text>
+  </g>
+
+  <g stroke="#ff5c35" stroke-width="1.5">
+    <path d="M115 72v22"/><path d="M302 72v22"/><path d="M489 72v22"/><path d="M676 72v22"/><path d="M858 72v22"/>
+  </g>
+  <g fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5">
+    <rect x="40" y="94" width="150" height="116" rx="6"/><rect x="227" y="94" width="150" height="116" rx="6"/><rect x="414" y="94" width="150" height="116" rx="6"/><rect x="601" y="94" width="150" height="116" rx="6"/><rect x="788" y="94" width="140" height="116" rx="6"/>
+  </g>
+  <g font-size="12" fill="#373a42" text-anchor="middle">
+    <text x="115" y="116" font-weight="700" fill="#8f2a11">Approve the spec</text><text x="115" y="136">Build will not start</text><text x="115" y="152">until you do. Tell</text><text x="115" y="168">the agent what to</text><text x="115" y="184">correct first.</text>
+    <text x="302" y="116" font-weight="700" fill="#8f2a11">Real trade-offs</text><text x="302" y="136">Asked only when a</text><text x="302" y="152">choice changes the</text><text x="302" y="168">product meaning,</text><text x="302" y="184">scope, or budget.</text>
+    <text x="489" y="116" font-weight="700" fill="#8f2a11">Verdict or waiver</text><text x="489" y="136">Accept the outcome</text><text x="489" y="152">if acceptance is</text><text x="489" y="168">required. Waive a</text><text x="489" y="184">failed check (recorded).</text>
+    <text x="676" y="116" font-weight="700" fill="#8f2a11">Say /land</text><text x="676" y="136">The one hard gate.</text><text x="676" y="152">Lands only a passing</text><text x="676" y="168">proof of the current</text><text x="676" y="184">workspace.</text>
+    <text x="858" y="116" font-weight="700" fill="#8f2a11">Commit / push / PR</text><text x="858" y="136">Separate authority:</text><text x="858" y="152">you, or the optional</text><text x="858" y="168">/deliver. Land never</text><text x="858" y="184">does these itself.</text>
+  </g>
+
+  <rect x="40" y="236" width="888" height="68" rx="6" fill="#e1ece6" stroke="#087a64"/>
+  <text x="58" y="262" font-size="13" font-weight="700" fill="#087a64">Never asks you</text>
+  <text x="58" y="284" font-size="12.5" fill="#373a42">Setup and retries · sync conflicts · waiting on a resource another change holds · repeated repair of a failing check · writing internal commands or drafts.</text>
+</svg>

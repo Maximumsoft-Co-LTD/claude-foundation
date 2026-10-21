@@ -6,13 +6,39 @@ description: Add changed-code CRAP, mutation testing, language profiles, baselin
 <!-- docs-audience: project-maintainers -->
 **Audience:** project maintainers and authorized agents configuring an installation. For the everyday workflow, start with [Quickstart](/docs/quickstart/).
 
-Change Loop can orchestrate project-owned quality tools without pretending one metric fits every language. The feature is opt-in and starts in **report-only** mode.
+## Why turn it on
+
+Passing tests do not tell you whether the code a change touched is hard to
+maintain or whether the tests would notice a real bug. Quality gates add two
+checks on changed code only: **complexity against coverage**, and **mutation
+testing**, which asks whether the tests fail when the code is deliberately
+broken. Without them, a change can be "proven" with weak tests.
+
+**Enable it when** your project has a working test suite, you are about to
+approve higher-risk changes (security, data, shared logic), or you want
+a reviewable record of quality debt. Skip it for throwaway prototypes.
+
+**What you will see:** nothing blocks you at first. The feature is opt-in and
+starts in **report-only** mode: the agent runs the checks and each
+[receipt](/docs/glossary/) records the result and any reduced assurance. You
+decide when to approve a baseline and when to enforce.
+
+Change Loop orchestrates project-owned quality tools without pretending one
+metric fits every language. You need to decide only two things: whether to turn
+it on, and when to move from report to enforcement.
 
 ```text
 discover → preview config → diagnose tools → pilot reports → approve baseline → enforce
 ```
 
 Quality findings are evidence, not permission to edit. A high score outside the approved Change becomes debt; it does not expand task or repository scope.
+
+## For agents and integrators: the checks and commands
+
+The rest of this page documents what the gates measure and the commands that
+run them. Which Changes require quality evidence is set by `quality.changeGate`
+in [`foundation.json`](/docs/foundation-config/); how each repository produces
+it is set in `quality/foundation-quality.json`.
 
 ## What the gates measure
 
@@ -41,11 +67,11 @@ claude-foundation quality doctor
 
 `quality init` only previews until `--write`. It creates `quality/foundation-quality.json`. With `--ci github`, it also installs:
 
-For JavaScript/TypeScript, discovery recognizes the project-owned package scripts `foundation:quality:crap` and `quality:crap`. The command must emit `foundation-crap-v1` at `.foundation/quality/crap.json`; without either script or an explicit provider, CRAP is not measured.
-
 - a reusable/manual changed-code workflow;
 - a four-shard nightly inventory workflow; and
 - a full enforced release workflow.
+
+For JavaScript/TypeScript, discovery recognizes the project-owned package scripts `foundation:quality:crap` and `quality:crap`. The command must emit `foundation-crap-v1` at `.foundation/quality/crap.json`; without either script or an explicit provider, CRAP is not measured.
 
 The reusable workflow is not a `pull_request` trigger by itself. Call it from the repository's existing PR workflow and pass the Change ID. Add each project's language setup before `quality doctor`; Change Loop does not install runtimes or quality tools.
 

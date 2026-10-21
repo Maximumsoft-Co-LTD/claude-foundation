@@ -11,7 +11,8 @@ This example lets an account owner edit their display name. Start with an
 Enter the slash commands in the agent session, not in a terminal.
 
 You decide the intended behavior, approve the agreement, review the result,
-and authorize Land. The agent runs routine setup, checks, and recovery.
+and authorize Land. The agent runs routine setup, checks, and recovery. For the
+picture first, see [One change, start to finish](/docs/journey/).
 
 ## 0. Check the project is ready
 
@@ -40,6 +41,9 @@ Read the proposal and relevant scenarios. Check:
 Approve the compiled agreement before Build. Tell the agent about corrections
 here; you do not have to write the internal draft or evidence configuration.
 
+**You should see:** a change ID, an approval question, and a link to a readable
+approval package with scope, scenarios, and risk.
+
 ## 2. Build it in isolation
 
 ```text
@@ -52,6 +56,9 @@ Implementation stays in isolation until Land.
 
 Build can continue into proof automatically. If it already reached `proven`,
 read the result rather than requesting a fresh run of the same checks.
+
+**You should see:** progress, then either state `proven` or a question that
+needs your decision.
 
 ## 3. Prove it
 
@@ -67,6 +74,9 @@ Review the summary and diff. An inconclusive or unavailable check is not a pass.
 If subjective acceptance was requested, inspect the result and give that
 decision separately from approval of the original spec.
 
+**You should see:** a summary of what passed, failed, or could not be checked,
+and the state `proven` once everything required passes.
+
 ## 4. Land it
 
 When you want the current change applied to your project, explicitly say so:
@@ -78,6 +88,9 @@ When you want the current change applied to your project, explicitly say so:
 The harness applies the current isolated work, synchronizes specs, and archives
 the change. It preserves unrelated edits and leaves the delivered diff
 **uncommitted**, with Git HEAD and index unchanged.
+
+**You should see:** state `archived`, and the change as an uncommitted diff in
+`git status`.
 
 Only `archived` means code delivery is complete. It does not mean deployment
 or production verification. Land alone never commits, pushes, or opens a PR.

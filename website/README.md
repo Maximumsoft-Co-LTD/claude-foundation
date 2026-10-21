@@ -120,7 +120,10 @@ That is enforced in three places, and all three are needed:
   could no longer change anything.
 
 `docs/src/components/SiteTitle.astro` reuses the landing page's brand markup
-directly. Keep it in step with `.brand` / `.brand-mark` in `styles.css`.
+directly. Keep its inline Change Loop mark in step with `.brand-mark` in
+`index.html`, `docs/public/favicon.svg`, and `docs/public/logo.svg`. Lifecycle
+diagrams are hand-written SVGs in `docs/public/diagrams/` (one per locale);
+update both locales together.
 
 > [!CAUTION]
 > The doc pages quote runtime facts — capability counts, adapter names, protocol

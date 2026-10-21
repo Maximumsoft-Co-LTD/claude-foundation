@@ -1,13 +1,13 @@
 ---
 /**
  * Starlight's default SiteTitle renders the configured `title` string next to a
- * logo image. The landing page's brand is a rotated ink tile with an italic
- * serif "f" plus a two-weight monospace wordmark — markup an <img> logo cannot
- * reproduce, because a standalone SVG cannot use the page's webfonts.
+ * logo image. The brand here is the Change Loop mark (an ink tile holding an
+ * orange loop that closes on a check) plus a two-weight monospace wordmark. The
+ * wordmark needs the page's webfont, which a standalone <img> SVG cannot load,
+ * so the mark is inlined and the text stays live HTML.
  *
- * Overriding the component instead lets the docs reuse the landing page's exact
- * brand structure and typefaces. Keep this in step with `.brand` / `.brand-mark`
- * in ../../../styles.css.
+ * Keep the mark geometry in step with `public/favicon.svg` and the landing
+ * page's `.brand-mark` in ../../../index.html.
  *
  * The mark links to the landing page rather than the docs index: the docs are a
  * section of the site, and the header logo is how a reader gets back out.
@@ -15,9 +15,14 @@
 const base = import.meta.env.BASE_URL.replace(/\/docs\/?$/, "/");
 ---
 
-<a class="cf-brand" href={base} aria-label="claude-foundation home">
-  <span class="cf-brand-mark" aria-hidden="true">f</span>
-  <span class="cf-brand-word">claude<b>-foundation</b></span>
+<a class="cf-brand" href={base} aria-label="Change Loop home">
+  <svg class="cf-brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="14" fill="#17181c"></rect>
+    <circle cx="32" cy="32" r="15" fill="none" stroke="#ff5c35" stroke-width="5" stroke-linecap="round" stroke-dasharray="70.7 23.55" transform="rotate(-45 32 32)"></circle>
+    <path d="M26.3 16.5 24.9 24.9 17.9 17.9Z" fill="#ff5c35" stroke="#ff5c35" stroke-width="2" stroke-linejoin="round"></path>
+    <path d="M25 33l5 5 9-11" fill="none" stroke="#f2eee5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
+  </svg>
+  <span class="cf-brand-word">change<b>loop</b></span>
 </a>
 
 <style>
@@ -27,23 +32,15 @@ const base = import.meta.env.BASE_URL.replace(/\/docs\/?$/, "/");
     gap: 10px;
     color: var(--sl-color-white);
     font-family: var(--sl-font-mono);
-    font-size: 13px;
+    font-size: 14px;
     text-decoration: none;
     white-space: nowrap;
   }
 
   .cf-brand-mark {
-    display: grid;
-    width: 28px;
-    height: 28px;
-    place-items: center;
-    color: var(--cf-paper);
-    border-radius: 6px;
-    background: var(--cf-ink);
-    font-family: "Newsreader", Georgia, serif;
-    font-size: 18px;
-    font-style: italic;
-    transform: rotate(-4deg);
+    width: 30px;
+    height: 30px;
+    flex: none;
   }
 
   .cf-brand-word b {

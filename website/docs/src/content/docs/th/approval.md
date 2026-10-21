@@ -1,21 +1,35 @@
 ---
 title: การอนุมัติโดยคน
-description: การตัดสินใจของผู้ใช้ นโยบาย review และกลไกของ agent/host ที่บันทึกและบังคับใช้
+description: การตัดสินใจไม่กี่อย่างที่เป็นของคุณ เกิดเมื่อไร และจะเกิดอะไรถ้าไม่ตัดสิน ตามด้วยกลไกของ agent และ host
 ---
 
 <!-- docs-audience: users -->
-**ผู้อ่าน:** ผู้ใช้โปรเจกต์ หน้านี้อธิบายสิ่งที่ต้องตรวจและตัดสินใจ ส่วน agent ดูแลขั้นตอนระบบตามปกติ
+**ผู้อ่าน:** ผู้ใช้โปรเจกต์ อ่านหน้านี้เพื่อรู้ว่าการตัดสินใจใดเป็นของคุณ และจะเกิดอะไรถ้าไม่ตัดสิน ส่วน agent ดูแลขั้นตอนระบบตามปกติ รายละเอียดระดับคำสั่งรวมอยู่ใน [For agents and integrators](#for-agents-and-integrators)
 
-การตัดสินใจของผู้ใช้กับกลไกระบบมีเจ้าของต่างกัน คุณอนุมัติเจตนา ตัดสินใจเรื่องสำคัญ
-ยอมรับผลเมื่อกำหนดไว้ และให้อำนาจ Land หรือการกระทำภายนอก Agent และ harness
-บันทึกการตัดสินใจ ส่วน reviewer ที่ตั้งค่าไว้และ trusted host สร้างหลักฐานของตนเอง
+Change Loop ไม่เคยตัดสินแทนคุณว่าคุณต้องการอะไร คุณอนุมัติ agreement ก่อนมีการสร้างอะไร
+ตัดสินใจเมื่อมี trade-off จริง บอกว่าผลลัพธ์ใช่สิ่งที่ต้องการหรือไม่เมื่อกำหนดให้ต้องมี
+และให้อำนาจ Land ส่วน agent และ harness บันทึกการตัดสินใจเหล่านั้นและทำงานประจำที่เหลือทั้งหมด
+reviewer และ trusted host สร้างหลักฐานของตนเอง
+มาที่หน้านี้เมื่อมีคำถามมาถึงคุณแล้วอยากรู้ว่ามันแปลว่าอะไร
+หรืออยากรู้ว่าระบบจะไม่ขออะไรจากคุณเลย
 
-| ส่วน | เจ้าของ | ตอบคำถามอะไร |
-|---|---|---|
-| **Acceptance** | ผู้ใช้ตัดสินใจ; agent บันทึก | ได้ผลลัพธ์ที่ต้องการหรือไม่ และต้องให้คนยอมรับผลหรือไม่? |
-| **Review** | Reviewer ที่ตั้งค่าไว้; โปรเจกต์กำหนดนโยบาย | Implementation ผ่านเกณฑ์ review หรือไม่? ความเป็นอิสระตั้งค่าแยก |
-| **Authority bridge** | Agent/harness integration | คำตัดสินหรือ verdict กลายเป็น receipt ที่ตรวจสอบแล้วอย่างไร? |
-| **Host attestation** | ผู้ดูแลหรือ integration ของ trusted host | Environment ตรงข้อกำหนด sandbox สำหรับงานที่ไม่มีคนเฝ้าหรือไม่? |
+![จุดที่การตัดสินใจของคุณอยู่ตลอด Change, Build, Prove, Land และหลัง Land และสิ่งที่ไม่ถามคุณ](/docs/diagrams/approval-th.svg)
+
+## การตัดสินใจของคุณโดยสรุป
+
+| การตัดสินใจ | เกิดเมื่อไร | สิ่งที่คุณพูดหรือทำ | ถ้าคุณไม่ตัดสิน |
+|---|---|---|---|
+| **อนุมัติ agreement** | ท้าย Change และอีกครั้งหลัง amendment ที่ลบพฤติกรรมที่เคยอนุมัติ | อ่าน approval package แล้วตอบ "ลุยเลย", "go ahead" หรือ "approve" หรือแก้ไข | Build ไม่เริ่ม ความเงียบและความเร่งด่วนไม่นับเป็นการอนุมัติ |
+| **ตัดสิน trade-off ของ product** | เมื่อ agreement ไม่สามารถระบุความหมาย trade-off หรือขอบเขตที่กว้างขึ้นได้ | ตอบคำถามด้วยภาษาปกติ | Flow รอคำถามข้อนั้นข้อเดียว ไม่มีการเดา |
+| **ยอมรับผลลัพธ์ (acceptance)** | หลัง Prove เฉพาะเมื่อ change กำหนดให้ต้องมีคนยอมรับ | บอกพร้อมชื่อของคุณว่าผลลัพธ์ใช่สิ่งที่ต้องการหรือไม่ | acceptance ที่จำเป็นยังเปิดค้างและ change รออยู่ standard change ที่ยังไม่ตัดสินจะบล็อก validation |
+| **Waive gate ที่ไม่ผ่าน** | check รันแล้วไม่ผ่าน และคุณเลือกไม่แก้ | ให้เหตุผลที่ชัดเจน | ความล้มเหลวยังเป็นความล้มเหลว และ Land จะปฏิเสธ |
+| **ตัดสินหลัง review ใช้รอบหมด** | รอบ review ที่อนุญาตใช้หมดแล้วแต่ยังไม่มี verdict | เลือก: human verdict, AI อีกหนึ่งรอบ หรือพัก | change หยุดรอ review ที่ใช้รอบหมดแล้วไม่เคยถูก waive |
+| **อนุญาต Land** | เมื่อ change เป็น `proven` | `/land <change>` หรือบอกตั้งแต่ต้นว่า "ทำจนจบ" | ไม่มีอะไรถูก apply เข้าโปรเจกต์ `proven` ไม่ใช่ delivered |
+| **อนุญาต side effect** | commit, push, เปิด PR, รัน external provider, ใช้เกิน budget | บอกตรง ๆ (`/deliver`, "push ด้วย", "ตกลง") | การกระทำนั้นไม่รัน ระบบถามไม่ได้สันนิษฐาน |
+| **แก้สิ่งที่มีแต่คุณแก้ได้** | login, network หรือ disk เต็มขวางความคืบหน้า | แก้ใน environment ของคุณเอง | change คงสถานะไว้และทำต่อเมื่อคุณแก้เสร็จ |
+
+ที่เหลือทั้งหมดเป็นของ agent หรือ harness: setup, เตรียมเครื่องมือ, ซ่อม sandbox,
+sync conflict, การรอ resource ร่วม และการแก้ที่วนซ้ำ
 
 :::caution[Land บังคับอะไรจริง ๆ]
 คำสั่ง `/land <change>` ที่ตรง change ให้อำนาจสำหรับ transaction ที่กู้คืนได้
@@ -30,19 +44,59 @@ target conflict, path ไม่ปลอดภัย, repository identity กำ
 product หรือ trade-off, ผล acceptance, waiver, review ที่ใช้รอบหมด, Land, การ commit,
 push หรือ side effect อื่น, budget หรือสาเหตุที่มีแต่คุณแก้ได้ (login, network, disk เต็ม)
 ส่วน setup, sync conflict, การรอ resource ร่วม และการแก้ที่วนซ้ำเป็นงานของ agent หรือ harness
-
-User ไม่ต้องสร้าง grant หรือ decision-reference command เอง `land record` ต้องมี
-`--decision-ref` เฉพาะ compatibility ของ commit-oriented transaction แบบ legacy
-ที่ active อยู่ก่อนแล้ว ส่วน continuation ขั้นสูงอื่น เช่น `budget continue`,
-`change abandon`, `change waive` และ `agents release --force` ยังบันทึกการตัดสินใจ
-ที่ให้อำนาจตามเดิม
-
-`change waive` คือทางออกที่ถูกบันทึกไว้สำหรับ gate ที่รันแล้ว fail:
-มันถอนการบังคับใช้ capability หนึ่งตัวตามการตัดสินใจชัดเจนของคุณ
-เดินทางเป็น advisory `user-waived` ผ่าน proof เข้าไปถึง archive และ `--revoke`
-คืนข้อบังคับกลับมา ส่วน review กับ acceptance ถูกปฏิเสธที่นั่น — waiver
-ของสองตัวนี้ประกาศใน `foundation.json` ตามที่อธิบายด้านล่าง
 :::
+
+## อนุมัติด้วยคำพูดของคุณเอง
+
+คำตอบในแชทคือการตัดสินใจ การตอบคำถามขออนุมัติ spec หรือ amendment ว่า "ลุยเลย",
+"ทำเลย", "ทำไปเลย", "go ahead" หรือ "approve" ถือเป็นการอนุมัติ agent จะบันทึกไว้และ
+ไม่ถามซ้ำ การบอกตั้งแต่ต้นว่า "ทำจนจบ" หรือ "ทำให้เสร็จ" ให้สิทธิ์ Land สำหรับ change
+นั้นด้วย คำเร่งอย่างเดียว ("ด่วน", "รีบ demo") และความเงียบไม่ใช่การอนุมัติ และคำขอที่
+ปฏิเสธ ("อย่าเพิ่ง push") ไม่ใช่อำนาจ
+
+Commit และ push เกิดได้เฉพาะผ่าน `/deliver` หรือคำสั่งตรงของคุณ ("commit ให้เลย",
+"push ด้วย") ระหว่าง Build หรือ Prove `git commit` หรือ `git push` จาก main checkout
+ที่ไม่ได้สั่งจะไม่รัน แต่กลายเป็นคำถาม และเมื่อคุณตอบตกลงจึงรันได้ "เปิด PR ให้เลย"
+หรือ "open a PR" ถือเป็น `/deliver` กฎฉบับเต็มอยู่ใน `WORKFLOW.md` หัวข้อ
+"Authority from the user's words"
+
+## Approval package, preview และ role lane
+
+เมื่อเริ่ม change และอีกครั้งเมื่อ `advance` ถามขออนุมัติ spec agent จะเขียน
+approval package แบบอ่านอย่างเดียวไว้ที่ `.foundation/packages/<change>.html`
+และแสดง path ให้คุณ ในนั้นสรุประดับความเสี่ยง (Low, Medium, High หรือ Critical
+คำนวณจาก impact และ risk signal) technical domain ที่เกี่ยวข้อง และ artifact
+สำหรับอนุมัติแยกตามบทบาทผู้อนุมัติ (product-owner, tech-lead, qa, devops,
+security) แต่ละ artifact มีป้ายกำกับ: **proof** เฉพาะเมื่อมี receipt ที่ผ่านและ
+ใช้ได้รองรับ, **preview** หรือ **ยังไม่มีหลักฐาน** package ไม่เปลี่ยนสถานะของ
+change และถ้าเขียนไม่ได้ การอนุมัติจะทำต่อจาก packet
+
+**อ่านอะไรก่อน** ถ้า agent เขียนไว้ บนสุดของหน้าจะตอบ 3 คำถามเป็นภาษาคน:
+จะได้อะไร ของเดิมเปลี่ยนอะไร (ก่อนและหลัง พร้อมตัวเลขถ้ารู้) และถ้าพลาดเป็นยังไง
+ถัดลงมาคือตัวอย่างจริงที่เลือกตามประเภทงาน เช่น prototype ที่กดได้ request และ
+response ของ API แต่ละสถานะ กฎพร้อมตัวเลข แถวข้อมูลก่อนและหลัง migration ตารางสิทธิ์
+แต่ละตัวอย่างมีแท็บ **ผลจริงหลัง Build** หลัง Build และ Prove จะแสดงผลจริง
+(**proof** เฉพาะจาก receipt ที่ใช้ได้และผ่าน, **ไม่ผ่าน** หรือ **preview**)
+ก่อนหน้านั้นจะบอกว่าจะเทียบกับอะไร หน้าเป็นภาษาไทยหรืออังกฤษตาม agreement
+diagram วาดด้วย Mermaid ที่ส่งมากับ harness ในเครื่องของคุณ ไม่ดึงอะไรผ่าน
+เครือข่าย และถ้าไม่มีไฟล์นั้นจะแสดงเป็นข้อความ diagram สรุปและตัวอย่างไม่บังคับ
+ถ้าไม่มีจะเห็นแค่มุมมองตามบทบาทด้านบน
+
+**Preview เป็นทางเลือก** ก่อน Build agent อาจรัน provider ที่ประกาศไว้หนึ่งตัว
+กับสำเนาของ target ที่ทิ้งได้ เพื่อให้เห็นพฤติกรรมเบื้องต้น package ระดับ High
+หรือ Critical จะแนะนำ preview ที่ควรรัน ผลของ preview ไม่ใช่ proof เด็ดขาด:
+ใช้ผ่าน Prove หรือ Land ไม่ได้ ไม่บล็อก approval หรือ Build และจะแสดงเป็น stale
+เมื่อ spec เปลี่ยน provider ที่ระบุ `external: true` (เช่น payment sandbox หรือ
+staging) จะออกไปนอกเครื่องของคุณ จึงรันได้เฉพาะหลังคุณอนุญาตการรันครั้งนั้น
+ถ้าไม่มีการตัดสินใจของคุณจะถูกปฏิเสธและไม่มีอะไรรัน
+
+**Role lane ต้องเปิดใช้เอง** ค่าเริ่มต้นคือการอนุมัติ spec ครั้งเดียวครอบคลุมทั้ง
+change ถ้าโปรเจกต์ตั้ง `approval.roles` ใน `foundation.json` (ดู
+หัวข้อ `approval` ใน [ตั้งค่า foundation.json](/docs/th/foundation-config/)) แต่ละ role
+ที่ถูกเลือกต้องอนุมัติ revision ปัจจุบันแยกกัน และ Build จะไม่เริ่มจนกว่าทุก lane
+ที่ต้องมีอนุมัติครบ คุณเป็นผู้ระบุว่าอนุมัติในบทบาทใด การอนุมัติที่ไม่ระบุ role
+ครอบคลุมทุก lane harness บันทึก role ตามที่แจ้งและไม่ได้ยืนยันตัวตน การเพิ่ม
+requirement คงการอนุมัติของ lane ไว้ ส่วนการลบ requirement จะรีเซ็ตทุก lane
 
 ## Acceptance
 
@@ -54,20 +108,13 @@ Acceptance คือการที่คนที่ระบุชื่อไ
 เพราะความเงียบไม่ใช่การยินยอม และ change ต้องไม่ค่อย ๆ ไหลไปเป็น "ยอมรับแล้ว"
 เพียงเพราะไม่มีใครคัดค้าน
 
-คุณตัดสินมันอย่างชัดเจน ไม่ทางใดก็ทางหนึ่ง
-
-```bash
-# ไม่มีอะไรเชิงอัตวิสัยต้องเซ็น — การตรวจแบบ deterministic คือทั้งหมดแล้ว
-claude-foundation change resolve <change> --acceptance-not-required
-
-# ต้องมีคนดูแล้วบอกว่าใช่
-claude-foundation change resolve <change> \
-  --acceptance-required --acceptance-reason "<ทำไมต้องให้คนตัดสิน>"
-```
+คุณตัดสินมันอย่างชัดเจน ไม่ทางใดก็ทางหนึ่ง: ไม่มีอะไรเชิงอัตวิสัยต้องให้คนเซ็น
+การตรวจแบบ deterministic คือทั้งหมดแล้ว หรือต้องมีคนดูแล้วบอกว่าใช่พร้อมเหตุผลที่ระบุไว้
+agent เป็นผู้บันทึก (คำสั่งอยู่ที่ [Recording the acceptance decision](#recording-the-acceptance-decision))
 
 rapid change เริ่มที่ `not-required` แทน เพราะ rapid สงวนไว้สำหรับงาน impact ต่ำที่แยกอิสระ
 การประกาศ claim ที่มี capability `acceptance` ก็ทำให้ต้องมี acceptance เช่นกัน
-และการประกาศนั้นมีน้ำหนักเหนือ `--acceptance-not-required`
+และการประกาศนั้นมีน้ำหนักเหนือการตัดสินว่าไม่จำเป็น
 
 receipt ของ acceptance ที่ผ่านต้องมีชื่อคนจริง การตัดสิน `accept` ที่ชัดเจน
 เกณฑ์การยอมรับอย่างน้อยหนึ่งข้อที่ไม่ซ้ำกัน และบันทึกสิ่งที่สังเกตเห็น
@@ -93,6 +140,52 @@ keyword, risk signal หรือ `--review` ซึ่งพิสูจน์�
 authorization/secrets, public หรือ cross-repository contract, migration/การแก้
 state ที่ย้อนกลับยาก, เงิน, concurrency, replay/idempotency, broker/real wire
 และการ activate legacy behavior เป็นสัญญาณ high risk
+
+:::note[วงจรตามความเสี่ยง]
+ระบบบังคับเพดานก่อน dispatch: low ได้ full หนึ่งรอบ และถ้าแก้จะเลื่อนเข้าเส้นทาง full/delta แบบเดียวกับ medium/high infrastructure retry หนึ่งครั้งแยกจาก delivered wave หลัง AI สองรอบจะไม่เปิด review แบบเปิดใหม่ defect ใน contract ปิดผ่าน claim และ critical-case receipt ปัจจุบัน หรือถ้าไม่มี binding จะมี closure review หนึ่งรอบสำหรับ delta ที่แก้แล้ว ส่วน contract ขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch และถ้าขาดสิทธิ์จะเป็น external handoff ประวัติเป็น SHA-256 hash chain ถ้าโซ่ขาด harness จะกักไว้และสร้างใหม่เอง โดยไม่ลดจำนวนรอบและไม่นำผลที่ตรวจสอบไม่ผ่านกลับมาใช้
+
+เพดานนี้จำกัดการ dispatch reviewer เพื่อให้ workflow เร็ว ไม่ได้จำกัดจำนวนครั้งที่แก้
+Agent แก้ finding ที่รวมเป็นชุดและตรวจ evidence ที่ invalidated ซ้ำได้ตราบใดที่งานยังคืบหน้า
+:::
+
+เมื่อรอบ AI ที่อนุญาตใช้หมดและยังไม่มี verdict คุณเลือกได้: human verdict จากคนที่ระบุชื่อ,
+AI อีกหนึ่งรอบพอดี หรือพัก review ที่ใช้รอบหมดแล้วไม่เคยถูก waive ส่วนใครรีวิวได้
+(ความเป็นอิสระและความหลากหลายของโมเดล) เป็นนโยบายของโปรเจกต์ ดู
+[Review independence and diversity](#review-independence-and-diversity)
+
+## การตัดสินใจถูกบันทึกไว้ที่ไหน
+
+การตัดสินใจอยู่ใน change packet ไม่ใช่ใน transcript ของแชท
+เหตุผลของ acceptance อยู่ในสัญญา คำตัดสินของ review อยู่ใน receipt
+และการตัดสินใจให้ทำต่อถูกระบุด้วย `--decision-ref` ของมัน
+กฎที่อยู่ใต้ทั้งสี่จุดคือกฎเดียวกัน **การอนุมัติไม่เคยถูกอนุมานจากความเงียบ
+และการที่คำสั่งใช้ได้ ไม่เคยแปลว่าได้รับอนุญาตให้รันมัน**
+
+## For agents and integrators
+
+ทุกอย่างจากตรงนี้ลงไปคือกลไก: คำสั่งที่ agent รันแทนคุณ คีย์นโยบายของโปรเจกต์
+และหลักฐานจาก host ผู้ใช้เป็นผู้ให้การตัดสินใจข้างบน ไม่มีส่วนไหนที่นี่ขอให้คุณรันคำสั่ง
+แต่ละส่วนมีเจ้าของต่างกัน
+
+| ส่วน | เจ้าของ | ตอบคำถามอะไร |
+|---|---|---|
+| **Acceptance** | ผู้ใช้ตัดสินใจ; agent บันทึก | ได้ผลลัพธ์ที่ต้องการหรือไม่ และต้องให้คนยอมรับผลหรือไม่? |
+| **Review** | Reviewer ที่ตั้งค่าไว้; โปรเจกต์กำหนดนโยบาย | Implementation ผ่านเกณฑ์ review หรือไม่? ความเป็นอิสระตั้งค่าแยก |
+| **Authority bridge** | Agent/harness integration | คำตัดสินหรือ verdict กลายเป็น receipt ที่ตรวจสอบแล้วอย่างไร? |
+| **Host attestation** | ผู้ดูแลหรือ integration ของ trusted host | Environment ตรงข้อกำหนด sandbox สำหรับงานที่ไม่มีคนเฝ้าหรือไม่? |
+
+### Recording the acceptance decision
+
+```bash
+# ไม่มีอะไรเชิงอัตวิสัยต้องเซ็น — การตรวจแบบ deterministic คือทั้งหมดแล้ว
+claude-foundation change resolve <change> --acceptance-not-required
+
+# ต้องมีคนดูแล้วบอกว่าใช่
+claude-foundation change resolve <change> \
+  --acceptance-required --acceptance-reason "<ทำไมต้องให้คนตัดสิน>"
+```
+
+### Review independence and diversity
 
 มีสองคุณสมบัติกำหนดว่าใครรีวิวได้ ทั้งคู่ยกเว้นได้ และยกเว้นด้วยวิธีเดียวกัน
 คือคีย์ใน `foundation.json` ที่ commit ไว้ ไม่ใช่ flag บนคำสั่ง — ข้อยกเว้นที่ฝ่ายถูกรีวิว
@@ -122,12 +215,25 @@ configured AI review ยังคงทำงานแบบ read-only และ
 จะทำให้ receipt ที่มันเคยอนุญาตใช้ไม่ได้ เพราะนโยบายรีวิวเป็นส่วนหนึ่งของ
 contract fingerprint
 
-:::note[วงจรตามความเสี่ยง]
-ระบบบังคับเพดานก่อน dispatch: low ได้ full หนึ่งรอบ และถ้าแก้จะเลื่อนเข้าเส้นทาง full/delta แบบเดียวกับ medium/high infrastructure retry หนึ่งครั้งแยกจาก delivered wave หลัง AI สองรอบจะไม่เปิด review แบบเปิดใหม่ defect ใน contract ปิดผ่าน claim และ critical-case receipt ปัจจุบัน หรือถ้าไม่มี binding จะมี closure review หนึ่งรอบสำหรับ delta ที่แก้แล้ว ส่วน contract ขัดแย้งจริงจึงเปิด Decision Sheet แบบ batch และถ้าขาดสิทธิ์จะเป็น external handoff ประวัติเป็น SHA-256 hash chain ถ้าโซ่ขาด harness จะกักไว้และสร้างใหม่เอง โดยไม่ลดจำนวนรอบและไม่นำผลที่ตรวจสอบไม่ผ่านกลับมาใช้
+เมื่อ review ใช้รอบหมด ตัวเลือกจะแมปกับ `authority dispatch --reviewer-type human`
+ตามด้วย `authority record` (human verdict), `authority extend-review <change>
+--decision-ref <user-decision>` (AI อีกหนึ่งรอบพอดีต่อหนึ่ง decision reference) หรือพัก
 
-เพดานนี้จำกัดการ dispatch reviewer เพื่อให้ workflow เร็ว ไม่ได้จำกัดจำนวนครั้งที่แก้
-Agent แก้ finding ที่รวมเป็นชุดและตรวจ evidence ที่ invalidated ซ้ำได้ตราบใดที่งานยังคืบหน้า
-:::
+### Gate waivers and advanced continuations
+
+User ไม่ต้องสร้าง grant หรือ decision-reference command เอง `land record` ต้องมี
+`--decision-ref` เฉพาะ compatibility ของ commit-oriented transaction แบบ legacy
+ที่ active อยู่ก่อนแล้ว ส่วน continuation ขั้นสูงอื่น เช่น `budget continue`,
+`change abandon`, `change waive` และ `agents release --force` ยังบันทึกการตัดสินใจ
+ที่ให้อำนาจตามเดิม
+
+`change waive` คือทางออกที่ถูกบันทึกไว้สำหรับ gate ที่รันแล้ว fail:
+มันถอนการบังคับใช้ capability หนึ่งตัวตามการตัดสินใจชัดเจนของคุณ
+เดินทางเป็น advisory `user-waived` ผ่าน proof เข้าไปถึง archive และ `--revoke`
+คืนข้อบังคับกลับมา และปฏิเสธ waiver ที่จะทำให้ไม่เหลือ provider ที่จำเป็นเลย
+Acceptance ถูกปฏิเสธที่นั่น ให้ถอนข้อกำหนดด้วย
+`change resolve --acceptance-not-required` แทน ส่วน review ใช้เส้นทาง waiver เดียวกันได้
+ขณะที่ independence กับ diversity ประกาศใน `foundation.json` ตามข้างบน
 
 ## Authority bridge
 
@@ -183,63 +289,3 @@ token ของ Kubernetes service account ที่ mount ไว้ หรื�
 ซึ่งคือสิ่งที่จะทำให้งานที่อ้างว่า "อยู่ใน sandbox" เอื้อมออกไปนอก sandbox ได้
 
 การตรวจพบไม่ใช่การอนุญาต การพบว่ารันแบบไม่มีคนดูได้ ไม่เคยแปลว่าได้รับอนุญาตให้ทำ
-
-## Approval package, preview และ role lane
-
-เมื่อเริ่ม change และอีกครั้งเมื่อ `advance` ถามขออนุมัติ spec agent จะเขียน
-approval package แบบอ่านอย่างเดียวไว้ที่ `.foundation/packages/<change>.html`
-และแสดง path ให้คุณ ในนั้นสรุประดับความเสี่ยง (Low, Medium, High หรือ Critical
-คำนวณจาก impact และ risk signal) technical domain ที่เกี่ยวข้อง และ artifact
-สำหรับอนุมัติแยกตามบทบาทผู้อนุมัติ (product-owner, tech-lead, qa, devops,
-security) แต่ละ artifact มีป้ายกำกับ: **proof** เฉพาะเมื่อมี receipt ที่ผ่านและ
-ใช้ได้รองรับ, **preview** หรือ **ยังไม่มีหลักฐาน** package ไม่เปลี่ยนสถานะของ
-change และถ้าเขียนไม่ได้ การอนุมัติจะทำต่อจาก packet
-
-**อ่านอะไรก่อน** ถ้า agent เขียนไว้ บนสุดของหน้าจะตอบ 3 คำถามเป็นภาษาคน:
-จะได้อะไร ของเดิมเปลี่ยนอะไร (ก่อนและหลัง พร้อมตัวเลขถ้ารู้) และถ้าพลาดเป็นยังไง
-ถัดลงมาคือตัวอย่างจริงที่เลือกตามประเภทงาน เช่น prototype ที่กดได้ request และ
-response ของ API แต่ละสถานะ กฎพร้อมตัวเลข แถวข้อมูลก่อนและหลัง migration ตารางสิทธิ์
-แต่ละตัวอย่างมีแท็บ **ผลจริงหลัง Build** หลัง Build และ Prove จะแสดงผลจริง
-(**proof** เฉพาะจาก receipt ที่ใช้ได้และผ่าน, **ไม่ผ่าน** หรือ **preview**)
-ก่อนหน้านั้นจะบอกว่าจะเทียบกับอะไร หน้าเป็นภาษาไทยหรืออังกฤษตาม agreement
-diagram วาดด้วย Mermaid ที่ส่งมากับ harness ในเครื่องของคุณ ไม่ดึงอะไรผ่าน
-เครือข่าย และถ้าไม่มีไฟล์นั้นจะแสดงเป็นข้อความ diagram สรุปและตัวอย่างไม่บังคับ
-ถ้าไม่มีจะเห็นแค่มุมมองตามบทบาทด้านบน
-
-**Preview เป็นทางเลือก** ก่อน Build agent อาจรัน provider ที่ประกาศไว้หนึ่งตัว
-กับสำเนาของ target ที่ทิ้งได้ เพื่อให้เห็นพฤติกรรมเบื้องต้น package ระดับ High
-หรือ Critical จะแนะนำ preview ที่ควรรัน ผลของ preview ไม่ใช่ proof เด็ดขาด:
-ใช้ผ่าน Prove หรือ Land ไม่ได้ ไม่บล็อก approval หรือ Build และจะแสดงเป็น stale
-เมื่อ spec เปลี่ยน provider ที่ระบุ `external: true` (เช่น payment sandbox หรือ
-staging) จะออกไปนอกเครื่องของคุณ จึงรันได้เฉพาะหลังคุณอนุญาตการรันครั้งนั้น
-ถ้าไม่มีการตัดสินใจของคุณจะถูกปฏิเสธและไม่มีอะไรรัน
-
-**Role lane ต้องเปิดใช้เอง** ค่าเริ่มต้นคือการอนุมัติ spec ครั้งเดียวครอบคลุมทั้ง
-change ถ้าโปรเจกต์ตั้ง `approval.roles` ใน `foundation.json` (ดู
-หัวข้อ `approval` ใน [ตั้งค่า foundation.json](/docs/th/foundation-config/)) แต่ละ role
-ที่ถูกเลือกต้องอนุมัติ revision ปัจจุบันแยกกัน และ Build จะไม่เริ่มจนกว่าทุก lane
-ที่ต้องมีอนุมัติครบ คุณเป็นผู้ระบุว่าอนุมัติในบทบาทใด การอนุมัติที่ไม่ระบุ role
-ครอบคลุมทุก lane harness บันทึก role ตามที่แจ้งและไม่ได้ยืนยันตัวตน การเพิ่ม
-requirement คงการอนุมัติของ lane ไว้ ส่วนการลบ requirement จะรีเซ็ตทุก lane
-
-## อนุมัติด้วยคำพูดของคุณเอง
-
-คำตอบในแชทคือการตัดสินใจ การตอบคำถามขออนุมัติ spec หรือ amendment ว่า "ลุยเลย",
-"ทำเลย", "ทำไปเลย", "go ahead" หรือ "approve" ถือเป็นการอนุมัติ agent จะบันทึกไว้และ
-ไม่ถามซ้ำ การบอกตั้งแต่ต้นว่า "ทำจนจบ" หรือ "ทำให้เสร็จ" ให้สิทธิ์ Land สำหรับ change
-นั้นด้วย คำเร่งอย่างเดียว ("ด่วน", "รีบ demo") และความเงียบไม่ใช่การอนุมัติ และคำขอที่
-ปฏิเสธ ("อย่าเพิ่ง push") ไม่ใช่อำนาจ
-
-Commit และ push เกิดได้เฉพาะผ่าน `/deliver` หรือคำสั่งตรงของคุณ ("commit ให้เลย",
-"push ด้วย") ระหว่าง Build หรือ Prove `git commit` หรือ `git push` จาก main checkout
-ที่ไม่ได้สั่งจะไม่รัน แต่กลายเป็นคำถาม และเมื่อคุณตอบตกลงจึงรันได้ "เปิด PR ให้เลย"
-หรือ "open a PR" ถือเป็น `/deliver` กฎฉบับเต็มอยู่ใน `WORKFLOW.md` หัวข้อ
-"Authority from the user's words"
-
-## การตัดสินใจถูกบันทึกไว้ที่ไหน
-
-การตัดสินใจอยู่ใน change packet ไม่ใช่ใน transcript ของแชท
-เหตุผลของ acceptance อยู่ในสัญญา คำตัดสินของ review อยู่ใน receipt
-และการตัดสินใจให้ทำต่อถูกระบุด้วย `--decision-ref` ของมัน
-กฎที่อยู่ใต้ทั้งสี่จุดคือกฎเดียวกัน **การอนุมัติไม่เคยถูกอนุมานจากความเงียบ
-และการที่คำสั่งใช้ได้ ไม่เคยแปลว่าได้รับอนุญาตให้รันมัน**

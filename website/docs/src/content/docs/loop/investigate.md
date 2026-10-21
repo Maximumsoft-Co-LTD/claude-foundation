@@ -6,6 +6,16 @@ description: Optional read-only exploration for when the problem, cause, or dire
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** Investigate is an optional research step for when you cannot
+yet say what should change. You describe the question or the decision you are
+stuck on. The agent reads the code (it edits nothing in your product) and the
+harness records what was checked. You get a short report that separates
+confirmed facts from guesses and ends with one of three verdicts: ready for
+`/change`, needs your decision, or not worth changing. If the request is already
+clear, skip this step and go to [`/change`](/docs/loop/change/).
+
+## For agents and integrators
+
 ```text
 /investigate <problem or decision> [--compare]
 ```

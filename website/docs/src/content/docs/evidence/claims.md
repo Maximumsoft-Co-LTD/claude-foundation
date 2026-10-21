@@ -1,14 +1,18 @@
 ---
 title: Claims and capabilities
-description: How an observable scenario becomes a stable claim, and which of the 19 capabilities can actually demonstrate it.
+description: How an observable scenario becomes a stable claim, and which of the 25 capabilities can actually demonstrate it.
 ---
 
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** a *claim* is a promise the change makes about behavior, a *capability* is a kind of check that can show it (test, browser, accessibility), a *provider* is the project tool that runs that check, and a *receipt* is the recorded result. This page is for agents and integrators declaring what a change must prove. You need a change with acceptance scenarios; you get a claim list that decides which checks must pass before Land. See the [glossary](/docs/glossary/).
+
 Change Loop's central rule: **a passing command is not automatically proof.**
 
 Every observable acceptance scenario gets a stable claim ID. Each claim declares the capabilities that could actually demonstrate it. Missing, stale, failed, erroneous, or inconclusive evidence blocks landing.
+
+![A scenario becomes a claim, selects capabilities, runs through a provider, and is stored as a receipt that passes, blocks, or goes stale.](/docs/diagrams/evidence-en.svg)
 
 ## The behavioral contract
 
@@ -64,8 +68,17 @@ Select only what the claim needs — never the full catalog by default.
 | `observability` | Required logs, metrics, traces, and alerts expose success and failure safely |
 | `deployment` | Packaging, configuration, rollout health checks, and rollback behavior are proven |
 | `dependency-supply-chain` | Dependency vulnerability, license, lockfile, and provenance policy passes |
+| `evaluation` | A model or ranking evaluation scores at or above its threshold |
+| `parity` | The new implementation matches the reference on the declared comparison set |
+| `plan-check` | An infrastructure or migration plan contains only the declared changes |
+| `release-health` | Crash, error, and adoption signals stay healthy during rollout (post-release) |
+| `experiment-guardrail` | Guardrail metrics stay within bounds after release (post-release) |
 
-Nineteen capabilities. Most changes use two or three.
+Twenty-five capabilities. Most changes use two or three. The last two are
+post-release rollout gates: they are listed in the archived proposal and never
+block proof or Land. The work types that require the specialist capabilities
+(for example `ml` → `evaluation`, `infra` → `plan-check`) are listed in the
+[evidence contract](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/EVIDENCE.md#work-type-capabilities).
 
 A `security-static`, `resilience`, `compatibility`, `data-migration`, or
 `cross-repo-contract` provider that only re-runs the test command observes

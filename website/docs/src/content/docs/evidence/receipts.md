@@ -6,6 +6,8 @@ description: What a receipt binds itself to, the four statuses a provider can re
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** a *receipt* is the recorded result of one check, saved with exactly which code it checked, so an old result is never mistaken for a current one. This page is for agents and integrators who need to read a result, understand why proof went stale, or repair a blocked check. You need to know how a *provider* (the project tool that runs the check) reports a *claim* (a promise the change makes). You get the meaning of each status and the rules for when proof must be re-run. See the [glossary](/docs/glossary/).
+
 A receipt is Change Loop's record that a specific provider observed a specific
 result against specific content. Everything about it is designed so that a
 receipt cannot outlive the thing it described.

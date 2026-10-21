@@ -6,13 +6,35 @@ description: เพิ่ม changed-code CRAP, mutation testing, language profi
 <!-- docs-audience: project-maintainers -->
 **ผู้อ่าน:** ผู้ดูแลโปรเจกต์และ agent ที่ได้รับอนุญาตให้ตั้งค่า หากต้องการใช้งานตามปกติ เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
 
-Change Loop orchestrate quality tool ที่โปรเจกต์เป็นเจ้าของ โดยไม่สมมติว่า metric เดียวเหมาะกับทุกภาษา Feature นี้เป็น opt-in และเริ่มต้นแบบ **report-only**
+## ทำไมควรเปิดใช้
+
+test ที่ผ่านไม่ได้บอกว่า code ที่ change แตะนั้นดูแลยากหรือไม่ และ test จะจับ bug จริงได้หรือเปล่า
+Quality gate เพิ่มสองการตรวจเฉพาะ code ที่เปลี่ยน: **complexity เทียบกับ coverage** และ
+**mutation testing** ซึ่งถามว่า test จะ fail หรือไม่เมื่อจงใจทำ code ให้พัง
+ถ้าไม่มี change หนึ่งอาจ "proven" ได้ด้วย test ที่อ่อน
+
+**ควรเปิดเมื่อ** โปรเจกต์มี test suite ที่ใช้งานได้ กำลังจะอนุมัติ change ที่เสี่ยงสูง
+(security, data, logic ที่ใช้ร่วมกัน) หรืออยากได้บันทึก quality debt ที่ตรวจสอบได้
+ไม่จำเป็นสำหรับ prototype ที่ทิ้งได้
+
+**สิ่งที่คุณจะเห็น:** ตอนแรกไม่มีอะไรบล็อกคุณ Feature นี้เป็น opt-in และเริ่มต้นแบบ
+**report-only** agent รัน check และ [receipt](/docs/th/glossary/) แต่ละใบบันทึกผลกับ assurance
+ที่ลดลง คุณตัดสินใจเองว่าเมื่อไรจะอนุมัติ baseline และเมื่อไรจะ enforce
+
+Change Loop orchestrate quality tool ที่โปรเจกต์เป็นเจ้าของ โดยไม่สมมติว่า metric เดียวเหมาะกับทุกภาษา
+คุณตัดสินใจแค่สองเรื่อง: จะเปิดหรือไม่ และเมื่อไรจะเปลี่ยนจาก report เป็น enforce
 
 ```text
 discover → preview config → ตรวจ tool → pilot report → อนุมัติ baseline → enforce
 ```
 
 Quality finding เป็นหลักฐาน ไม่ใช่อำนาจแก้ code หากคะแนนสูงอยู่นอก Change ที่อนุมัติ ให้บันทึกเป็น debt โดยไม่ขยาย task หรือ repository scope
+
+## สำหรับ agent และ integrator: check และ command
+
+ส่วนที่เหลืออธิบายสิ่งที่ gate วัดและ command ที่ใช้รัน change ใดต้องมีหลักฐานคุณภาพ
+กำหนดด้วย `quality.changeGate` ใน [`foundation.json`](/docs/th/foundation-config/)
+ส่วนแต่ละ repository สร้างหลักฐานอย่างไร กำหนดใน `quality/foundation-quality.json`
 
 ## Gate วัดอะไร
 
@@ -41,11 +63,11 @@ claude-foundation quality doctor
 
 `quality init` เป็น preview จนกว่าจะใส่ `--write` และจะสร้าง `quality/foundation-quality.json` เมื่อใช้ `--ci github` จะติดตั้ง:
 
-สำหรับ JavaScript/TypeScript การ discovery รองรับ package script ที่ project เป็นเจ้าของทั้ง `foundation:quality:crap` และ alias `quality:crap` โดย command ต้องสร้าง `foundation-crap-v1` ที่ `.foundation/quality/crap.json` หากไม่มี script หรือ provider ที่ตั้งค่าไว้ CRAP จะมีสถานะว่ายังไม่ได้วัด
-
 - workflow changed-code แบบ reusable/manual;
 - nightly inventory แบบสี่ shard; และ
 - release workflow ที่ enforce full inventory
+
+สำหรับ JavaScript/TypeScript การ discovery รองรับ package script ที่ project เป็นเจ้าของทั้ง `foundation:quality:crap` และ alias `quality:crap` โดย command ต้องสร้าง `foundation-crap-v1` ที่ `.foundation/quality/crap.json` หากไม่มี script หรือ provider ที่ตั้งค่าไว้ CRAP จะมีสถานะว่ายังไม่ได้วัด
 
 Reusable workflow ไม่ได้มี `pull_request` trigger ในตัว ต้องเรียกจาก PR workflow เดิมของ repository และส่ง Change ID เข้าไป เพิ่มขั้น setup runtime/tool ของแต่ละภาษาก่อน `quality doctor` เพราะ Change Loop ไม่ติดตั้ง runtime หรือ quality tool ให้
 

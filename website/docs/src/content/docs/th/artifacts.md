@@ -6,9 +6,49 @@ description: อะไรให้ผู้ใช้ตรวจ อะไรเ
 <!-- docs-audience: users -->
 **ผู้อ่าน:** ผู้ใช้โปรเจกต์ หน้านี้อธิบายสิ่งที่ต้องตรวจและตัดสินใจ ส่วน agent ดูแลขั้นตอนระบบตามปกติ
 
+Change Loop เพิ่มไฟล์เข้าไปใน repository ของคุณ หน้านี้บอกว่าไฟล์ไหนเป็นของคุณและต้องตรวจ
+ไฟล์ไหน Change Loop เขียนทับตอน upgrade ไฟล์ไหน harness เขียนระหว่างทำงาน และไฟล์ไหนไม่ควรแตะ
+คุณตรวจเจตนาและผลลัพธ์ โดยไม่ต้องดูแลสถานะภายในด้วยตัวเอง
+
+## ไฟล์ไหนเป็นของฉัน?
+
+| กลุ่ม | ไฟล์ | สิ่งที่คุณทำ |
+|---|---|---|
+| **ของคุณ** (commit ไว้ และ upgrade ไม่ทับ) | `openspec/specs/`, `openspec/changes/`, `openspec/investigations/`, `foundation.json`, `openspec/config.yaml`, `openspec/repositories.yaml`, `quality/`, `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` | ตรวจและตัดสินใจ ให้ agent แก้ข้อตกลงผ่าน workflow ที่รองรับ |
+| **Installer ดูแล** (ถูกแทนที่ตอน upgrade) | `.claude/orchestrator.md`, `.claude/commands`, `.claude/harness`, `.claude/skills`, `.claude/rules`, `.claude/hooks`, `openspec/schemas`, `WORKFLOW.md`, `.foundation/.gitignore`, `.foundation/README.md` | อ่านเป็นข้อมูลอ้างอิง ปรับผ่าน config ของโปรเจกต์ ไม่ใช่แก้ไฟล์เหล่านี้ |
+| **Harness สร้างขึ้น** (Git ignore) | `.foundation/runtime/`, `receipts/`, `evidence/`, `transactions/`, `logs/` | อ่านเพื่อวิเคราะห์ได้ แต่ห้ามแก้เพื่อเปลี่ยนผลตรวจ และอย่าถือว่าลบทิ้งได้ |
+| **ไฟล์ระหว่างทำงาน** | `.foundation/drafts/`, โค้ดใน `.foundation/sandboxes/` | Agent เป็นผู้เขียน คุณตรวจข้อตกลงที่ compile แล้วและ diff สุดท้าย |
+
+![สามคอลัมน์แสดงไฟล์ที่เป็นของคุณ ไฟล์ที่ Change Loop ติดตั้งและเขียนทับ และไฟล์ที่ harness สร้างขึ้น](/docs/diagrams/artifacts-th.svg)
+
+```text
+your-project/
+├── foundation.json          ของคุณ     นโยบาย: budget, model, review, setup
+├── CLAUDE.md, AGENTS.md     ของคุณ     คำแนะนำของโปรเจกต์
+├── quality/                 ของคุณ     config ของ quality gate (ถ้าเปิดใช้)
+├── WORKFLOW.md              MANAGED    เอกสารอ้างอิง lifecycle
+├── .claude/                 MANAGED    harness, commands, skills, rules, hooks
+│                                       (settings.json ของโปรเจกต์ยังเป็นของคุณ)
+├── openspec/
+│   ├── specs/               ของคุณ     สิ่งที่ระบบซึ่ง land แล้วต้องทำได้
+│   ├── changes/<id>/        ของคุณ     ข้อตกลงของ change ที่กำลังทำ
+│   ├── investigations/      ของคุณ     สิ่งที่ค้นพบจาก /investigate
+│   └── schemas/             MANAGED    ถูกเขียนทับทุกครั้งที่ติดตั้ง
+└── .foundation/             GENERATED  runtime state, receipt, evidence,
+                                        sandbox (อาจมีโค้ดที่ยังไม่ land)
+```
+
+**อย่าลบ `.foundation/` เพื่อเริ่มงานใหม่** การถูก Git ignore ไม่ได้แปลว่าลบได้
+ภายในอาจมีโค้ดที่ยังไม่ land ประวัติหลักฐาน journal สำหรับกู้คืน และ backup
+ให้ agent ใช้ขั้นตอนกู้คืนหรือ cleanup ที่รองรับ
+ไฟล์ของโปรเจกต์ก็ไม่ได้แปลว่าแก้มือได้ระหว่าง change: harness ดูแล link, task ID
+และ checkbox ที่สร้างขึ้นเอง ให้ขอ agent revise หรือ amend
+ศัพท์อย่าง receipt และ sandbox อธิบายไว้ใน [glossary](/docs/th/glossary/)
+
+## สำหรับ agent และ integrator: รายละเอียด ownership
+
 เจ้าของไฟล์กับผู้อ่านเป็นคนละเรื่อง ข้อตกลงของโปรเจกต์อาจถูก compile โดย harness
-และโค้ดของโปรเจกต์อาจเขียนโดย agent คุณตรวจเจตนาและผลลัพธ์
-โดยไม่ต้องดูแลสถานะภายในด้วยตัวเอง
+และโค้ดของโปรเจกต์อาจเขียนโดย agent
 
 ## อะไรเป็นของใคร?
 
@@ -20,10 +60,6 @@ description: อะไรให้ผู้ใช้ตรวจ อะไรเ
 | ไฟล์ Change Loop ที่ติดตั้ง | `WORKFLOW.md`, `.claude/harness/`, commands/skills/hooks ที่ managed, `openspec/schemas/` | อ่านอ้างอิง; ปรับผ่าน config ของโปรเจกต์ | Change Loop ดูแลและ upgrade ไฟล์ที่ managed |
 | บันทึกสถานะระบบ | `.foundation/runtime/`, `receipts/`, `evidence/`, `transactions/` | อ่านวิเคราะห์ได้ แต่อย่าแก้ record เพื่อเปลี่ยนผลตรวจ | Harness และเครื่องมือที่ตั้งค่าไว้เขียนผ่านขั้นตอนที่รองรับ |
 | ข้อมูลชั่วคราวและโค้ดที่กำลังทำ | `.foundation/drafts/`, path โค้ด/test ใน sandbox ที่ประกาศไว้ | ตรวจข้อตกลงที่ compile แล้วและ diff สุดท้าย | Agent เขียนข้อมูลต้นทางและ implementation; งานใน sandbox อาจยังไม่ส่งมอบ |
-
-**อย่าลบ `.foundation/` เพื่อเริ่มงานใหม่** ภายในอาจมีโค้ดที่ยังไม่ land
-ประวัติหลักฐาน journal สำหรับกู้คืน backup และ local policy
-การถูก Git ignore ไม่ได้แปลว่าลบได้ ให้ agent ใช้ขั้นตอนกู้คืนหรือ cleanup ที่รองรับ
 
 ใน source repository ของ Change Loop ไฟล์ `CLAUDE.md` และ `AGENTS.md` ที่ root
 ใช้แนะนำ maintainer แต่ในโปรเจกต์ที่คุณติดตั้ง ไฟล์ชื่อเดียวกันยังเป็นคำแนะนำของ

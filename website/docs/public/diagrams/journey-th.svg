@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">ใครทำอะไรในหนึ่ง change</title>
+  <desc id="d">แผนภาพ swimlane คอลัมน์คือขั้นของ lifecycle ได้แก่ Investigate, Change, Build, Prove และ Land แถวคือ คุณ, Agent และ Harness พร้อมผลลัพธ์ของแต่ละขั้น คุณลงมือที่ Change (อธิบายและอนุมัติ), Prove (ตรวจ) และ Land (อนุญาต) ส่วนงานประจำเป็นของ agent และ harness</desc>
+  <rect x=".5" y=".5" width="959" height="439" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="15" font-weight="500" text-anchor="middle">
+    <rect x="108" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c" stroke-dasharray="5 4"/><text x="188" y="41" fill="#17181c">/investigate?</text>
+    <rect x="276" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c"/><text x="356" y="41" fill="#17181c">/change</text>
+    <rect x="444" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c"/><text x="524" y="41" fill="#17181c">/build</text>
+    <rect x="612" y="16" width="160" height="40" rx="6" fill="#fff" stroke="#17181c"/><text x="692" y="41" fill="#17181c">/prove</text>
+    <rect x="780" y="16" width="160" height="40" rx="6" fill="#17181c"/><text x="860" y="41" fill="#f2eee5">/land</text>
+  </g>
+
+  <g font-size="13" font-weight="700" fill="#6a6c71">
+    <text x="22" y="110">คุณ</text><text x="22" y="202">AGENT</text><text x="22" y="294">HARNESS</text><text x="22" y="366">ผลลัพธ์</text>
+  </g>
+
+  <g>
+    <rect x="108" y="64" width="160" height="84" rx="6" fill="#efe9dc"/>
+    <rect x="276" y="64" width="160" height="84" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+    <rect x="444" y="64" width="160" height="84" rx="6" fill="#efe9dc"/>
+    <rect x="612" y="64" width="160" height="84" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+    <rect x="780" y="64" width="160" height="84" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+  </g>
+  <g fill="#e8e1d4">
+    <rect x="108" y="156" width="160" height="84" rx="6"/><rect x="276" y="156" width="160" height="84" rx="6"/><rect x="444" y="156" width="160" height="84" rx="6"/><rect x="612" y="156" width="160" height="84" rx="6"/><rect x="780" y="156" width="160" height="84" rx="6"/>
+  </g>
+  <g fill="#e1ece6">
+    <rect x="108" y="248" width="160" height="84" rx="6"/><rect x="276" y="248" width="160" height="84" rx="6"/><rect x="444" y="248" width="160" height="84" rx="6"/><rect x="612" y="248" width="160" height="84" rx="6"/><rect x="780" y="248" width="160" height="84" rx="6"/>
+  </g>
+  <g fill="#fff" stroke="#bcb4a6">
+    <rect x="108" y="340" width="160" height="44" rx="6"/><rect x="276" y="340" width="160" height="44" rx="6"/><rect x="444" y="340" width="160" height="44" rx="6"/><rect x="612" y="340" width="160" height="44" rx="6"/>
+  </g>
+  <rect x="780" y="340" width="160" height="44" rx="6" fill="#17181c"/>
+
+  <g font-size="12" fill="#373a42" text-anchor="middle">
+    <!-- คุณ -->
+    <text x="188" y="94">ตั้งคำถาม</text><text x="188" y="112">ตอบเฉพาะสิ่งที่</text><text x="188" y="130">ยังไม่ชัดจริง ๆ</text>
+    <text x="356" y="88" font-weight="700" fill="#8f2a11">บอกผลลัพธ์ที่ต้องการ</text><text x="356" y="108" font-weight="700" fill="#8f2a11">อนุมัติ spec</text><text x="356" y="130">ก่อนมีโค้ดใด ๆ</text>
+    <text x="524" y="102">ตัดสินใจเมื่อถูกถาม</text><text x="524" y="120">เรื่องที่เป็น trade-off</text>
+    <text x="692" y="88" font-weight="700" fill="#8f2a11">ตรวจผลและ diff</text><text x="692" y="108">ยอมรับ หรือ waive</text><text x="692" y="126">ด้วยการบันทึกไว้</text>
+    <text x="860" y="94" font-weight="700" fill="#8f2a11">สั่ง /land</text><text x="860" y="112">อนุญาตอย่างชัดเจน</text><text x="860" y="130">ไม่มีการอนุมานแทน</text>
+    <!-- agent -->
+    <text x="188" y="186">อ่านโค้ดและเอกสาร</text><text x="188" y="204">รายงานสิ่งที่พบ</text><text x="188" y="222">(ไม่แก้โค้ดจริง)</text>
+    <text x="356" y="186">ร่างข้อตกลง:</text><text x="356" y="204">scenario, claim,</text><text x="356" y="222">task, ความเสี่ยง</text>
+    <text x="524" y="186">เขียนโค้ดและเทส</text><text x="524" y="204">ใน sandbox ไม่แตะ</text><text x="524" y="222">working tree ของคุณ</text>
+    <text x="692" y="186">แก้สิ่งที่พบเป็น</text><text x="692" y="204">ชุดเดียวตามลำดับ</text><text x="692" y="222">แล้วตรวจซ้ำ</text>
+    <text x="860" y="194">ส่งมอบ diff ที่เสร็จ</text><text x="860" y="212">และพร้อมให้รีวิว</text>
+    <!-- harness -->
+    <text x="188" y="278">บันทึกผลการ</text><text x="188" y="296">สำรวจ</text>
+    <text x="356" y="278">compile และตรวจ</text><text x="356" y="296">OpenSpec packet</text>
+    <text x="524" y="278">สร้าง sandbox คุม</text><text x="524" y="296">ขอบเขต งบ และ</text><text x="524" y="314">สิทธิ์</text>
+    <text x="692" y="278">รันเครื่องมือของคุณ</text><text x="692" y="296">เขียน receipt ใช้ซ้ำ</text><text x="692" y="314">สิ่งที่ยังสด</text>
+    <text x="860" y="278">นำเข้าครั้งเดียว sync</text><text x="860" y="296">spec แล้ว archive</text><text x="860" y="314">ถ้าสะดุดจะ resume</text>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="12" text-anchor="middle" fill="#17181c">
+    <text x="188" y="367">findings</text><text x="356" y="367">approved agreement</text><text x="524" y="367">code in sandbox</text><text x="692" y="367">proven</text>
+    <text x="860" y="367" fill="#f2eee5">archived ✓</text>
+  </g>
+
+  <rect x="22" y="404" width="12" height="12" rx="2" fill="#ffe3da" stroke="#ff5c35"/>
+  <text x="42" y="415" font-size="12" fill="#373a42">จังหวะที่ต้องการคุณ ที่เหลือเป็นงานของ agent และ harness — คุณไม่ต้องรันคำสั่งภายในเอง</text>
+</svg>

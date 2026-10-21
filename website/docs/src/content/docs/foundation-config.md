@@ -9,8 +9,29 @@ description: Understand and safely tune Change Loop's project policy for executi
 `foundation.json` is the **committed policy for one project**. It tells
 Change Loop how much autonomous work is allowed, how work maps to model tiers,
 when to escalate, who may review, and how a new Build workspace is prepared.
+Most projects never change it; this page helps when you want a specific
+behavior to be different.
 
-It does not contain product requirements or live task state:
+## Common goals and the setting to change
+
+| I want to… | Set in `foundation.json` | Notes |
+|---|---|---|
+| Use a different or cheaper model for some work | `models.routing: true`, then `models.fast`/`standard`/`deep` `.family` | Routing is **off** by default: every task uses the `standard` tier. See [`models`](#models-route-purpose-not-a-host-specific-command) |
+| Require a reviewer other than the implementer | `review.independence: "required"` | Reviewer identity and AI session must differ |
+| Require a different AI provider to review | `review.diversity: "required"` and `review.defaultReviewer: "codex-sol"` (or `claude-opus` if Codex implements) | Fails closed if the reviewer matches the implementer. See [`review`](#review-choose-convenience-or-separation-of-duties) |
+| Run a project setup command in every new workspace | `sandbox.setupCommand` (and `sandbox.setupTimeoutMs`) | Dependencies are installed from the lockfile automatically; set `sandbox.installDependencies: false` to opt out |
+| Cap spend on one autonomous run | `execution.tokenBudgets.rapid/standard`, `execution.requestBudgets.rapid/standard` | Ceilings, not targets. Set `execution.budgetWatchdog: true` for spend warnings and limits in packets |
+| Run fewer agents or checks at once | `execution.maxParallelAgents`, `maxParallelProviders`, `maxParallelSetups` | Integers 1 to 16 |
+| Allow slow builds more time | `execution.leaseMinutes` | 1 to 1440 minutes |
+| Require named roles to approve a spec | `approval.roles` | For example `["tech-lead", "qa"]`. See [`approval`](#approval-role-approval-lanes) |
+| Require coverage and mutation evidence on risky changes | `quality.changeGate: "warn"` or `"enforce-high-risk"` | Needs the [quality configuration](/docs/consumer-quality/) |
+| Name the commit and branch for `/deliver` | `deliver.commitSubject`, `deliver.branchPattern`, `deliver.ticketPattern` | Only used by the optional Deliver step |
+
+After any edit, run the checks in [Safe editing loop](#safe-editing-loop).
+
+## Full reference
+
+The rest of this page documents every supported field. `foundation.json` does not contain product requirements or live task state:
 
 | Concern | Source of truth |
 |---|---|
@@ -155,6 +176,10 @@ not by adding provider commands to `foundation.json`. See
   }
 }
 ```
+
+`models.routing` is a boolean and defaults to `false`: until you set it to
+`true`, every task uses the `standard` tier unless the task itself requests a
+tier, and the tier table below has no effect on planning.
 
 The three keys—`fast`, `standard`, and `deep`—are portable tiers. `family`
 describes the preferred family, while the native agent host remains responsible
@@ -351,6 +376,17 @@ proposal. An unknown placeholder, an invalid pattern, a missing ticket, or an
 invalid subject or branch stops Deliver as a `delivery-policy` wait before
 anything is committed; correct the setting and run `/deliver` again.
 `WORKFLOW.md` (`/deliver <change>`) owns the full naming rules.
+
+## Other fields
+
+| Field | Default | Meaning |
+|---|---|---|
+| `execution.budgetWatchdog` | `false` | Boolean. When `false`, usage is still recorded but packets carry no spend directives or limits; when `true`, a `budget-warning` signal appears at 70% of spend |
+| `review.fallbackReviewers` | `["codex-sol", "main-session"]` in the shipped file | Reviewers tried in order only after an infrastructure error; a delivered `fail` or `inconclusive` never triggers fallback. Names must exist, must not repeat `defaultReviewer`, and `main-session` requires `independence: "self"` |
+| `review.infraFailureThreshold` | `2` in the shipped file | Integer `1..5` |
+| `telemetry.requireUsage` | `true` in the shipped file | Boolean; Land requires a measured usage dimension |
+| `land.riskBasedCi` | `false` | Boolean; see the signed CI contract in [EVIDENCE.md](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/EVIDENCE.md) |
+| `workflow.handoffDefaultOwner` | `"devops-team"` | Non-empty team name for permission-bound handoffs |
 
 ## Common mistakes
 

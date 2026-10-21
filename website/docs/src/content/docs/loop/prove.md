@@ -6,6 +6,17 @@ description: Reuse and execute content-bound evidence until proven or a real bou
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** Prove checks that the work really does what the agreement
+promised. The harness runs the project's own tools (the
+[providers](/docs/glossary/)), records each result as a
+[receipt](/docs/glossary/), and has a review read the diff. You only step in
+for a decision that is yours, such as acceptance or a waiver. You get `proven`
+when every promise has fresh evidence. **`proven` is not delivered:** nothing has
+reached your project yet. Only [`/land`](/docs/loop/land/) reaching `archived`
+means done.
+
+## For agents and integrators
+
 ```text
 /prove <change>
 ```
