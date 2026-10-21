@@ -157,6 +157,6 @@ printf '  telemetry:      claude-foundation telemetry import --format codex\n'
 if ! command -v codex >/dev/null 2>&1; then
   printf '  reviewer setup: npm install -g @openai/codex && codex login\n'
 else
-  printf '  reviewer setup: codex login status\n'
+  printf '  reviewer setup: codex login status (not needed when Codex uses OPENAI_API_KEY/CODEX_API_KEY/OPENROUTER_API_KEY or a custom model_provider)\n'
 fi
 printf 'Next: describe the outcome with /change <intent>; the agent compiles OpenSpec and drives advance for you.\n'

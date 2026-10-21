@@ -609,6 +609,10 @@ infrastructure failure (`reviewer CLI not installed: <name>`) without being
 spawned, so a host with no reviewer CLI reaches the `main-session` fallback; with
 no fallback configured the run fails naming the missing CLI and the
 `review.fallbackReviewers: ["main-session"]` + `independence: "self"` fix.
+The Codex readiness probe `codex login status` is soft when `OPENAI_API_KEY`,
+`CODEX_API_KEY`, `OPENROUTER_API_KEY` or a non-OpenAI `model_provider` is
+present, or when the reviewer sets `auth: "skip"`; credentials are then
+verified at dispatch.
 `main-session` is allowed in that list only
 with `review.independence: "self"`; the request binds observed implementation
 provenance and current-session telemetry rather than guessing identity or model.

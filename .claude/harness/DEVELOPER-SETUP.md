@@ -40,7 +40,11 @@ is `42`. A delta between the two is advisory while both doctors still pass:
 5. Add `~/.local/bin` to `PATH`, then run
    `claude-foundation doctor --stage change`.
 6. Install and authenticate the reviewer CLI your project selects:
-   - Codex: `npm install -g @openai/codex && codex login`
+   - Codex: `npm install -g @openai/codex && codex login`. A Codex that runs on
+     `OPENAI_API_KEY`, `CODEX_API_KEY`, `OPENROUTER_API_KEY` or a non-OpenAI
+     `model_provider` in `~/.codex/config.toml` needs no `codex login`: the
+     `login status` probe is skipped there. Set `"auth": "skip"` on the
+     reviewer in `foundation.json` to skip it explicitly.
    - Claude Code: `npm install -g @anthropic-ai/claude-code && claude auth login`
 7. Set the committed `foundation.json` review profile once. A Codex-only team
    uses `defaultReviewer: "codex-sol"`; a Claude-Code-only team uses

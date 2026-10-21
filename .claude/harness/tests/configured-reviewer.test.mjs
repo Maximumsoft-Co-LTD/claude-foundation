@@ -103,7 +103,7 @@ const codexExecutable = join(root, "fake-codex.cjs");
 writeFileSync(codexExecutable, `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-if (args[0] === "login" && args[1] === "status") process.exit(0);
+if (args[0] === "login" && args[1] === "status") process.exit(process.env.FAKE_CODEX_LOGIN_FAIL === "1" ? 1 : 0);
 if (args[0] === "doctor") process.exit(0);
 if (args[0] === "exec" && args[1] === "--help") {
   process.stdout.write("--output-schema --ephemeral --sandbox --model --cd");
@@ -544,6 +544,48 @@ try {
   assert.equal(auth.ok, false);
   assert.equal(auth.check, "authentication");
   assert.match(auth.detail, /claude auth login/);
+
+  // Codex on an API key / non-OpenAI provider is authenticated without
+  // `codex login`; its probe is soft there and `auth: "skip"` opts out.
+  const codexKeys = ["OPENAI_API_KEY", "CODEX_API_KEY", "OPENROUTER_API_KEY", "CODEX_HOME"];
+  const priorCodexEnv = Object.fromEntries(codexKeys.map((key) => [key, process.env[key]]));
+  const restoreCodexEnv = () => {
+    for (const key of codexKeys) {
+      if (priorCodexEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = priorCodexEnv[key];
+    }
+    delete process.env.FAKE_CODEX_LOGIN_FAIL;
+  };
+  try {
+    for (const key of codexKeys) delete process.env[key];
+    process.env.CODEX_HOME = join(root, "no-codex-home");
+    process.env.FAKE_CODEX_LOGIN_FAIL = "1";
+    const codexUnauth = codexRuntime.reviewerStatus();
+    assert.equal(codexUnauth.ok, false);
+    assert.equal(codexUnauth.check, "authentication");
+    for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "OPENROUTER_API_KEY"]) {
+      process.env[key] = "sk-test";
+      assert.equal(codexRuntime.reviewerStatus().ok, true, `${key} satisfies auth`);
+      delete process.env[key];
+    }
+    const codexHome = join(root, "codex-home");
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, "config.toml"), 'model_provider = "openrouter"\n');
+    process.env.CODEX_HOME = codexHome;
+    assert.equal(codexRuntime.reviewerStatus().ok, true, "non-openai model_provider satisfies auth");
+    process.env.CODEX_HOME = join(root, "no-codex-home");
+    const skipRuntime = createConfiguredReviewerRuntime({
+      root, recordUsage,
+      foundationPolicy: () => ({ review: {
+        diversity: "cross-model", independence: "required", defaultReviewer: "codex",
+        reviewers: { codex: { ...codexReviewer, auth: "skip" } }
+      } }),
+      commandExists: (command) => existsSync(command),
+      now: () => "2026-08-14T00:00:00.000Z",
+      fail: (message) => { throw new Error(message); }
+    });
+    assert.equal(skipRuntime.reviewerStatus().ok, true, 'auth: "skip" bypasses login status');
+  } finally { restoreCodexEnv(); }
 
   const protocolPath = join(root, "protocol.json");
   const policyPath = join(root, "foundation.json");

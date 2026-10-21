@@ -641,11 +641,28 @@ export function createConfiguredReviewerRuntime({
   // Status probes are yielded spawn steps like the review itself, so the
   // concurrent Prove review checks reviewer health without blocking the event
   // loop that drives the executable providers.
+  // `codex login status` only reports ChatGPT/CLI logins. A Codex that runs on
+  // an API key or a non-OpenAI model provider (for example OpenRouter) is
+  // authenticated without it, so that probe is soft there. Credentials are
+  // still verified when the review is dispatched.
+  function codexAuthProbeSkipped(config) {
+    if (config.auth === "skip") return true;
+    if (["OPENAI_API_KEY", "CODEX_API_KEY", "OPENROUTER_API_KEY"]
+      .some((key) => String(process.env[key] || "").trim())) return true;
+    try {
+      const home = process.env.CODEX_HOME || join(process.env.HOME || "", ".codex");
+      const provider = readFileSync(join(home, "config.toml"), "utf8")
+        .match(/^\s*model_provider\s*=\s*["']([^"']+)["']/m)?.[1];
+      return Boolean(provider) && provider !== "openai";
+    } catch { return false; }
+  }
+
   function* codexStatusSteps(config) {
-    const login = yield [config.executable, ["login", "status"], {
-      cwd: root, encoding: "utf8", timeout: 15_000,
-      maxBuffer: 4 * 1024 * 1024
-    }];
+    const login = codexAuthProbeSkipped(config) ? { status: 0 }
+      : yield [config.executable, ["login", "status"], {
+        cwd: root, encoding: "utf8", timeout: 15_000,
+        maxBuffer: 4 * 1024 * 1024
+      }];
     if (login.error || login.status !== 0)
       return {
         ok: false, reviewer: config.identity, check: "authentication",
@@ -741,10 +758,11 @@ export function createConfiguredReviewerRuntime({
     const executable = executableIdentity(config.executable, process.env, root);
     if (!executable) return null;
     const environment = Object.entries(process.env)
-      .filter(([key]) => key === "HOME" || /^(ANTHROPIC|CLAUDE|CODEX|OPENAI)_/.test(key))
+      .filter(([key]) => key === "HOME" || /^(ANTHROPIC|CLAUDE|CODEX|OPENAI|OPENROUTER)_/.test(key))
       .sort(([left], [right]) => left.localeCompare(right));
     return createHash("sha256").update(JSON.stringify([
-      config.identity, config.adapter, config.executable, executable, environment
+      config.identity, config.adapter, config.executable, executable, environment,
+      config.auth || null
     ])).digest("hex");
   }
 

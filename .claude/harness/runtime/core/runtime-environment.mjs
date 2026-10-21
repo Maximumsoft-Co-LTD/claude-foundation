@@ -353,6 +353,8 @@ export function createRuntimeEnvironment({
       fail(`foundation.json review.reviewers.${name}.reasoningEffort must be high`);
     if (reviewer.sandbox !== "read-only" || reviewer.ephemeral !== true)
       fail(`foundation.json review.reviewers.${name} must use read-only sandbox and ephemeral true`);
+    if (reviewer.auth !== undefined && reviewer.auth !== "skip")
+      fail(`foundation.json review.reviewers.${name}.auth must be "skip" when set`);
     for (const field of ["fastModelId", "fastModelFamily", "standardModelId", "standardModelFamily"])
       if (reviewer[field] !== undefined &&
           (typeof reviewer[field] !== "string" || !reviewer[field].trim()))

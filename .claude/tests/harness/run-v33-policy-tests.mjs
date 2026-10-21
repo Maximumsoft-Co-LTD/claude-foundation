@@ -336,9 +336,17 @@ process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: "thread
   assert(existsSync(join(fixture, failed.reportReference)));
   pass("Codex execution failure writes a durable error report without inventing a session");
 
+  // Ambient API-key / provider auth makes the login probe soft; isolate it.
+  const ambientAuth = Object.fromEntries(["OPENAI_API_KEY", "CODEX_API_KEY",
+    "OPENROUTER_API_KEY", "CODEX_HOME"].map((key) => [key, process.env[key]]));
+  for (const key of Object.keys(ambientAuth)) delete process.env[key];
+  process.env.CODEX_HOME = join(fixture, "no-codex-home");
   process.env.FAKE_CODEX_AUTH_FAIL = "1";
   const auth = runtime.reviewerStatus();
   delete process.env.FAKE_CODEX_AUTH_FAIL;
+  delete process.env.CODEX_HOME;
+  for (const [key, value] of Object.entries(ambientAuth))
+    if (value !== undefined) process.env[key] = value;
   assert.equal(auth.ok, false);
   assert.equal(auth.check, "authentication");
   assert.match(auth.detail, /codex login/);
