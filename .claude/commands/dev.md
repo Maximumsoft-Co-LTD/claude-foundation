@@ -6,9 +6,9 @@ argument-hint: <intent> | --resume <change> | --plan-only <intent>
 Run **$ARGUMENTS** as the separate commands, in order:
 
 1. `.claude/commands/change.md`: read it once, now.
-2. `.claude/commands/build.md`, 3. `.claude/commands/prove.md`: read each only
-   for a failure or an action other than a plain `EDIT` (run its
-   `tasks` in `workspace`, then `resume`).
+2. `.claude/commands/build.md` (reaches `proven`),
+   3. `.claude/commands/prove.md`: read each only for a failure, stale proof,
+   or a non-`EDIT` action (run its `tasks` in `workspace`, then `resume`).
 4. `.claude/commands/land.md`, only with Land authority, at a Land boundary.
 
 Do not stop between phases except at a user gate or a real boundary. With

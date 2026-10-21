@@ -5,9 +5,9 @@ argument-hint: <change>
 
 Prove **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
 
-Run `claude-foundation advance <change> --through proven`. The coordinator
-reuses fresh receipts, wires evidence, syncs the sandbox, runs providers and
-review, and finalizes proof.
+Run `claude-foundation advance <change> --through proven`: no-op `DONE`
+when proof is current (Build runs it). Else the coordinator reuses fresh receipts
+and refreshes stale proof.
 
 Execute each protocol-v6 action, then its exact `resume`; apply a `REPAIR` or
 `EDIT` set whole. Stay in-session while a review runs: ending the reply kills
