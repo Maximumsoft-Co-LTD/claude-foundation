@@ -213,6 +213,9 @@ These are project-owned and must be preserved: `.claude/settings.json`,
 `CLAUDE.md`, `AGENTS.md`, active OpenSpec changes, and `.foundation` state.
 Installers may seed or merge them only through their documented ownership rules.
 
+`install.sh` copies `.claude/harness` except its `tests/` and `fixtures/`
+(`UNSHIPPED`); those stay repository-only.
+
 Never make a shipped file depend on repository-only tests, reports, or release
 paths. Never store benchmark history, incidents, or cost observations in the
 installed runtime.

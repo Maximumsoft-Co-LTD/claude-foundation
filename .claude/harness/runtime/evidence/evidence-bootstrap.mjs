@@ -115,7 +115,15 @@ export function testCandidates(tooling, repository, repositoryCount, declaredSur
   const { dependencies, scripts, manager } = tooling;
   const script = scripts.test ? "test" :
     Object.keys(scripts).find((name) => ["test:unit", "unit"].includes(name));
-  if (!script) return [];
+  // A package with no runnable test script cannot be proven; say so instead of
+  // returning nothing, so detection, doctor, and the Prove packet name the fix.
+  if (!script) return [{
+    provider: providerInstanceName("test", repository, repositoryCount),
+    capability: "test", repository: repository.id, confidence: "none",
+    recommended: false, source: "package.json#scripts.test",
+    detail: "no scripts.test; add one so Prove can run tests",
+    config: null
+  }];
   const raw = String(scripts[script]);
   const source = `package.json#scripts.${script}`;
   const riskyScripts = packageScriptRisk(tooling, script);

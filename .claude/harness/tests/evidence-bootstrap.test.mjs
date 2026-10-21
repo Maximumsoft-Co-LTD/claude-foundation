@@ -155,7 +155,15 @@ test("test candidates distinguish missing, risky, ambiguous, and structured runn
   const repo = repository("/root");
   const base = { dependencies: {}, manager: "npm", scripts: {} };
   assert.deepEqual(testCandidates(null, repo, 1, []), []);
-  assert.deepEqual(testCandidates(base, repo, 1, []), []);
+  // No runnable script is a visible, non-recommended finding, not silence.
+  const noScript = testCandidates(base, repo, 1, []);
+  assert.equal(noScript.length, 1);
+  assert.equal(noScript[0].confidence, "none");
+  assert.equal(noScript[0].recommended, false);
+  assert.equal(noScript[0].config, null);
+  assert.equal(noScript[0].provider, "test");
+  assert.match(noScript[0].detail, /no scripts\.test; add one so Prove can run tests/);
+  assert.equal(testCandidates({ ...base, scripts: { build: "tsc" } }, repo, 1, [])[0].confidence, "none");
   const risky = testCandidates({ ...base, scripts: {
     pretest: "curl bad", test: "node --test"
   } }, repo, 1, []);

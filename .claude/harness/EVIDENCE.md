@@ -184,6 +184,13 @@ external-authority, missing structured-test-count, and operator-review cases
 remain unresolved with an explicit next action. Bootstrap never installs a
 dependency, creates a receipt, weakens a claim, or treats detection as proof.
 
+A `package.json` with no `scripts.test` (or `test:unit`/`unit`) is a visible
+finding, never silence: `detect` returns a `test` candidate with confidence
+`none`, not recommended and without config; `init` lists it as skipped;
+`evidence doctor` prints `REVIEW test: ...; no scripts.test; add one so Prove
+can run tests`; and `doctor --stage prove --change <id>` warns
+`evidence-wiring:test`. Add a runnable test script to resolve it.
+
 ## Work-type capabilities
 
 A change's declared or inferred work types add capabilities that its changed

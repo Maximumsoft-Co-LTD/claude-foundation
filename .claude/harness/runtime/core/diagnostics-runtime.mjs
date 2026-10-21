@@ -102,6 +102,7 @@ export function createDiagnosticsRuntime({
   deliveryObservation = null,
   authorityPreflight = () => ({ status: "READY", blockers: [] }),
   executionContract = null,
+  evidenceDetection = null,
   parseFlags,
   parseStrictCommandFlags,
   fail
@@ -454,6 +455,18 @@ export function createDiagnosticsRuntime({
       }
       }
       collectProviderChecks();
+      // A required test capability with no runnable script cannot be proven;
+      // name the missing script here rather than at the Prove failure.
+      function collectEvidenceWiringChecks() {
+      if (stage !== "prove" || !evidenceDetection) return;
+      for (const row of evidenceDetection(requestedChange).candidates)
+        if (row.confidence === "none") checks.push({
+          level: "warn",
+          name: `evidence-wiring:${row.provider}`,
+          detail: `${row.detail} (${row.source}, repository ${row.repository})`
+        });
+      }
+      collectEvidenceWiringChecks();
       function collectTopologyAndApplyChecks() {
       for (const issue of topologyIssues(requestedChange))
         checks.push({

@@ -72,6 +72,14 @@ printf 'legacy compatibility module\n' > \
   "$TARGET/.claude/harness/runtime/workflow/change-artifacts.mjs"
 printf '%s\n' ".claude/harness/runtime/workflow/change-artifacts.mjs" > \
   "$TARGET/.foundation/install-manifest.txt"
+# An earlier release shipped the harness suite; its recorded files must go on
+# upgrade while an unrecorded consumer file beside them stays.
+mkdir -p "$TARGET/.claude/harness/tests" "$TARGET/.claude/harness/fixtures"
+printf 'shipped suite\n' > "$TARGET/.claude/harness/tests/shipped-before.test.mjs"
+printf 'shipped fixture\n' > "$TARGET/.claude/harness/fixtures/shipped-before.json"
+printf 'consumer test\n' > "$TARGET/.claude/harness/tests/consumer-owned.test.mjs"
+printf '%s\n' ".claude/harness/tests/shipped-before.test.mjs" \
+  ".claude/harness/fixtures/shipped-before.json" >> "$TARGET/.foundation/install-manifest.txt"
 mkdir -p "$TARGET/.claude/skills/gridgeist/assets" \
   "$TARGET/.claude/skills/gridgeist/references" "$TARGET/.claude/skills/custom-ux"
 for retired_grid_file in SKILL.md assets/gridgeist.svg assets/gridgeist-small.svg \
@@ -121,6 +129,18 @@ assert_file_absent "prototype is no longer a separate command" \
 assert_file_absent "review is proof-internal" \
   "$TARGET/.claude/commands/review.md"
 assert_file_exists "harness installed" "$TARGET/.claude/harness/foundation.mjs"
+assert_file_absent "repository-only harness tests are not shipped" \
+  "$TARGET/.claude/harness/tests/design-blueprints.test.mjs"
+assert_file_absent "repository-only harness fixtures are not shipped" \
+  "$TARGET/.claude/harness/fixtures/public-command-contract-v1.json"
+assert_file_absent "upgrade removes a previously shipped harness test" \
+  "$TARGET/.claude/harness/tests/shipped-before.test.mjs"
+assert_file_absent "upgrade removes a previously shipped harness fixture" \
+  "$TARGET/.claude/harness/fixtures/shipped-before.json"
+assert_file_contains "upgrade keeps an unrecorded consumer test" \
+  "$TARGET/.claude/harness/tests/consumer-owned.test.mjs" "consumer test"
+assert_eq "the manifest records no unshipped harness path" "0" \
+  "$(grep -cE '^\.claude/harness/(tests|fixtures)/' "$TARGET/.foundation/install-manifest.txt" || true)"
 assert_file_exists "investigation runtime installed" \
   "$TARGET/.claude/harness/runtime/workflow/investigation-runtime.mjs"
 assert_file_exists "shared trust runtime installed" "$TARGET/.claude/harness/runtime/core/trust.mjs"

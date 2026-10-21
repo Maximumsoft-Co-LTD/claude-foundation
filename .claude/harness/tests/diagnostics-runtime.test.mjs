@@ -35,6 +35,7 @@ let providerNames = ["none", "nonebad", "external", "externalbad", "command", "m
 let runtimeState = { status: "change", impact: "high", workspace: { path: root }, declaredSurface: ["src/app.js"] };
 let strictCommand = { flags: {}, rest: [] };
 let output = "";
+let detectionCandidates = [];
 const priorLog = console.log;
 const priorExit = process.exitCode;
 console.log = (message) => { output += `${message}\n`; };
@@ -100,6 +101,7 @@ const runtime = createDiagnosticsRuntime({
   reviewerStatus: () => reviewer,
   unverifiedDrift: () => driftRows,
   unresolvedApplyTransactions: () => transactionRows,
+  evidenceDetection: () => ({ candidates: detectionCandidates }),
   parseFlags: () => ({}), parseStrictCommandFlags: () => strictCommand, fail
 });
 
@@ -122,6 +124,21 @@ try {
   assert.match(output, /changed-quality/);
   assert.match(output, /QUALITY_NOT_CONFIGURED/);
   assert.match(output, /CRAP_NOT_MEASURED/);
+  assert.doesNotMatch(output, /evidence-wiring:/);
+  // A required test capability with no runnable script is named at Prove stage only.
+  detectionCandidates = [{ provider: "test", confidence: "none", repository: "root",
+    source: "package.json#scripts.test",
+    detail: "no scripts.test; add one so Prove can run tests" }, {
+    provider: "lint", confidence: "review", repository: "root", source: "x", detail: "review" }];
+  output = "";
+  runtime.doctor({ stage: "prove", change: "c" });
+  assert.match(output, /WARN\s+evidence-wiring:test: no scripts\.test; add one so Prove can run tests/);
+  assert.doesNotMatch(output, /evidence-wiring:lint/);
+  output = "";
+  runtime.doctor({ stage: "build", change: "c" });
+  assert.doesNotMatch(output, /evidence-wiring:/);
+  detectionCandidates = [];
+  process.exitCode = 0;
   evidenceProviders = {};
   qualityMode = "enforce-high-risk";
   output = "";

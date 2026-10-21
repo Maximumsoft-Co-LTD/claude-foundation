@@ -1701,6 +1701,7 @@ const {
   providerCapability,
   reviewerStatus,
   unverifiedDrift: (id) => modelDriftInspector.changeDrift(id).unverified,
+  evidenceDetection: evidenceDetectionValue,
   parseFlags,
   parseStrictCommandFlags,
   fail: die

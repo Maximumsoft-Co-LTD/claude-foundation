@@ -89,6 +89,21 @@ MANAGED=(
   "WORKFLOW.md"
 )
 
+# Repository-only paths inside a managed directory. They are neither copied nor
+# recorded in the manifest, so a consumer's root `node --test` never collects the
+# harness suite, and an upgrade removes the copies an earlier release recorded.
+UNSHIPPED=(
+  ".claude/harness/tests"
+  ".claude/harness/fixtures"
+)
+is_unshipped() {
+  local rel="$1" skip
+  for skip in "${UNSHIPPED[@]}"; do
+    case "$rel" in "$skip"|"$skip"/*) return 0 ;; esac
+  done
+  return 1
+}
+
 # Files written by the phase orchestrator in earlier releases. Exact paths only:
 # custom user agents/hooks are never removed.
 LEGACY=(
@@ -221,7 +236,7 @@ for rel in "${MANAGED[@]}"; do
   src="$SOURCE_PATH/$rel"
   if [ -d "$src" ]; then
     find "$src" -type f -print | while IFS= read -r file; do
-      printf '%s\n' "${file#"$SOURCE_PATH/"}"
+      is_unshipped "${file#"$SOURCE_PATH/"}" || printf '%s\n' "${file#"$SOURCE_PATH/"}"
     done
   else
     printf '%s\n' "$rel"
@@ -268,7 +283,12 @@ for rel in "${MANAGED[@]}"; do
   mkdir -p "$(dirname "$dst")"
   if [ -d "$src" ]; then
     mkdir -p "$dst"
-    cp -R "$src/." "$dst/"
+    while IFS= read -r -d '' file; do
+      file_rel="${file#"$SOURCE_PATH/"}"
+      if is_unshipped "$file_rel"; then continue; fi
+      mkdir -p "$(dirname "$TARGET_PATH/$file_rel")"
+      cp "$file" "$TARGET_PATH/$file_rel"
+    done < <(find "$src" -type f -print0)
   else
     cp "$src" "$dst"
   fi
