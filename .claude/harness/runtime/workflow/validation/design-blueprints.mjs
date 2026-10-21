@@ -84,6 +84,8 @@ function flatText(value) {
   return "";
 }
 
+const WORK_TYPE_EXAMPLE = '"workType": ["feature","api"]';
+
 export function draftWorkTypes(draft) {
   return Array.isArray(draft?.workType)
     ? [...new Set(draft.workType.map((value) => String(value).trim().toLowerCase()))]
@@ -118,10 +120,13 @@ export function designBlueprintIssues(source) {
   const issues = [];
   if (source?.workType !== undefined) {
     if (!Array.isArray(source.workType) || !source.workType.length)
-      issues.push("semantic draft workType must be a non-empty array");
+      issues.push(`semantic draft workType must be a non-empty array in change.json` +
+        `${typeof source.workType === "string" ? ` (got the string "${source.workType}")` : ""}, ` +
+        `e.g. ${WORK_TYPE_EXAMPLE}`);
     else for (const value of draftWorkTypes(source))
       if (!WORK_TYPES.includes(value))
-        issues.push(`semantic draft workType '${value}' is unknown; use ${WORK_TYPES.join("|")}`);
+        issues.push(`semantic draft workType '${value}' is unknown in change.json; ` +
+          `use ${WORK_TYPES.join("|")}, e.g. ${WORK_TYPE_EXAMPLE}`);
   }
   const shaped = new Set();
   for (const key of Object.keys(ENTRY_FIELDS)) {

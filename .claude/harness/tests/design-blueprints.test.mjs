@@ -122,12 +122,28 @@ test("a task must own the tests that verify the behavior it changes", () => {
 
 test("a typo in workType or a wrong section shape is a draft error", () => {
   assert.deepEqual(designBlueprintIssues(draft({ workType: ["apii"] })),
-    [`semantic draft workType 'apii' is unknown; use ${WORK_TYPES.join("|")}`]);
+    [`semantic draft workType 'apii' is unknown in change.json; use ${WORK_TYPES.join("|")}, ` +
+      'e.g. "workType": ["feature","api"]']);
   assert.deepEqual(designBlueprintIssues(draft({ workType: [], apiContracts: {}, bugfix: [] })), [
-    "semantic draft workType must be a non-empty array",
+    'semantic draft workType must be a non-empty array in change.json, e.g. "workType": ["feature","api"]',
     "semantic draft apiContracts must be an array",
     "semantic draft bugfix must be an object"
   ]);
+});
+
+test("a string workType is a draft error with a concrete array example", () => {
+  assert.deepEqual(designBlueprintIssues(draft({ workType: "api" })), [
+    'semantic draft workType must be a non-empty array in change.json (got the string "api"), ' +
+      'e.g. "workType": ["feature","api"]'
+  ]);
+});
+
+test("a missing apiContracts section names change.json and shows a complete example", () => {
+  const issue = devDocumentIssues({ version: 4, workType: ["api"] }, { standard: true })
+    .find((text) => text.includes("needs 'apiContracts'"));
+  assert.match(issue, /needs 'apiContracts'.*; add it to change\.json$/);
+  assert.match(issue, /e\.g\. \{ "method": "POST", "path": "\/api\/cards", "auth": "Signed-in user", "request"/);
+  assert.match(issue, /"errors": \[\{ "status": 400, "when": "Title is empty" \}\]/);
 });
 
 test("blueprints render into design.md and force its creation", () => {

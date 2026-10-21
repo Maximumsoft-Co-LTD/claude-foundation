@@ -185,7 +185,10 @@ const SECTION_HELP = {
     "(e.g. { \"screen\": \"Board\", \"states\": [\"loading\", \"empty\", \"error\", \"success\"], " +
     "\"accessibility\": \"keyboard reachable\" }); 'ui': { entryInfo, states, i18n, accessibility, validation } also satisfies it",
   componentMap: "'componentMap': [{ component, responsibility, files }] mapping each component to its files",
-  apiContracts: "'apiContracts': [{ method, path, auth, request, response, errors }]",
+  apiContracts: "'apiContracts': [{ method, path, auth, request, response, errors }] " +
+    "(e.g. { \"method\": \"POST\", \"path\": \"/api/cards\", \"auth\": \"Signed-in user\", " +
+    "\"request\": { \"title\": \"string\" }, \"response\": { \"id\": \"string\", \"title\": \"string\" }, " +
+    "\"errors\": [{ \"status\": 400, \"when\": \"Title is empty\" }] })",
   boundaries: "'boundaries': [{ from, to, mode: sync|async, why, timeout (sync), retry, consistency, " +
     "staleness (eventual), owner }] (e.g. { \"from\": \"api\", \"to\": \"billing\", \"mode\": \"sync\", " +
     "\"why\": \"price at checkout\", \"timeout\": \"2s\", \"retry\": \"none\", \"consistency\": \"strong\", " +
@@ -381,7 +384,7 @@ export function devDocumentIssues(draft, { standard = true, lane = "" } = {}) {
     : types.join(", ") || "change") + (lane ? `; standard lane: ${lane}` : "");
   for (const key of requiredDevSections(draft)) {
     const value = sectionValue(draft, key);
-    if (!present(value)) issues.push(`dev document (${label}) needs ${SECTION_HELP[key]}`);
+    if (!present(value)) issues.push(`dev document (${label}) needs ${SECTION_HELP[key]}; add it to change.json`);
   }
   return issues;
 }
