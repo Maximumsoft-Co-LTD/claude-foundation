@@ -893,14 +893,56 @@ try {
   assert.doesNotMatch(command, /authority run/,
     "an exhausted AI review route must not prescribe a blocked authority run");
 }
-{
+const hostKeys = ["FOUNDATION_CLAUDE_SESSION_ID", "FOUNDATION_SESSION_ID", "CODEX_THREAD_ID",
+  "FOUNDATION_MAIN_SESSION_ID", "FOUNDATION_MAIN_IDENTITY", "FOUNDATION_MAIN_PROVIDER_FAMILY",
+  "FOUNDATION_MAIN_MODEL_FAMILY", "FOUNDATION_MODEL_ID"];
+const withHostEnv = async (values, body) => {
+  const prior = Object.fromEntries(hostKeys.map((key) => [key, process.env[key]]));
+  for (const key of hostKeys) delete process.env[key];
+  Object.assign(process.env, values);
+  try { return await body(); } finally {
+    for (const key of hostKeys) {
+      if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    }
+  }
+};
+await withHostEnv({}, async () => {
   const open = fixture();
   const wait = await quiet(() => open.runtime.proofAdvance("change-a"));
   assert.equal(wait.status, "WAITING_EXTERNAL");
   assert.match(wait.next?.[0]?.command || "",
     /authority run .* --subject-actor implementation-agent$/,
     "an unexhausted AI review route prescribes an executable authority command");
-}
+});
+// The printed command carries the complete AI subject provenance the host
+// exposes, and names exactly what is unknowable instead of a generic placeholder.
+await withHostEnv({
+  FOUNDATION_CLAUDE_SESSION_ID: "sess-1", FOUNDATION_MODEL_ID: "opus-x",
+  FOUNDATION_MAIN_MODEL_FAMILY: "Claude-Opus"
+}, async () => {
+  const { runtime } = fixture();
+  const [row] = runtime.authorityNext("change-a", "review",
+    [{ requestId: "review-1", provider: "review", status: "requested", workspaceHash: "workspace-a" }]);
+  assert.match(row.command, / --subject-actor claude-main-session --subject-session sess-1 --subject-provider-family anthropic --subject-model-family claude-opus --subject-model opus-x$/);
+  const [fallback] = runtime.authorityNext("change-a", "review", [{
+    requestId: "review-1", provider: "review", status: "requested", workspaceHash: "workspace-a",
+    mainSessionFallback: { status: "provenance-unavailable",
+      subject: { identity: "impl", sessionId: "s0", providerFamily: "openai", modelFamily: "gpt", modelId: "g1" },
+      missingProvenance: ["modelFamily", "modelId"] }
+  }]);
+  assert.match(fallback.command, /--subject-actor impl --subject-session s0 --subject-provider-family openai --subject-model-family gpt --subject-model g1 --main-session-model-family claude-opus --main-session-model opus-x$/);
+  assert.deepEqual(fallback.placeholders ?? [], []);
+});
+await withHostEnv({}, async () => {
+  const { runtime } = fixture();
+  const [row] = runtime.authorityNext("change-a", "review", [{
+    requestId: "review-1", provider: "review", status: "requested", workspaceHash: "workspace-a",
+    mainSessionFallback: { status: "provenance-unavailable", subject: { identity: "impl" },
+      missingProvenance: ["modelFamily", "modelId"] }
+  }]);
+  assert.match(row.command, /--subject-actor impl --main-session-model-family <main-session-model-family> --main-session-model <main-session-model>$/);
+  assert.deepEqual(row.placeholders, ["main-session-model-family", "main-session-model"]);
+});
 
 // N5: during `advance --through proven|archived` the harness-runnable
 // configured review starts beside the executable providers for the same

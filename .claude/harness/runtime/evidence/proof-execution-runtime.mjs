@@ -12,6 +12,7 @@ import {
 import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
 import { derivedReviewRepairGraph } from "./repair-runtime.mjs";
 import { blockedOutcomeStop } from "../core/blocked-decision.mjs";
+import { authorityRunCommand, authorityStatusCommand } from "../core/authority-run-command.mjs";
 
 export function requestSummary(id, request) {
   if (!request) return null;
@@ -846,11 +847,14 @@ export function createProofExecutionRuntime({
           ? { aiReviewExhausted: { delivered: delivered.length, maxAiAttempts } } : {}),
         owner: request.status === "infrastructure-exhausted" ? "harness" :
           stage === "review" ? "harness" : "external",
-        command: runnable && request.mainSessionFallback
-          ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor ${request.mainSessionFallback.subject?.identity || "<implementer>"} --main-session-model-family <family> --main-session-model <model>`
-          : runnable
-            ? `claude-foundation authority run ${id} --request ${request.requestId} --subject-actor implementation-agent`
-            : `claude-foundation authority status ${id} --request ${request.requestId} --template`
+        ...(() => {
+          if (!runnable)
+            return { command: authorityStatusCommand(id, request.requestId) };
+          const run = authorityRunCommand(id, request);
+          return { command: run.command,
+            ...(run.placeholders.length ? { placeholders: run.placeholders } : {}),
+            ...(run.unresolved.length ? { unresolved: run.unresolved } : {}) };
+        })()
       };
     });
   }

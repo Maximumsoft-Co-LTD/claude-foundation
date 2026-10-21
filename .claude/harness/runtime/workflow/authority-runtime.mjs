@@ -4,6 +4,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { acquireProcessLock, isProcessAlive } from "../core/process-lock.mjs";
 import { effectiveReviewAttemptLimit } from "../core/authority-policy.mjs";
+import { authorityRunCommand, authorityStatusCommand } from "../core/authority-run-command.mjs";
 import { reviewFindingIssues, reviewPacketIssues, validReview } from "../evidence/configured-reviewer.mjs";
 import { checkpointReviewResult, recoverReviewResult } from "../evidence/review-result-recovery.mjs";
 import { normalizeReviewCompletionFindings } from "../evidence/review-attempt-store.mjs";
@@ -1228,11 +1229,29 @@ export function createAuthorityRuntime({
     return withAuthorityLock(id, () => recoverReviewBindingsUnlocked(id));
   }
 
-  function authorityRunSubject(flags) {
+  // Current concrete `authority run` command for a stored request, from the
+  // request's recorded subject and the calling host's environment.
+  function nextRunCommand(id, requestId) {
+    const request = authorityStore.list(id)
+      .find((row) => row.value.requestId === requestId)?.value || { requestId };
+    const run = authorityRunCommand(id, { ...request, requestId });
+    return { command: run.command,
+      ...(run.placeholders.length ? { placeholders: run.placeholders } : {}),
+      ...(run.unresolved.length ? { unresolved: run.unresolved } : {}) };
+  }
+
+  function failWithNext(message, next) {
+    const { command, placeholders = [] } = typeof next === "string" ? { command: next } : next;
+    fail(`${message}. Next: ${command}${placeholders.length
+      ? ` (supply ${placeholders.map((name) => `<${name}>`).join(", ")})` : ""}`);
+  }
+
+  function authorityRunSubject(flags, id) {
     const requestId = String(flags.request || "");
     if (!requestId) fail("authority run requires --request <id>");
     const subjectActor = String(flags["subject-actor"] || "").trim();
-    if (!subjectActor) fail("authority run requires --subject-actor");
+    if (!subjectActor)
+      failWithNext("authority run requires --subject-actor", nextRunCommand(id, requestId));
     const subjectSession = String(flags["subject-session"] || "").trim() || null;
     const subjectProvider = String(flags["subject-provider-family"] || "").trim().toLowerCase() || null;
     const subjectFamily = String(flags["subject-model-family"] || "").trim().toLowerCase() || null;
@@ -1241,7 +1260,8 @@ export function createAuthorityRuntime({
       .some(Boolean);
     if (aiSubject && [subjectSession, subjectProvider, subjectFamily, subjectModel]
       .some((value) => !value))
-      fail("AI implementation provenance requires subject session, provider family, model family, and model");
+      failWithNext("AI implementation provenance requires subject session, provider family, model family, and model",
+        nextRunCommand(id, requestId));
     return { requestId, subjectActor, subjectSession, subjectProvider,
       subjectFamily, subjectModel, aiSubject };
   }
@@ -1304,7 +1324,8 @@ export function createAuthorityRuntime({
       requestEntry.value = authorityStore.list(id)
         .find((row) => row.value.requestId === requestId).value;
     if (requestEntry.value.status === "infrastructure-exhausted")
-      fail("configured reviewer infrastructure retries are exhausted for this request");
+      failWithNext("configured reviewer infrastructure retries are exhausted for this request",
+        authorityStatusCommand(id, requestId));
     const reviewerName = configuredReviewerRoute(reviewSettings, requestEntry.value,
       String(flags.reviewer || "").trim() || null,
       String(flags["automatic-reviewer"] || "").trim() || null);
@@ -1314,7 +1335,8 @@ export function createAuthorityRuntime({
     if (!reviewerName) {
       if (uninstalled.length)
         fail(`reviewer CLI not installed: ${uninstalled.join(", ")}, and no main-session fallback is configured. Install the reviewer CLI (see DEVELOPER-SETUP.md step 6), or set foundation.json review to {"independence":"self","fallbackReviewers":["main-session"]} to let the calling session review`);
-      fail("configured reviewer infrastructure retries are exhausted; configure a fallback reviewer or pause");
+      failWithNext("configured reviewer infrastructure retries are exhausted; configure review.fallbackReviewers or record a verdict",
+        authorityStatusCommand(id, requestId));
     }
     if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback &&
         uninstalled.length) {
@@ -1327,7 +1349,8 @@ export function createAuthorityRuntime({
         notInstalled: true };
     }
     if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback)
-      fail("main-session fallback was selected without a recorded configured reviewer failure");
+      failWithNext("main-session fallback was selected without a recorded configured reviewer failure; omit --reviewer and let routing choose",
+        nextRunCommand(id, requestId));
     // The first low or medium round runs on its tier's cheaper model class
     // (reviewModelClass); high, later rounds, and pinned triggers keep the
     // configured model.
@@ -1370,7 +1393,7 @@ export function createAuthorityRuntime({
   }
 
   function* authorityReviewerSteps(id, flags = {}) {
-    const subject = authorityRunSubject(flags);
+    const subject = authorityRunSubject(flags, id);
     const { requestId, subjectActor, subjectSession, subjectProvider,
       subjectFamily, subjectModel, aiSubject } = subject;
     const reviewer = authorityRunReviewer(id, flags, subject);
@@ -1394,7 +1417,8 @@ export function createAuthorityRuntime({
           infrastructureError: requestEntry.value.fallbackAttempts?.at(-1)?.summary ||
             "configured reviewer infrastructure failed",
           missing: mainSession.missing,
-          action: "Expose the calling host session/model provenance and rerun authority run with --main-session-* fields; the failed reviewer will not run again."
+          action: "Expose the calling host session/model provenance and rerun authority run with --main-session-* fields; the failed reviewer will not run again.",
+          next: nextRunCommand(id, requestId)
         };
         console.log(JSON.stringify(blocked, null, 2));
         return { handled: true, value: blocked };
@@ -1663,7 +1687,8 @@ export function createAuthorityRuntime({
           attempts: failedRequest.fallbackAttempts,
           action: report.retryable === false
             ? "Repair the packet or finding bindings through the existing harness recovery; do not repeat the unchanged full review."
-            : "Configure review.fallbackReviewers, repair reviewer infrastructure, or pause."
+            : "Configure review.fallbackReviewers, repair reviewer infrastructure, or pause.",
+          next: { command: authorityStatusCommand(id, requestId) }
         };
         console.log(JSON.stringify(exhausted, null, 2));
         return { handled: true, value: exhausted };
@@ -1710,7 +1735,8 @@ export function createAuthorityRuntime({
           failedReviewer: configured.identity,
           infrastructureError: report.summary,
           missing: mainSession.missing,
-          action: "Expose the calling host session/model provenance and rerun authority run with --main-session-* fields; the failed reviewer will not run again."
+          action: "Expose the calling host session/model provenance and rerun authority run with --main-session-* fields; the failed reviewer will not run again.",
+          next: nextRunCommand(id, requestId)
         };
         console.log(JSON.stringify(blocked, null, 2));
         return { handled: true, value: blocked };

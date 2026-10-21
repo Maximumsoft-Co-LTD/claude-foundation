@@ -931,6 +931,15 @@ try {
     "main-session-provenance-unavailable");
   assert(missingHandback.missing.includes("sessionId"));
   assert(missingHandback.missing.includes("modelId"));
+  assert.match(missingHandback.next.command,
+    new RegExp(`^claude-foundation authority run change-fallback-missing --request ${missingRequest.requestId} --subject-actor human-implementer --main-session-identity <main-session-identity>`),
+    "a blocked fallback prints the concrete command, not a bare action");
+  assert(missingHandback.next.placeholders.includes("main-session-model"),
+    "unknowable values are named explicitly");
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-fallback-missing", { request: missingRequest.requestId })),
+  /requires --subject-actor\. Next: claude-foundation authority run change-fallback-missing --request /,
+  "a bare failure carries the next command");
   const missingAuthority = authorityStore.list("change-fallback-missing")
     .find((row) => row.value.requestId === missingRequest.requestId).value;
   assert.equal(missingAuthority.status, "requested");
@@ -1101,6 +1110,8 @@ try {
     request: bindingRequest.requestId, "subject-actor": "human-implementer"
   }));
   assert.equal(bindingResult.status, "configured-reviewer-infrastructure-exhausted");
+  assert.match(bindingResult.next.command, /^claude-foundation authority status .* --template$/,
+    "an exhausted outcome names the next command");
   assert.equal(attemptStore.reviewAttempts("change-invalid-binding", state.reviewHistory).length, 1,
     "deterministic binding failures must not spend another full review on fallback");
   assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-invalid-binding", {

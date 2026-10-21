@@ -674,6 +674,18 @@ revalidates those fields, the contract reason, and final workspace identity.
 New standard changes must explicitly decide whether acceptance is required;
 silence remains `undecided` and blocks validation rather than becoming approval.
 
+Every review outcome that stops short of a verdict (`configured-reviewer-
+infrastructure-exhausted`, `main-session-provenance-unavailable`, and bare
+`authority run` refusals) carries `next.command`, and `authority run` routes in
+`advance` output are built from the stored request and these variables, e.g.
+`claude-foundation authority run <id> --request <rid> --subject-actor
+claude-main-session --subject-session <sid> --subject-provider-family anthropic
+--subject-model-family <family> --subject-model <model>` with every value
+filled when known. A value neither the request nor the environment knows stays a
+named `<placeholder>` listed in `next.placeholders`; incomplete AI subject
+provenance is never sent, so the run falls back to `--subject-actor
+implementation-agent` and `next.unresolved` names the missing fields.
+
 ## Test and discovery
 
 With automatic report detection, counted shell summaries such as
