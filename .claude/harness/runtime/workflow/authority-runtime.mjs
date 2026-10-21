@@ -1167,6 +1167,18 @@ export function createAuthorityRuntime({
     return fallbacks.includes("main-session") ? "main-session" : null;
   }
 
+  // Configured reviewers whose CLI is absent on this host. They are skipped by
+  // routing, so without a recorded failure the main-session fallback would be
+  // unreachable on a host that has no reviewer CLI at all.
+  function uninstalledConfiguredReviewers(settings) {
+    const fallbacks = Array.isArray(settings.fallbackReviewers)
+      ? settings.fallbackReviewers
+      : settings.fallbackReviewer ? [settings.fallbackReviewer] : [];
+    return [settings.defaultReviewer,
+      ...fallbacks.filter((name) => name !== "main-session")]
+      .filter((name) => name && !reviewerInstalled(name));
+  }
+
   function recoverReviewBindingsUnlocked(id, requestId = null) {
     let recovered = false;
     for (const entry of authorityStore.list(id)) {
@@ -1296,8 +1308,24 @@ export function createAuthorityRuntime({
     const reviewerName = configuredReviewerRoute(reviewSettings, requestEntry.value,
       String(flags.reviewer || "").trim() || null,
       String(flags["automatic-reviewer"] || "").trim() || null);
-    if (!reviewerName)
+    const explicitRoute = String(flags.reviewer || "").trim() ||
+      String(flags["automatic-reviewer"] || "").trim();
+    const uninstalled = explicitRoute ? [] : uninstalledConfiguredReviewers(reviewSettings);
+    if (!reviewerName) {
+      if (uninstalled.length)
+        fail(`reviewer CLI not installed: ${uninstalled.join(", ")}, and no main-session fallback is configured. Install the reviewer CLI (see DEVELOPER-SETUP.md step 6), or set foundation.json review to {"independence":"self","fallbackReviewers":["main-session"]} to let the calling session review`);
       fail("configured reviewer infrastructure retries are exhausted; configure a fallback reviewer or pause");
+    }
+    if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback &&
+        uninstalled.length) {
+      // Record the missing CLI as the configured reviewer's infrastructure
+      // failure so the existing main-session fallback is reachable. Nothing
+      // is spawned; independence rules apply to the main-session reviewer.
+      const missingName = uninstalled[0];
+      const configured = authorityReviewerConfiguration(missingName, requestEntry.value);
+      return { reviewSettings, requestEntry, reviewerName: missingName, configured,
+        notInstalled: true };
+    }
     if (reviewerName === "main-session" && !requestEntry.value.mainSessionFallback)
       fail("main-session fallback was selected without a recorded configured reviewer failure");
     // The first low or medium round runs on its tier's cheaper model class
@@ -1509,7 +1537,11 @@ export function createAuthorityRuntime({
         ...(scope === "delta" ? [deliveredAi.at(-1)?.reviewerSessionId] : [])
       ].filter(Boolean)
     };
-    let report = recoveredReport || (yield reviewRequest);
+    let report = recoveredReport || (reviewer.notInstalled ? {
+      status: "error", summary: `reviewer CLI not installed: ${reviewerName}`,
+      findings: [], verifiedFindingIds: [], reportReference: null,
+      reviewer: { sessionId: "" }
+    } : yield reviewRequest);
     let finalReviewer = recoveredReport?.finalReviewer || configured;
     let modelEscalation = recoveredReport?.modelEscalation || null;
     const escalated = recoveredReport ? null : scenarioEscalationReviewer(reviewerName,

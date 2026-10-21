@@ -47,7 +47,11 @@ is `42`. A delta between the two is advisory while both doctors still pass:
    `defaultReviewer: "claude-opus"`. Set `fallbackReviewers` to configured
    reviewer names followed optionally by `"main-session"`, and set
    `infraFailureThreshold` to bound infrastructure retries per reviewer. The
-   route never runs after `fail` or `inconclusive`; `main-session` is explicit
+   route never runs after `fail` or `inconclusive`. A configured reviewer whose
+   CLI is not installed counts as an infrastructure failure, so a host with no
+   reviewer CLI reaches `main-session` when it is listed (with `independence:
+   "self"`); without it the run stops naming the missing CLI and the config to
+   add. `main-session` is explicit
    self-review and requires `independence: "self"`. Change Loop automatically reuses complete AI
    subject provenance only when its session matches the ambient host; otherwise
    the caller supplies the `--main-session-*` provenance fields. When coding and review use the same

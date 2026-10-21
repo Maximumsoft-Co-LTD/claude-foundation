@@ -604,6 +604,11 @@ the retained packet and rejected result. It may restore missing control-workspac
 location metadata without widening scope. Only a now-valid binding with a ready
 reviewer reopens the request; unchanged failures stay stopped, inspection is
 read-only, and the immutable error attempt still consumes infrastructure budget.
+A configured reviewer whose CLI is not installed is recorded as an
+infrastructure failure (`reviewer CLI not installed: <name>`) without being
+spawned, so a host with no reviewer CLI reaches the `main-session` fallback; with
+no fallback configured the run fails naming the missing CLI and the
+`review.fallbackReviewers: ["main-session"]` + `independence: "self"` fix.
 `main-session` is allowed in that list only
 with `review.independence: "self"`; the request binds observed implementation
 provenance and current-session telemetry rather than guessing identity or model.

@@ -1024,6 +1024,43 @@ try {
   assert.equal(fallbackDefaults.status, "needs-main-session-review");
   assert.equal(fallbackDefaults.failedReviewer, "codex-sol");
 
+  // No reviewer CLI installed: the missing CLI is a recorded infrastructure
+  // failure, so the configured main-session fallback is reachable.
+  state = { version: 2, changeId: "change-none-installed", reviewHistory: null };
+  installedReviewers = [];
+  const callsBeforeNone = configuredReviewCalls;
+  process.env.CODEX_THREAD_ID = "none-installed-session";
+  const noneRequest = quiet(() => authority.requestAuthority(
+    "change-none-installed", { type: "review" }));
+  const noneHandback = quiet(() => authority.runAuthorityReviewer(
+    "change-none-installed", {
+      request: noneRequest.requestId, "subject-actor": "human",
+      "main-session-identity": "none-installed-reviewer",
+      "main-session-provider-family": "openai",
+      "main-session-model-family": "gpt-5.6",
+      "main-session-model": "gpt-5.6-sol"
+    }));
+  restoreHostProvenance();
+  assert.equal(noneHandback.status, "needs-main-session-review");
+  assert.equal(noneHandback.failedReviewer, "codex-sol");
+  assert.match(noneHandback.infrastructureError, /reviewer CLI not installed: codex-sol/);
+  assert.equal(configuredReviewCalls, callsBeforeNone,
+    "a missing reviewer CLI is never spawned");
+
+  // Without a main-session fallback the error names the exact fix.
+  const fallbackSettings = reviewSettings;
+  reviewSettings = { defaultReviewer: "codex-sol", diversity: "required",
+    independence: "required" };
+  state = { version: 2, changeId: "change-none-no-fallback", reviewHistory: null };
+  const noFallbackRequest = quiet(() => authority.requestAuthority(
+    "change-none-no-fallback", { type: "review" }));
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer(
+    "change-none-no-fallback", {
+      request: noFallbackRequest.requestId, "subject-actor": "human"
+    })), /reviewer CLI not installed: codex-sol[\s\S]*"fallbackReviewers":\["main-session"\]/);
+  reviewSettings = fallbackSettings;
+  installedReviewers = null;
+
   state = { version: 2, changeId: "change-verdict", reviewHistory: null };
   configuredReviewResults = {
     "codex-sol": {
