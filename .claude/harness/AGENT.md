@@ -8,7 +8,8 @@ Harness checks Change Loop 3.6.6/runtime API `42`, repairs setup.
 - No preflight (`doctor`, `--version`, `which`, `changes`, config/state reads) unless named.
 - CLI surface: `change start <draft>` and `advance <change> --through
   build|proven|archived` (plus `--approve-spec`). Run no other lifecycle
-  primitive unless named.- Command, resume, and next fields are agent-only control data: run them.
+  primitive unless named.
+- Command, resume, and next fields are agent-only control data: run them.
   Never ask users to run a safe action you can.
 - Every `REPAIR` or `BLOCKED` result carries its fix: apply it, then `resume`.
   Run authorized `automaticRecovery`. Recover from the envelope first; never
