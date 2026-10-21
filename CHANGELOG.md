@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `claude-foundation current` prints the one active change. `advance`,
+  `packet`, `metrics`, `feedback`, `package`, `change audit`, `authority status`,
+  `handoff status` and `evidence detect|doctor` may omit `<change>` when exactly
+  one change is active; destructive or Land-authority forms still need the id.
+- Gemini CLI host row and guidance file; the OpenCode plugin exports
+  `FOUNDATION_SESSION_ID`. The main-session identity variables are documented in
+  `EVIDENCE.md`.
+- Reviewers accept `auth: "skip"`, and the Codex login probe is skipped when an
+  API key or non-OpenAI `model_provider` is configured.
+
+### Changed
+
+- A reviewer whose CLI is not installed is recorded as an infrastructure failure,
+  so the `main-session` fallback is reachable instead of stalling the review gate.
+- Blocked review results carry a concrete `next.command` instead of placeholders.
+- `install.sh` no longer ships `.claude/harness/tests` or `.claude/harness/fixtures`
+  to consumers (a root `node --test` ran the harness's own tests); upgrades remove
+  copies a previous release recorded.
+- `evidence` detection reports a project with no `scripts.test` instead of staying
+  silent; `change.json` `workType`/`apiContracts` errors include a valid example.
+- `/dev` no longer runs a separate Prove step after Build reaches `proven`.
+
 ## [3.6.6] - 2026-10-19
 
 ### Added

@@ -18,6 +18,17 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+### v3.6.7 publication decision — 2026-10-21
+
+Evidence is the five-scenario, n=1
+[2026-10-21 smoke](scenario-smoke-candidate-2af6788-2026-10-21.md)
+([ภาษาไทย](scenario-smoke-candidate-2af6788-2026-10-21.th.md)): 15/15 oracle
+passes, no regression versus v3.6.6, Claude Code only. The maintainer
+instructed the release ("บันทึกผลแล้ว release +0.0.1 เลย"). This is an
+exception to the all-scenario checkpoint in [RELEASING.md](../../RELEASING.md),
+not a change to it. Deterministic, packaging and documentation gates remain
+required; repeated and production assurance remain open.
+
 ### Verified v3.6.6 publication — 2026-10-19
 
 The [release](https://github.com/Maximumsoft-Co-LTD/claude-foundation/releases/tag/v3.6.6)
