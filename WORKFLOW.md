@@ -555,6 +555,62 @@ from High upward. A `proof` label requires a valid passing receipt; other
 artifacts are `preview` or `no evidence yet`. A render failure is a warning and
 the user approves from the packet as before.
 
+The page is decision-first, in this order: the change id with a risk level (a
+word, a symbol, and a four-step scale, never colour alone) and each reason for
+the level in plain words; the `scratch` lines, with before and after as paired
+cards; a scope strip of files touched, open questions, and failure cases (a
+count the draft cannot give reads `unknown`, never 0); the decision cards for
+the change's kind of work; the required-section checklist; failure cases as
+cards of trigger, what happens, and recovery (recovery appears only when the
+draft states it); the first two examples, with the rest collapsed; the open
+questions in full; one collapsed reviewer-details section holding the summary,
+technical domains, role tables, suggested previews, and diagrams; and a decision
+bar. The bar states that approving starts Build in the isolated workspace and
+leaves the main checkout untouched, and lists copyable reply lines for approve,
+request changes, and reject in read-only text. The page carries no form, button,
+handler, or script beyond the Mermaid loader, and records nothing: the user's
+chat reply is the decision. When the spec is already approved for the page's
+revision, the bar says so and offers no reply lines. When `approval.roles` lanes
+are still missing, their roles are named above the reply lines. A change with no
+typed draft hides the scope strip, the cards, and the checklist. The page uses
+the installed Thai-capable sans fonts (Sukhumvit Set, Leelawadee UI, Noto Sans
+Thai, Thonburi, Tahoma) at a 17px base and loads nothing from the network; at
+640px or narrower the bar is an ordinary block at the end of the page.
+
+**Decision cards.** Each work type maps to one of seven kinds of decision, and
+the page shows the card of every kind the change's declared or inferred work
+types match, once each, in the order E, G, F, D, A, B, C (the choices hardest to
+undo first). A card shows the question the approver decides and the typed draft
+fields that answer it; a field the draft lacks reads `unknown`, and nothing is
+guessed.
+
+| Card | Work types | Question | Draft fields shown |
+|---|---|---|---|
+| A | feature, ui, client-release, experiment | What will users see and do? | `userFlow`, `uiStates`, `experimentDesign`, `releasePlan` |
+| B | bugfix | What is the problem, how will we know it is fixed? | `bugfix`, `bugfix.incident`, `bugfix.disclosure` |
+| C | refactor, dependency, config, docs, test, chore | Is it safe, what must stay the same? | `refactor`, `dependencyChange`, `configContract` |
+| D | api, library, deprecation | Who uses this contract and what happens to them? | `apiContracts`, `boundaries`, `libraryContract`, `deprecationPlan` |
+| E | data, migration | Can data be damaged, can it be undone? | `dataModel`, `migrationPlan`, `rollout` |
+| F | async, integration, infra, observability, performance | What happens when it breaks, what does it cost? | `infraPlan`, `nfr`, `performanceAnalysis`, `jobContract`, `integrations`, `observability` |
+| G | privacy, ml | Whose data, for how long, and if it goes wrong? | `privacyAssessment`, `threatModel`, `modelCard` |
+
+Below the cards, two lines answer how to undo the change and who it affects:
+the author's `scratch.undo` and `scratch.who` when present, otherwise a value
+read from fields the draft already has (`rollout.rollback`, `dataModel` rollback
+rows, `migrationPlan.rollbackWindow`, `dependencyChange` pins, `deprecationPlan`
+consumers, `userStories` actors) with its source named, otherwise `unknown`.
+
+**Required-section checklist.** The checklist lists each section
+`requiredDevSections` names for the change's work types as present or missing,
+using the same rule the compiler enforces, so it defines no rule of its own.
+Because `change start` already refuses a standard-lane draft that lacks a
+required section, a missing section appears mainly for rapid-lane and older
+drafts. Recommended sections (`modelCard.evaluation`, `experimentDesign.guardrails`
+and `stopRules`, `infraPlan.costDelta`) are shown apart with a recommended
+label when absent; they are advice, never a validation rule. A card or the
+checklist that cannot be built becomes a warning on the page and the rest still
+renders.
+
 `preview <change> --provider <name>` is optional at every risk level and never
 blocks approval or Build. Before Build only, it copies the target into
 `.foundation/previews/<change>/workspace` and runs one declared provider there,
@@ -587,10 +643,15 @@ migration. Reporting needs a `report` or `search` example, or data and UI work
 without an API, a feature, or stored-data change. `access-control` also routes
 the Security domain and its threat model.
 
-The draft may add two optional fields for approvers. `scratch` holds four plain
+The draft carries two fields for approvers. `scratch` holds four plain
 lines (`get`, `asIs`, `toBe`, `ifFail`, each at most 240 characters) that the
-package shows first; without it the package shows the intent and says the
-summary is missing. `examples` holds typed blocks with real values from the
+package shows first, and two optional lines of the same shape, `undo` (how to
+undo the change) and `who` (who it affects), which are never required. It is required when the draft declares `impact` medium or
+high: `change start` and `change revise` return an intake `EDIT` naming each
+missing `scratch.<key>`. A low draft may omit it, and the package then shows the
+intent with a warning that the summary is missing. The rule applies to a draft
+being started or revised only; `advance`, `change amend`, and a change already
+started or approved are never blocked by it. `examples`, which stays optional, holds typed blocks with real values from the
 request, code, or data, one of 29 types (`prototype`, `examples`, `api`,
 `timeline`, `dataDiff`, `lineage`, `mermaid`, `failures`, `permission`, `plan`,
 `snapshot`, `repro`, `perf`, `golden`, `adr`, `rollout`, `apiDiff`, `strings`,
@@ -609,7 +670,8 @@ by relative path, nothing is fetched over the network, and every draft value is
 escaped. Without that file, diagrams stay readable Mermaid text. `change start`
 prints `NOTE: scratch (advisory, approval page)` for a medium or high draft
 without examples, a performance change without a target number, or a defect,
-migration, or deprecation without a count in `scratch.asIs`; it never blocks.
+migration, or deprecation without a count in `scratch.asIs`; that note never
+blocks (the missing-`scratch` rule above is the only blocking check).
 
 With `approval.roles` set in `foundation.json`, spec approval has one lane per
 configured role the router selects for the change. Each role records

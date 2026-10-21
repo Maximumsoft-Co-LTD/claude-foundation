@@ -1,5 +1,5 @@
 import { leasePathIsAllowed } from "../lease-runtime.mjs";
-import { BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, draftWorkTypes } from "./design-blueprints.mjs";
+import { BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, OBJECT_FIELDS, draftWorkTypes } from "./design-blueprints.mjs";
 import { isSemanticV4Plus } from "./draft-version.mjs";
 import { hasAuthoredProposalProse } from "../draft-folder.mjs";
 
@@ -387,6 +387,21 @@ export function devDocumentIssues(draft, { standard = true, lane = "" } = {}) {
     if (!present(value)) issues.push(`dev document (${label}) needs ${SECTION_HELP[key]}; add it to change.json`);
   }
   return issues;
+}
+
+// The same required sections as devDocumentIssues, one row each, for a reader
+// who needs to see what is present and what is missing. A draft whose work
+// type cannot be inferred owes no sections, so nothing is listed.
+// A section made of named fields (bugfix, refactor) is present only when each
+// of those fields is, and the row lists the ones that are not.
+export function devDocumentChecklist(draft) {
+  if (!inferWorkTypes(draft).length) return [];
+  return requiredDevSections(draft).map((key) => {
+    const missingFields = present(sectionValue(draft, key))
+      ? (OBJECT_FIELDS[key] || []).filter((field) => !present(sectionValue(draft, key)?.[field]))
+      : [];
+    return { key, present: present(sectionValue(draft, key)) && missingFields.length === 0, missingFields };
+  });
 }
 
 // Shape brackets around a node label: [x], [[x]], [(x)], ([x]), {x}, {{x}},

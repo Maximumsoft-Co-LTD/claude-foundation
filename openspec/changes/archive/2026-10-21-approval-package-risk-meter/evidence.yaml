@@ -1,0 +1,249 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "risk-meter-package",
+      "requirementKey": "risk-meter",
+      "scenario": "ระดับสูงสุด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "risk-meter-package-2",
+      "requirementKey": "risk-meter",
+      "scenario": "ระดับต่ำ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "risk-meter-package-3",
+      "requirementKey": "risk-meter",
+      "scenario": "ไม่มีเหตุผล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "มีคำถามค้าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package-2",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "ไม่มีคำถามค้าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package-3",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "คำถามเป็นข้อความอันตราย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package-4",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "ไม่มีสรุปก่อน-หลัง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "failure-cards-package",
+      "requirementKey": "failure-cards",
+      "scenario": "มี failure scenario",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "failure-cards-2",
+      "requirementKey": "failure-cards",
+      "scenario": "ไม่มี recovery",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "failure-cards-package-2",
+      "requirementKey": "failure-cards",
+      "scenario": "ไม่มี failure scenario",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "mobile-decision-bar-package",
+      "requirementKey": "mobile-decision-bar",
+      "scenario": "มือถือ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "mobile-decision-bar-package-diagram",
+      "requirementKey": "mobile-decision-bar",
+      "scenario": "ไม่มี script",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "type-cards-package",
+      "requirementKey": "type-cards",
+      "scenario": "แบบข้อมูล",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "type-cards-package-2",
+      "requirementKey": "type-cards",
+      "scenario": "หลายชนิด",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "type-cards-package-3",
+      "requirementKey": "type-cards",
+      "scenario": "ชนิดงานเบา",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "type-cards-package-4",
+      "requirementKey": "type-cards",
+      "scenario": "ข้อมูลเฉพาะชนิดหาย",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "required-checklist-1",
+      "requirementKey": "required-checklist",
+      "scenario": "ส่วนบังคับครบ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "required-checklist-2",
+      "requirementKey": "required-checklist",
+      "scenario": "ส่วนบังคับขาด",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "required-checklist-3",
+      "requirementKey": "required-checklist",
+      "scenario": "ส่วนแนะนำ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "required-checklist-package",
+      "requirementKey": "required-checklist",
+      "scenario": "ไม่มีส่วนบังคับ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-undo-who-package",
+      "requirementKey": "scratch-undo-who",
+      "scenario": "ระบุครบ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-undo-who-start-revise-draft-medium-scratch-4",
+      "requirementKey": "scratch-undo-who",
+      "scenario": "ไม่ระบุ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-undo-who-change-start",
+      "requirementKey": "scratch-undo-who",
+      "scenario": "รูปแบบผิด",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "thai-readable-package",
+      "requirementKey": "thai-readable",
+      "scenario": "stack ฟอนต์",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "thai-readable-package-2",
+      "requirementKey": "thai-readable",
+      "scenario": "ไม่มีฟอนต์ไทยในเครื่อง",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (node --test .claude/harness/tests/approval-package.test.mjs) && (node --test .claude/harness/tests/semantic-draft.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh",
+        "node --test .claude/harness/tests/approval-package.test.mjs",
+        "node --test .claude/harness/tests/semantic-draft.test.mjs"
+      ]
+    }
+  }
+}

@@ -4,7 +4,7 @@ import {
   normalizeDiscovery, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
-import { EXAMPLE_TYPES, scratchFieldIssues } from "./scratch-fields.mjs";
+import { EXAMPLE_TYPES, scratchFieldIssues, scratchRequiredIssues } from "./scratch-fields.mjs";
 import { readerGuideIssues } from "./validation/reader-guide.mjs";
 import {
   devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
@@ -353,7 +353,7 @@ function benchmarkProviderIssues(execution) {
   return issues;
 }
 
-function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
+function semanticDraftIssues(source, { defaultTestEvidence = false, requireScratch = false } = {}) {
   const issues = [];
   if (!isSemanticVersion(source?.version))
     issues.push("semantic draft version must be 3, 4, or 5");
@@ -373,6 +373,9 @@ function semanticDraftIssues(source, { defaultTestEvidence = false } = {}) {
       !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(text(source.language)))
     issues.push("semantic draft language must be a BCP 47 tag such as 'en' or 'th'");
   issues.push(...scratchFieldIssues(source));
+  // Only a draft being started or revised owes the approval summary; an
+  // amendment synthesizes a draft and a started change keeps the one it had.
+  if (requireScratch) issues.push(...scratchRequiredIssues(source));
   if (source?.successMeasure !== undefined &&
       (typeof source.successMeasure !== "string" || !text(source.successMeasure) ||
         text(source.successMeasure).length > 240 || /\r?\n/.test(text(source.successMeasure))))
@@ -1538,7 +1541,8 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   const defaultTestEvidence = Boolean(options.defaultRapidEvidence) &&
     semanticEvidenceDefaultable(source);
   const defaultedEvidence = [];
-  const issues = [...semanticDraftIssues(source, { defaultTestEvidence }), ...investigationCoverageIssues(source)];
+  const issues = [...semanticDraftIssues(source, { defaultTestEvidence, requireScratch: Boolean(options.requireScratch) }),
+    ...investigationCoverageIssues(source)];
   const { requirements, requirementKeys } = normalizeRequirements(
     source, slugify, issues, { ...options, defaultTestEvidence, defaultedEvidence });
   applyIntegrationRequirements(source, requirements, requirementKeys, issues);
@@ -1702,11 +1706,14 @@ export function semanticDraftTemplate() {
     }],
     successCriteria: ["State how the result is judged, with a measurable threshold"],
     successMeasure: "Optional one line: the number or observable that shows it worked",
+    // The first four lines are required at medium or high; undo and who are optional.
     scratch: {
-      get: "Optional: what the approver gets, in one plain line",
-      asIs: "Optional: how it works today, with a count when known",
-      toBe: "Optional: how it works after the change",
-      ifFail: "Optional: what the user sees when it fails and how it recovers"
+      get: "Required for impact medium or high: what the approver gets, in one plain line",
+      asIs: "Required for impact medium or high: how it works today, with a count when known",
+      toBe: "Required for impact medium or high: how it works after the change",
+      ifFail: "Required for impact medium or high: what the user sees when it fails and how it recovers",
+      undo: "Optional: how to undo this change if it is approved and turns out wrong",
+      who: "Optional: who is affected, in plain words"
     },
     examples: [{
       type: "examples", title: "Optional: concrete examples with real values",
@@ -1782,8 +1789,9 @@ export const MINIMAL_DRAFT_WRITING = Object.freeze({
   scope: "Scope items (changes, nonGoals) are short phrases, not paragraphs",
   language: "Write in the user's language; keep field names, keys, and SHALL/WHEN/THEN in English",
   sections: "Fill only the sections your work type needs (workTypeExamples); leave the rest out",
-  scratch: "Optional, for the approval page: scratch.get, asIs, toBe, ifFail are one plain line each " +
-    "(at most 240 characters) for an approver who does not read code; put counts in asIs when known",
+  scratch: "Required when impact is medium or high, optional for low: scratch.get, asIs, toBe, ifFail are one plain line each " +
+    "(at most 240 characters) for an approver who does not read code; put counts in asIs when known; " +
+    "scratch.undo and scratch.who are optional lines for how to undo it and who is affected",
   examples: "Optional typed examples with real values from the request, code, or data, never invented: " +
     `each { type, title, why?, postBuild?, capability? } where type is one of ${EXAMPLE_TYPES.join(", ")}`,
   limits: Object.freeze({ intentMaxCharacters: 70, whyMaxSentences: 3 })

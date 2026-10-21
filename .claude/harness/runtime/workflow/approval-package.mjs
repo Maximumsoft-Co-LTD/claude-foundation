@@ -3,7 +3,9 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { APPROVAL_ROLES, routeChange } from "../contracts/scratch-router.mjs";
+import { missingApprovalLanes } from "../core/user-decisions.mjs";
 import { esc, packageText, renderExample } from "./scratch-blocks.mjs";
+import { renderChecklist, renderTypeCards, show } from "./approval-cards.mjs";
 
 // The harness ships Mermaid once; a package loads it by relative path.
 export const MERMAID_VENDOR = fileURLToPath(new URL("../../vendor/mermaid.min.js", import.meta.url));
@@ -267,17 +269,132 @@ function exampleSection(example, index, model, t) {
     `<div class="panel p2">${exampleActual(example, model, t)}</div></div></section>`;
 }
 
+// The spec is approved for the revision on the page when consent exists and
+// matches it; a change without a typed draft has no verifiable approval claim.
+export function approvalStatus(state, missingLanes = []) {
+  const approval = state?.specApproval;
+  const approved = Boolean(approval?.identity) && Number(approval.revision) === Number(state?.contractRevision || 0);
+  return { approved, missingLanes: approved ? [] : missingLanes };
+}
+
+// Counts the page can derive from the draft; null means unknown, never zero.
+export function scopeCounts(draft) {
+  const tasks = Array.isArray(draft?.tasks) ? draft.tasks : null;
+  const paths = tasks ? new Set(tasks.flatMap((task) => Array.isArray(task?.paths) ? task.paths : [])) : null;
+  const requirements = Array.isArray(draft?.requirements) ? draft.requirements : null;
+  return {
+    files: paths && paths.size ? paths.size : null,
+    questions: Array.isArray(draft?.openQuestions) ? openQuestions(draft).length : null,
+    failures: requirements ? requirements.flatMap((row) => list(row.scenarios)).filter((row) => row.kind === "failure").length : null
+  };
+}
+
+function scopeStrip(model, t) {
+  if (model.legacy) return "";
+  const counts = scopeCounts(model.draft);
+  const item = (value, word) => `<li><b>${value === null ? esc(t.unknown) : esc(value)}</b> ${esc(word)}</li>`;
+  return `<section class="scope" id="scope" aria-label="${esc(t.scope)}"><ul>${item(counts.files, t.filesWord)}` +
+    `${item(counts.questions, t.questionsWord)}${item(counts.failures, t.failuresWord)}</ul></section>`;
+}
+
+// Reply lines are plain text for the user to copy into the chat; the page
+// records nothing, and it adds no script or form.
+function decisionBar(model, t) {
+  const { approved, missingLanes } = model.approval ?? { approved: false, missingLanes: [] };
+  if (approved) return `<section class="decision" id="decision"><p class="notice">${esc(t.approvedBanner)}</p></section>`;
+  const lines = [t.replyApproveText, t.replyChangeText, t.replyRejectText];
+  const names = [t.replyApprove, t.replyChange, t.replyReject];
+  return `<section class="decision" id="decision"><h2>${esc(t.decide)}</h2>` +
+    (missingLanes.length ? `<p class="warn" id="pending-lanes">${esc(t.pendingLanes)} ${esc(missingLanes.join(", "))}</p>` : "") +
+    `<p class="muted small">${esc(t.consequence)}</p><p class="muted small">${esc(t.replyHow)}</p>` +
+    `<ul class="replies">${lines.map((line, index) => `<li><label for="reply-${index}">${esc(names[index])}</label>` +
+      `<textarea readonly rows="1" id="reply-${index}">${esc(line)}</textarea></li>`).join("")}</ul></section>`;
+}
+
+// The risk level, hero, and decision bar below replace the chip-only header of
+// the first approval-page change; everything else of that change is kept.
+const RISK_STEP = Object.freeze({ Low: 1, Medium: 2, High: 3, Critical: 4 });
+
+// A risk reason arrives as a code (`impact:high`, `risk:financial`,
+// `path:db/x.sql→persisted-data-change`); the page says it in words.
+export function reasonText(reason, t) {
+  const text = String(reason);
+  const [kind, rest = ""] = [text.slice(0, text.indexOf(":")), text.slice(text.indexOf(":") + 1)];
+  if (kind === "impact") return t.reasons.impact[rest] || text;
+  if (kind === "risk") return t.reasons.risk[rest] || text;
+  if (kind === "path") {
+    const [path, signal] = rest.split("→");
+    return `${t.reasons.path} ${path}${signal && t.reasons.risk[signal] ? ` (${t.reasons.risk[signal]})` : ""}`;
+  }
+  return text;
+}
+
+// Level as a word and symbol, a four-step scale, and the reasons in words, so
+// colour is never the only carrier of the level.
+function riskBlock(route, state, t) {
+  const step = RISK_STEP[route.level] || 1;
+  const labels = Object.keys(RISK_STEP);
+  return `<div class="riskbox"><p><span class="chip risk risk-${esc(route.level)}">${esc(t.risk)}: ${esc(t.riskLevels?.[route.level] || route.level)}</span>` +
+    ` <span class="muted small">${esc(t.riskScale.replace("{n}", step))} · ${esc(t.riskBasis)} · ${esc(t.revision)} ${esc(state.contractRevision || 0)}</span></p>` +
+    `<ul class="meter" aria-hidden="true">${labels.map((_, index) => `<li${index < step ? ' class="on"' : ""}></li>`).join("")}</ul>` +
+    `<p class="meter-labels" aria-hidden="true">${labels.map((name) => `<span${name === route.level ? ' class="on"' : ""}>${esc(t.riskWords[name])}</span>`).join("")}</p>` +
+    (route.reasons.length ? `<ul class="why" id="risk-why" aria-label="${esc(t.riskWhy)}">${route.reasons.map((reason) => `<li>${esc(reasonText(reason, t))}</li>`).join("")}</ul>` : "") + `</div>`;
+}
+
+// Questions arrive as strings or as { question | text } rows.
+function openQuestions(draft) {
+  return list(draft?.openQuestions).map((row) => typeof row === "string" ? row : row?.question ?? row?.text)
+    .map((text) => String(text ?? "").trim()).filter(Boolean);
+}
+
+function questionsBox(model, t) {
+  const questions = openQuestions(model.draft);
+  if (!questions.length) return "";
+  return `<section class="ask-box" id="open-questions" role="note"><h2>${esc(t.questionsBox)} (${questions.length})</h2>` +
+    `<ul>${questions.map((text) => `<li>${esc(text)}</li>`).join("")}</ul><p class="small">${esc(t.questionsHint)}</p></section>`;
+}
+
+// Failure scenarios become cards of when / what happens / recovery, the same
+// rows the scope strip counts; with none, the section is left out.
+function failureRows(draft) {
+  return list(draft?.requirements).flatMap((requirement) => list(requirement?.scenarios))
+    .filter((scenario) => scenario?.kind === "failure")
+    .map((scenario) => ({ when: show(scenario.when) || show(scenario.name), sees: show(scenario.then), recovery: show(scenario.recovery) }));
+}
+
+function failureCards(model, t) {
+  const rows = failureRows(model.draft).filter((row) => row.when || row.sees);
+  if (!rows.length) return "";
+  return `<section class="block" id="failure-cards"><h2>${esc(t.failureCards)}</h2><div class="fail">${rows.map((row) =>
+    `<div class="row"><div class="trig">${esc(row.when || t.unknown)}</div>` +
+    `<div><span>${esc(t.seesWord)}</span>${esc(row.sees || t.unknown)}</div>` +
+    (row.recovery ? `<div><span>${esc(t.recoverWord)}</span>${esc(row.recovery)}</div>` : "") + `</div>`).join("")}</div></section>`;
+}
+
 function heroSection(model, t) {
   const scratch = model.draft?.scratch && typeof model.draft.scratch === "object" ? model.draft.scratch : {};
   const line = (key) => typeof scratch[key] === "string" && scratch[key].trim() ? scratch[key].trim() : "";
   const any = ["get", "asIs", "toBe", "ifFail"].some((key) => line(key));
   if (!any) return `<section class="hero" id="scratch"><p class="q-get"><b>${esc(t.get)}</b>${esc(model.state.intent || model.id)}</p>` +
-    `<p class="muted small">${esc(t.noSummary)}</p></section>`;
+    `<p class="notice warn small">${esc(t.scratchMissing)}</p></section>`;
+  const side = (key, tag, cls) => line(key)
+    ? `<div class="card ${cls}"><span class="tag">${esc(tag)}</span>${esc(line(key))}</div>` : "";
+  const before = side("asIs", t.before, "before");
+  const after = side("toBe", t.after, "after");
   return `<section class="hero" id="scratch">` +
-    (line("get") ? `<p class="q q-get"><b>${esc(t.get)}</b>${esc(line("get"))}</p>` : "") +
-    (line("asIs") || line("toBe") ? `<div class="q q-change"><b>${esc(t.change)}</b><p class="asis"><span>${esc(t.before)}: ${esc(line("asIs"))}</span>` +
-      `<span aria-hidden="true">→</span><span>${esc(t.after)}: ${esc(line("toBe"))}</span></p></div>` : "") +
-    (line("ifFail") ? `<p class="q q-fail"><b>${esc(t.ifFail)}</b>${esc(line("ifFail"))}</p>` : "") + `</section>`;
+    (line("get") ? `<p class="get"><b>${esc(t.get)}</b>${esc(line("get"))}</p>` : "") +
+    (before || after ? `<div class="ba${before && after ? "" : " single"}">${before}${before && after ? '<div class="arrow" aria-hidden="true">→</div>' : ""}${after}</div>` : "") +
+    (line("ifFail") ? `<p class="q q-fail"><b>${esc(t.ifFail)}</b>${esc(line("ifFail"))}</p>` : "") +
+    // Without both sides the before/after cards are left out and the gap is said.
+    (!line("asIs") && !line("toBe") ? `<p class="notice warn small">${esc(t.scratchMissing)}</p>` : "") + `</section>`;
+}
+
+// Cards and checklist are reading aids: a failure to build them is a warning
+// on the page, never a reason to withhold the rest.
+function safely(build, t) {
+  try { return build(); } catch (error) {
+    return `<p class="notice warn small">${esc(t.cardsFailed)} (${esc(String(error?.message || error).split("\n")[0])})</p>`;
+  }
 }
 
 export function renderApprovalPackage(model) {
@@ -306,8 +423,15 @@ export function renderApprovalPackage(model) {
     : `<p>${esc(t.noDiagrams)}</p>`;
   const needsMermaid = diagrams.length > 0 || examples.some((row) => row.type === "mermaid");
   const mermaid = needsMermaid && model.mermaidHref ? `<script src="${esc(model.mermaidHref)}"></script>` : "";
+  const OPEN_EXAMPLES = 2;
   const exampleBlocks = examples.length
-    ? `<section id="examples"><h2>${esc(t.examples)}</h2>${examples.map((row, index) => exampleSection(row, index, model, t)).join("\n")}</section>` : "";
+    ? `<section id="examples"><h2>${esc(t.examples)}</h2>${
+      examples.slice(0, OPEN_EXAMPLES).map((row, index) => exampleSection(row, index, model, t)).join("\n")}${
+      examples.length > OPEN_EXAMPLES
+        ? `<details id="more-examples"><summary>${esc(t.moreExamples)} (${examples.length - OPEN_EXAMPLES})</summary>${
+          examples.slice(OPEN_EXAMPLES).map((row, index) => exampleSection(row, index + OPEN_EXAMPLES, model, t)).join("\n")}</details>`
+        : ""}</section>` : "";
+  const reviewerCount = artifacts.length + diagrams.length + suggestions.length;
   const suggestionBlock = suggestions.length
     ? `<section id="preview-suggestions"><h2>${esc(t.suggestions)}</h2><p>${esc(t.suggestionsNote)}</p><ul>${
       suggestions.map((row) => `<li><strong>${esc(row.artifact)}</strong> (${esc(t.capabilityWord)} <code>${esc(row.capability)}</code>): ${
@@ -327,9 +451,10 @@ export function renderApprovalPackage(model) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(id)} approval package</title>
 <style>
-:root { --bg: #f6f7f9; --fg: #17212b; --muted: #5a6876; --line: #d5dce3; --accent: #1f5f8b; --ok: #2e7d4f; --warn: #9a6400; }
-@media (prefers-color-scheme: dark) { :root { --bg: #11171d; --fg: #e4eaf0; --muted: #94a3b2; --line: #2a3644; --accent: #6fb0dd; --ok: #6cc596; --warn: #e8b052; color-scheme: dark; } }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 system-ui, sans-serif; }
+:root { --bg: #f6f7f9; --fg: #17212b; --muted: #5a6876; --line: #d5dce3; --accent: #1f5f8b; --ok: #2e7d4f; --warn: #9a6400; --bad: #b3261e; --card: #ffffff;
+  --sans: "Sukhumvit Set", "Leelawadee UI", "Noto Sans Thai", Thonburi, Tahoma, system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { :root { --bg: #11171d; --fg: #e4eaf0; --muted: #94a3b2; --line: #2a3644; --accent: #6fb0dd; --ok: #6cc596; --warn: #e8b052; --bad: #ff9088; --card: #19222b; color-scheme: dark; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.75 var(--sans); }
 main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 24px; }
 h1, h2, h3 { line-height: 1.25; margin: 0 0 8px; }
 table { border-collapse: collapse; width: 100%; }
@@ -391,31 +516,86 @@ pre.mermaid { overflow-x: auto; background: transparent; border: 1px solid var(-
 .pipe span { border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; } .lin .arrow { text-align: center; color: var(--muted); }
 .frame { width: 100%; height: 560px; border: 1px solid var(--line); border-radius: 8px; }
 .label-fail { color: #c4372c; }
+.risk { font-weight: 600; } .risk-High, .risk-Critical { color: #c4372c; } .risk-Medium { color: var(--warn); } .risk-Low { color: var(--ok); }
+.decision-needed { font-size: 1.1em; margin: 4px 0; }
+.scope ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.scope li b { font-size: 1.25em; }
+#reviewer-details > summary { cursor: pointer; padding: 8px 0; }
+.decision { position: sticky; bottom: 0; background: var(--bg); border-top: 2px solid var(--accent); padding: 12px 0; display: grid; gap: 6px; }
+.decision h2 { font-size: 1.05em; margin: 0; }
+.replies { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.replies label { display: block; font-size: .85em; color: var(--muted); }
+.replies textarea { width: 100%; box-sizing: border-box; font: inherit; background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; resize: none; }
+h1, h2, h3 { font-weight: 600; }
+.riskbox { display: grid; gap: 6px; } .riskbox .chip { font-size: 1em; padding: 2px 12px; }
+.meter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; list-style: none; margin: 0; padding: 0; }
+.meter li { height: 10px; border: 1.5px solid var(--fg); border-radius: 2px; } .meter li.on { background: var(--fg); }
+.meter-labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; font-size: .78em; color: var(--muted); margin: 0; }
+.meter-labels .on { color: var(--fg); font-weight: 700; }
+.why { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.why li { border: 1px dashed var(--muted); border-radius: 999px; padding: 0 12px; font-size: .88em; }
+.get { font-size: 1.3em; line-height: 1.5; border-left: 5px solid var(--ok); padding: 4px 0 4px 16px; margin: 0; } .get b { display: block; font-size: .6em; color: var(--muted); font-weight: 600; }
+.ba { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: stretch; } .ba.single { grid-template-columns: 1fr; }
+.ba .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.ba .tag { display: block; font: 700 .75em ui-monospace, Menlo, monospace; letter-spacing: .06em; margin-bottom: 4px; }
+.ba .before { border-top: 4px solid var(--bad); } .ba .before .tag { color: var(--bad); }
+.ba .after { border-top: 4px solid var(--ok); } .ba .after .tag { color: var(--ok); }
+.ba .arrow { align-self: center; font-size: 1.6rem; color: var(--muted); }
+.ask-box { border: 2px solid var(--warn); border-radius: 10px; padding: 12px 16px; background: var(--card); } .ask-box h2 { font-size: 1.05em; } .ask-box ul { margin: 4px 0; padding-left: 1.2em; }
+.fail { display: grid; gap: 10px; } .fail .row { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px 12px; grid-template-columns: 1fr 1fr; }
+.fail .row > div > span { display: block; font: 700 .72em ui-monospace, Menlo, monospace; color: var(--muted); }
+.fail .trig { grid-column: 1 / -1; font-weight: 600; border-bottom: 1px dashed var(--line); padding-bottom: 4px; } .fail .trig::before { content: "⚠ "; color: var(--warn); }
+.type-card { display: grid; gap: 10px; } .type-card + .type-card { margin-top: 18px; }
+.type-card .head { display: grid; gap: 6px; } .badge { font: 700 .78em ui-monospace, Menlo, monospace; letter-spacing: .06em; color: var(--muted); }
+.type-card .q { background: var(--card); border-left: 5px solid var(--warn); border-radius: 6px; padding: 8px 14px; font-weight: 600; margin: 0; } .type-card .q span { display: block; color: var(--warn); font-size: .8em; }
+.grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; } .grid .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; min-width: 0; } .grid .card h3 { font-size: 1rem; color: var(--muted); }
+.grid .wide { grid-column: 1 / -1; }
+.line { display: grid; grid-template-columns: 7.5em 1fr; gap: 4px 12px; padding: 4px 0; border-bottom: 1px dashed var(--line); } .line:last-child { border-bottom: 0; } .line dt { color: var(--muted); font-size: .88em; } .line dd { margin: 0; } dl { margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; } .chips li { border: 1.5px solid var(--line); border-radius: 999px; padding: 0 12px; font-size: .92em; }
+.two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 12px; } .fact { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; } .fact b { display: block; font-size: .8em; color: var(--muted); }
+.src { font: 600 .72em ui-monospace, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; margin-left: 6px; } .unknown { color: var(--warn); font-weight: 600; }
+.check { background: var(--card); border: 2px solid var(--fg); border-radius: 12px; padding: 12px 16px; } .check h2 { font-size: 1rem; }
+.check ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px 20px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); } .check li { display: flex; gap: 8px; align-items: baseline; }
+.mk { font-weight: 700; min-width: 1.4em; } .check .y .mk { color: var(--ok); } .check .n { background: rgba(179, 38, 30, .12); border-radius: 6px; padding: 0 6px; margin: 0 -6px; } .check .n .mk, .check .n .why { color: var(--bad); }
+.tag.rec, .check .skip .mk { color: var(--warn); } .tag { font: 700 .7em ui-monospace, Menlo, monospace; border: 1.5px solid currentColor; border-radius: 4px; padding: 0 6px; white-space: nowrap; } .legend { font-size: .82em; color: var(--muted); margin: 8px 0 0; }
+@media (max-width: 640px) {
+  .ba, .grid, .two, .fail .row { grid-template-columns: 1fr; } .ba .arrow { transform: rotate(90deg); justify-self: center; } .line { grid-template-columns: 1fr; }
+  .decision { position: static; }
+}
 </style>
 </head>
 <body>
 <main>
 <header>
 <h1>${esc(id)}</h1>
-<p>${esc(t.risk)} <strong>${esc(route.level)}</strong> · ${esc(t.intent)} ${esc(route.intents.join(", "))} · ${esc(t.revision)} ${esc(state.contractRevision || 0)}</p>
-<p class="notice">${esc(t.readOnly)}</p>
+<p class="decision-needed"><strong>${esc(t.decisionNeeded)}</strong></p>
+${riskBlock(route, state, t)}
 ${legacy ? `<p class="notice">${esc(t.legacy)}</p>` : ""}
 ${warnings}
 </header>
 ${heroSection(model, t)}
+${scopeStrip(model, t)}
+${legacy ? "" : safely(() => renderTypeCards(draft, t), t)}
+${legacy ? "" : safely(() => renderChecklist(draft, t), t)}
+${failureCards(model, t)}
 ${exampleBlocks}
+${questionsBox(model, t)}
+<details id="reviewer-details"><summary><strong>${esc(t.reviewerDetails)}</strong> <span class="muted small">(${reviewerCount} ${esc(t.reviewerSummary)})</span></summary>
+<p class="notice">${esc(t.readOnly)}</p>
 <section id="summary"><h2>${esc(t.summary)}</h2><p>${esc(proposal || state.intent || "")}</p>
+<p>${esc(t.intent)} ${esc(route.intents.join(", "))}</p>
 <p>${esc(t.packet)} <code>openspec/changes/${esc(id)}/</code></p></section>
 <section id="domains"><h2>${esc(t.domains)}</h2><ul>${
-  route.domains.map((row) => `<li>${esc(row.id)}. ${esc(row.name)}</li>`).join("") || `<li>${esc(t.noDomain)}</li>`}</ul>
-<p><small>${esc(route.reasons.join(" · "))}</small></p></section>
-<details id="roles"${examples.length ? "" : " open"}><summary><h2 style="display:inline">${esc(t.roles)}</h2></summary>
+  route.domains.map((row) => `<li>${esc(row.id)}. ${esc(row.name)}</li>`).join("") || `<li>${esc(t.noDomain)}</li>`}</ul></section>
+<section id="roles"><h2>${esc(t.roles)}</h2>
 ${roleSections}
-</details>
+</section>
 ${suggestionBlock}
 <section id="diagrams"><h2>${esc(t.diagrams)}</h2>
 ${diagramBlocks}
 </section>
+</details>
+${decisionBar(model, t)}
 </main>
 ${mermaid}
 </body>
@@ -510,8 +690,12 @@ export function createApprovalPackageRuntime({
       ...row, evidence: artifactLabel(capabilityOf(row), { proven, previews }),
       preview: capabilityOf(row) ? previews.find((preview) => preview.capability === capabilityOf(row)) || null : null
     }));
+    // Lane status is a reading aid: a failed check leaves the lanes unlisted.
+    let missingLanes = [];
+    try { missingLanes = missingApprovalLanes(root, id, state); } catch { /* lanes stay unlisted */ }
     return {
       id, state, route, draft, artifacts,
+      approval: approvalStatus(state, missingLanes),
       diagrams: draftDiagrams(draft),
       suggestions: previewSuggestions(route, suggestable, id),
       legacy: !draft,

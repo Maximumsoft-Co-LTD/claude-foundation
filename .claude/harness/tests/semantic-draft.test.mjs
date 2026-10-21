@@ -44,6 +44,12 @@ import { splitProse } from "../runtime/workflow/draft-folder.mjs";
 const slugify = (value) => String(value).toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
+// The four approval lines a medium or high draft owes when it is started or revised.
+const APPROVER_SCRATCH = {
+  get: "Retries never double-charge", asIs: "A retry can record two payments",
+  toBe: "A retry records at most one payment", ifFail: "The request stays retryable"
+};
+
 function semanticDraft(overrides = {}) {
   return {
     version: 3,
@@ -156,6 +162,53 @@ test("known task fields raise no field warning; an unrelated field warns without
   assert.deepEqual(unknownTaskFieldWarnings({ tasks: [everyField] }), []);
   assert.deepEqual(unknownTaskFieldWarnings({ tasks: [{ outcome: "o", estimateHours: 3 }] }),
     ["tasks[0].estimateHours is not a known task field"]);
+});
+
+test("medium and high drafts without the four scratch lines are refused naming each missing field", () => {
+  for (const impact of ["medium", "high"]) {
+    const { scratch: _drop, ...bare } = semanticDraft({ impact });
+    const issues = normalizeSemanticDraft(bare, slugify, { requireScratch: true }).issues;
+    for (const key of ["get", "asIs", "toBe", "ifFail"])
+      assert.ok(issues.some((issue) => issue.startsWith(`semantic draft scratch.${key} is required for impact ${impact}`)),
+        `${impact} ${key}`);
+  }
+  const partial = normalizeSemanticDraft(semanticDraft({ scratch: { get: "g", asIs: "a", toBe: "t" } }),
+    slugify, { requireScratch: true }).issues.filter((issue) => issue.includes("scratch"));
+  assert.equal(partial.length, 1);
+  assert.match(partial[0], /scratch\.ifFail is required/);
+  const complete = normalizeSemanticDraft(semanticDraft({ scratch: { get: "g", asIs: "a", toBe: "t", ifFail: "f" } }),
+    slugify, { requireScratch: true }).issues.filter((issue) => issue.includes("scratch"));
+  assert.deepEqual(complete, []);
+});
+
+// The tests above are the first approval-page change's; undo and who follow.
+test("scratch.undo and scratch.who are optional one-line fields that are never required", () => {
+  const four = { ...APPROVER_SCRATCH };
+  const issuesOf = (scratch) => normalizeSemanticDraft(semanticDraft({ scratch }), slugify, { requireScratch: true })
+    .issues.filter((issue) => issue.includes("scratch"));
+  assert.deepEqual(issuesOf(four), [], "the four required lines alone still pass at medium");
+  assert.deepEqual(issuesOf({ ...four, undo: "Turn the flag off", who: "Customers" }), []);
+  for (const key of ["undo", "who"]) {
+    const tooLong = issuesOf({ ...four, [key]: "x".repeat(241) });
+    assert.equal(tooLong.length, 1);
+    assert.match(tooLong[0], new RegExp(`scratch\\.${key} must be one line of at most 240 characters`));
+    assert.match(issuesOf({ ...four, [key]: "one\ntwo" })[0], new RegExp(`scratch\\.${key} must be one line`));
+    assert.match(issuesOf({ ...four, [key]: "  " })[0], new RegExp(`scratch\\.${key} must be one line`));
+  }
+  // Required-ness follows the four required keys only.
+  const missing = issuesOf({ undo: "u", who: "w" });
+  assert.deepEqual(missing.map((issue) => issue.match(/scratch\.(\w+)/)[1]).sort(), ["asIs", "get", "ifFail", "toBe"]);
+});
+
+test("a low-impact draft without scratch is still accepted", () => {
+  const { scratch: _drop, ...bare } = semanticDraft({ impact: "low" });
+  assert.deepEqual(normalizeSemanticDraft(bare, slugify, { requireScratch: true }).issues
+    .filter((issue) => issue.includes("scratch")), []);
+});
+
+test("a caller that does not ask for the scratch rule, such as an amendment, is never blocked by it", () => {
+  const { scratch: _drop, ...bare } = semanticDraft({ impact: "high" });
+  assert.deepEqual(normalizeSemanticDraft(bare, slugify).issues.filter((issue) => issue.includes("scratch")), []);
 });
 
 test("semantic compiler creates stable cross-ledger links from semantic keys", () => {
@@ -290,7 +343,7 @@ test("draft inspection persists source freshness and blocks stale compilation", 
   mkdirSync(join(root, "openspec", "specs"), { recursive: true });
   writeFileSync(join(root, "README.md"), "first\n");
   writeFileSync(join(root, "ignored-output.json"), "x".repeat(300_000));
-  const source = semanticDraftV4({ integrations: [], securityTriggers: [] });
+  const source = semanticDraftV4({ integrations: [], securityTriggers: [], scratch: APPROVER_SCRATCH });
   source.discovery.coverage = source.discovery.coverage
     .filter((row) => ![
       "security-privacy", "permission-rejection", "integration-contract",
@@ -441,7 +494,7 @@ test("semantic draft validates local integration documentation references", (t) 
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "docs"), { recursive: true });
   writeFileSync(join(root, "docs", "provider.md"), "# Provider API\n");
-  const draft = semanticDraft();
+  const draft = semanticDraft({ scratch: APPROVER_SCRATCH });
   draft.integrations[0].documentation.source = "docs/provider.md";
   writeFileSync(join(root, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
   const lifecycle = createChangeLifecycle({

@@ -7,9 +7,11 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { createApprovalPackageRuntime, previewSuggestions } from "../runtime/workflow/approval-package.mjs";
+import { createApprovalPackageRuntime, previewSuggestions, renderApprovalPackage } from "../runtime/workflow/approval-package.mjs";
+import { scratchFieldIssues } from "../runtime/workflow/scratch-fields.mjs";
 import { approvalPackageLine } from "../runtime/workflow/change-lifecycle.mjs";
 import { routeChange } from "../runtime/contracts/scratch-router.mjs";
+import { packageText } from "../runtime/workflow/scratch-blocks.mjs";
 
 function write(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -293,7 +295,7 @@ test("package is written with a warning when evidence wiring is invalid", (t) =>
     assert.match(result.stdout, /warning: evidence not read/);
     const html = readFileSync(join(root, ".foundation", "packages", "demo.html"), "utf8");
     assert.match(html, /evidence not read/);
-    assert.match(html, /Risk level <strong>Critical<\/strong>|Risk level <strong>High<\/strong>/);
+    assert.match(html, /class="chip risk risk-(Critical|High)">Risk level: /);
   }
 });
 
@@ -311,4 +313,276 @@ test("the approval output links the package or warns without failing", (t) => {
   assert.equal(approvalPackageLine(null), "");
   const { runtime } = fixture(t);
   assert.match(runtime.tryWritePackage("missing-change").error, /missing-change/);
+});
+
+// Decision-first page: the order, the collapsed reviewer details, and the
+// copy-only decision bar.
+const SCRATCH = { get: "G line", asIs: "A line", toBe: "T line", ifFail: "F line" };
+const REQUIREMENTS = [{ key: "r", scenarios: [{ kind: "success" }, { kind: "failure" }, { kind: "failure" }] }];
+const TERMINAL = (title) => ({ type: "terminal", title, lines: ["ok"] });
+function pageDraft(extra = {}) {
+  return { draftSource: { contractRevision: 1, draft: {
+    language: "en", intent: "Show the board", workType: ["feature", "ui"], scratch: SCRATCH,
+    tasks: [{ paths: ["a/**", "b.mjs"] }, { paths: ["a/**"] }], openQuestions: [], requirements: REQUIREMENTS,
+    diagrams: [{ key: "d", type: "mermaid", purpose: "States", source: "stateDiagram-v2\n  [*] --> a" }], ...extra } } };
+}
+function pageOf(t, state, language) {
+  const value = fixture(t, { state });
+  value.runtime.writePackage(value.id);
+  return readFileSync(join(value.packagesDir, `${value.id}.html`), "utf8");
+}
+
+test("the page leads with the summary and scope, then examples, collapsed reviewer details, and the decision bar", (t) => {
+  for (const language of ["en", "th"]) {
+    const html = pageOf(t, pageDraft({ language }));
+    const at = (needle) => html.indexOf(needle);
+    const order = ['id="risk-why"', 'id="scratch"', 'id="scope"', 'id="reviewer-details"', 'id="decision"'].map(at);
+    assert.ok(order.every((index) => index > 0), language);
+    assert.deepEqual(order, [...order].sort((a, b) => a - b), language);
+    assert.match(html, /<details id="reviewer-details"><summary>/);
+    for (const inside of ['id="roles"', 'id="domains"', 'id="diagrams"'])
+      assert.ok(at(inside) > at('id="reviewer-details"') && at(inside) < at('id="decision"'), inside);
+    assert.match(html, language === "th" ? /ต้องตัดสินใจ/ : /Decision needed/);
+  }
+});
+
+test("scope counts come from the draft and unknown stays unknown, never zero", (t) => {
+  const known = pageOf(t, pageDraft());
+  assert.match(known, /<b>2<\/b> files touched/);
+  assert.match(known, /<b>0<\/b> open questions/);
+  assert.match(known, /<b>2<\/b> failure cases/);
+  const unknown = pageOf(t, pageDraft({ tasks: undefined, openQuestions: undefined, requirements: undefined }));
+  assert.equal((unknown.match(/<b>unknown<\/b>/g) || []).length, 3);
+  assert.doesNotMatch(unknown, /<b>0<\/b>/);
+  const legacy = pageOf(t, { draftSource: null });
+  assert.doesNotMatch(legacy, /id="scope"/);
+});
+
+test("without scratch the page warns instead of leaving the top empty", (t) => {
+  const html = pageOf(t, pageDraft({ scratch: undefined }));
+  assert.match(html, /No plain-language summary yet/);
+  assert.match(html, /<b>What you get<\/b>/);
+});
+
+test("only the first two examples are open; the rest are collapsed", (t) => {
+  const few = pageOf(t, pageDraft({ examples: [TERMINAL("one"), TERMINAL("two")] }));
+  assert.doesNotMatch(few, /id="more-examples"/);
+  const many = pageOf(t, pageDraft({ examples: [TERMINAL("one"), TERMINAL("two"), TERMINAL("three")] }));
+  assert.match(many, /<details id="more-examples"><summary>More examples \(1\)<\/summary>[\s\S]*three/);
+  assert.ok(many.indexOf("one") < many.indexOf('id="more-examples"'));
+});
+
+test("an unapproved spec shows copy-only reply lines and the consequence, with no script or handler", (t) => {
+  const html = pageOf(t, pageDraft({ diagrams: undefined }));
+  const bar = html.slice(html.indexOf('id="decision"'));
+  assert.equal((bar.match(/<textarea readonly /g) || []).length, 3);
+  assert.match(bar, />approve<\/textarea>/);
+  assert.match(bar, /Approve = Build starts in an isolated workspace/);
+  assert.doesNotMatch(html, /<script|<form|<button|\son[a-z]+=/);
+  const thai = pageOf(t, pageDraft({ language: "th", diagrams: undefined }));
+  assert.match(thai, />ลุยเลย<\/textarea>/);
+  assert.match(thai, /อนุมัติ = เริ่ม Build ในพื้นที่แยก/);
+});
+
+test("an approved revision shows no reply lines; a changed revision asks again", (t) => {
+  const approved = pageOf(t, { ...pageDraft(), specApproval: { required: true, identity: "x", revision: 1 } });
+  assert.match(approved, /Already approved for this revision/);
+  assert.doesNotMatch(approved, /<textarea/);
+  const stale = pageOf(t, { ...pageDraft(), specApproval: { required: true, identity: "x", revision: 0 } });
+  assert.match(stale, /<textarea readonly /);
+});
+
+test("pending approval lanes are named above the reply lines", (t) => {
+  const html = pageOf(t, { ...pageDraft(), specApproval: { required: true, requiredLanes: ["qa", "security"], lanes: {} } });
+  const lanes = html.indexOf('id="pending-lanes"');
+  assert.ok(lanes > 0 && lanes < html.indexOf("<textarea"));
+  assert.match(html, /Still waiting for approval from: qa, security/);
+  assert.doesNotMatch(html, /Already approved/);
+});
+
+// Readable page: risk scale, before/after cards, questions, failure cards. The
+// tests above are the first approval-page change's and are kept as written.
+test("the risk shows as a four-step scale with words, and each reason in plain words", (t) => {
+  const critical = pageOf(t, { ...pageDraft(), impact: "high", riskSignals: ["financial"] });
+  assert.equal((critical.match(/<li class="on"><\/li>/g) || []).length, 4);
+  assert.match(critical, /risk-Critical">Risk level: ▲▲ Critical/);
+  assert.match(critical, /level 4 of 4/);
+  assert.match(critical, /<ul class="why" id="risk-why"[^>]*><li>High impact<\/li><li>Involves money<\/li>/);
+  assert.doesNotMatch(critical, /risk:financial|impact:high/);
+  const low = pageOf(t, { ...pageDraft(), impact: "low", riskSignals: [] });
+  assert.equal((low.match(/<li class="on"><\/li>/g) || []).length, 1);
+  const thai = pageOf(t, { ...pageDraft({ language: "th" }), impact: "high", riskSignals: ["financial"] });
+  assert.match(thai, /ระดับที่ 4 จาก 4/);
+  assert.match(thai, /<li>เกี่ยวกับเงิน<\/li>/);
+});
+
+test("a path-derived reason names the path and what it implies", (t) => {
+  const html = pageOf(t, { ...pageDraft({ tasks: [{ paths: ["db/migrations/0042.sql"] }] }), riskSignals: [] });
+  assert.match(html, /<li>Touches db\/migrations\/0042\.sql \(Changes stored data\)<\/li>/);
+});
+
+test("before and after are paired cards; one side alone is not padded; open questions are listed in full", (t) => {
+  const both = pageOf(t, pageDraft({ openQuestions: ["Partial refunds?", { question: "Who signs off?" }, "  "] }));
+  assert.match(both, /<div class="card before"><span class="tag">Before<\/span>A line<\/div><div class="arrow" aria-hidden="true">→<\/div><div class="card after"><span class="tag">After<\/span>T line<\/div>/);
+  assert.match(both, /id="open-questions"[^>]*><h2>Questions to answer before approving \(2\)<\/h2><ul><li>Partial refunds\?<\/li><li>Who signs off\?<\/li><\/ul>/);
+  const one = pageOf(t, pageDraft({ scratch: { ...SCRATCH, toBe: undefined } }));
+  assert.match(one, /class="ba single"/);
+  assert.doesNotMatch(one, /class="card after"/);
+  const none = pageOf(t, pageDraft({ openQuestions: [] }));
+  assert.doesNotMatch(none, /id="open-questions"/);
+  const unsafe = pageOf(t, pageDraft({ openQuestions: ["<img src=x onerror=1>"] }));
+  assert.match(unsafe, /&lt;img src=x onerror=1&gt;/);
+  assert.doesNotMatch(unsafe, /<img src=x/);
+});
+
+test("failure scenarios become cards with the trigger, what happens, and recovery only when stated", (t) => {
+  const html = pageOf(t, pageDraft({ requirements: [{ key: "r", scenarios: [
+    { kind: "success", when: "ok", then: "fine" },
+    { kind: "failure", name: "Provider down", when: "the provider is slow", then: "the customer sees a wait message", recovery: "retry is safe" },
+    { kind: "failure", when: "unknown order", then: "rejected naming the order" }] }] }));
+  const section = html.slice(html.indexOf('id="failure-cards"'), html.indexOf('id="failure-cards"') + 1200);
+  assert.match(section, /<div class="trig">the provider is slow<\/div><div><span>What happens<\/span>the customer sees a wait message<\/div><div><span>Recovery<\/span>retry is safe<\/div>/);
+  assert.match(section, /<div class="trig">unknown order<\/div><div><span>What happens<\/span>rejected naming the order<\/div><\/div>/);
+  assert.equal((html.match(/<span>Recovery<\/span>/g) || []).length, 1);
+  assert.doesNotMatch(pageOf(t, pageDraft({ requirements: [{ key: "r", scenarios: [{ kind: "success", when: "a", then: "b" }] }] })), /id="failure-cards"/);
+});
+
+// Cards by work type.
+const MIGRATION = {
+  workType: ["migration"],
+  migrationPlan: { from: "v1 refunds", to: "v2 refunds", seam: "port", cutover: "7 days parity", rollbackWindow: "14 days", parity: { check: "same rows", tolerance: "0" } },
+  rollout: { strategy: "flag at 10%", rollback: "turn the flag off", rollbackProof: "enable/disable test passes" }
+};
+test("a migration shows the data card with its plan, rollout, and where undo came from", (t) => {
+  const html = pageOf(t, pageDraft(MIGRATION));
+  assert.match(html, /id="card-E" data-card="E"><div class="head"><span class="badge">E · Data<\/span>/);
+  assert.match(html, /Can data be damaged, and can it be undone\?/);
+  assert.match(html, /<dt>Cutover<\/dt><dd>7 days parity<\/dd>/);
+  assert.match(html, /<dt>Can go back within<\/dt><dd>14 days<\/dd>/);
+  assert.match(html, /<dt>Rollback<\/dt><dd>turn the flag off<\/dd>/);
+  assert.match(html, /<b>How to undo<\/b>turn the flag off<span class="src">rollout<\/span>/);
+});
+
+test("mixed work types show each matching card once in a fixed order", (t) => {
+  const html = pageOf(t, pageDraft({ workType: ["feature", "api", "data", "ui"] }));
+  const order = [...html.matchAll(/data-card="([A-G])"/g)].map((match) => match[1]);
+  assert.deepEqual(order, ["E", "D", "A"]);
+});
+
+test("docs-only work gets the light card and a checklist of the summary alone", (t) => {
+  const html = pageOf(t, pageDraft({ workType: ["docs"], tasks: [{ paths: ["README.md"] }] }));
+  assert.deepEqual([...html.matchAll(/data-card="([A-G])"/g)].map((match) => match[1]), ["C"]);
+  const checklist = html.slice(html.indexOf('id="checklist"'));
+  assert.match(checklist.slice(0, checklist.indexOf("</section>")), /<li class="y">.*Summary \(why\)/);
+  assert.doesNotMatch(checklist.slice(0, checklist.indexOf("</section>")), /Failure table|Release note/);
+});
+
+test("a field the draft lacks reads unknown on its card instead of a guess", (t) => {
+  const html = pageOf(t, pageDraft({ workType: ["privacy"] }));
+  const card = html.slice(html.indexOf('data-card="G"'), html.indexOf('id="checklist"'));
+  assert.match(card, /<h3>Personal data<\/h3>[\s\S]*<span class="unknown">unknown<\/span>/);
+  assert.doesNotMatch(card, /retention<\/dt><dd>[^<]*[a-z]{3}/);
+});
+
+test("the checklist marks present and missing required sections and keeps recommendations apart", (t) => {
+  // A rapid-lane or older draft can reach the page without a required section.
+  const missing = pageOf(t, pageDraft({ workType: ["bugfix"] }));
+  assert.match(missing, /<li class="n"><span class="mk" aria-hidden="true">✕<\/span><span>Bug analysis <span class="why">missing<\/span>/);
+  assert.match(missing, /<li class="y"><span class="mk" aria-hidden="true">✓<\/span><span>Summary \(why\)/);
+  assert.match(missing, /id="checklist"><h2>Required sections <span class="muted small">\d of 3<\/span>/);
+  const complete = pageOf(t, pageDraft({ workType: ["bugfix"], bugfix: { reproduction: "r", rootCause: "c", regression: "g" } }));
+  assert.doesNotMatch(complete.slice(complete.indexOf('id="checklist"'), complete.indexOf("</section>", complete.indexOf('id="checklist"'))), /<li class="n">Bug/);
+  assert.match(complete, /<li class="y"><span class="mk" aria-hidden="true">✓<\/span><span>Bug analysis<\/span>/);
+  const ml = pageOf(t, pageDraft({ workType: ["ml"], modelCard: { intendedUse: "u", model: { provider: "p" }, fallback: "f", versionPin: "1" } }));
+  assert.match(ml, /<li class="skip"><span class="mk" aria-hidden="true">!<\/span><span>Model evaluation <span class="tag rec">recommended<\/span>/);
+  assert.doesNotMatch(ml, /<li class="n"><span class="mk" aria-hidden="true">✕<\/span><span>Model evaluation/);
+  const none = pageOf(t, pageDraft({ workType: undefined, tasks: undefined }));
+  assert.doesNotMatch(none, /id="checklist"/);
+});
+
+test("undo and who come from the author first, then from fields the draft has, else unknown", (t) => {
+  const own = pageOf(t, pageDraft({ ...MIGRATION, scratch: { ...SCRATCH, undo: "Turn the flag off", who: "Customers" } }));
+  assert.match(own, /<b>How to undo<\/b>Turn the flag off<span class="src">scratch\.undo<\/span>/);
+  assert.match(own, /<b>Who is affected<\/b>Customers<span class="src">scratch\.who<\/span>/);
+  const derived = pageOf(t, pageDraft({ ...MIGRATION, userStories: [{ asA: "a customer" }, { asA: "an admin" }] }));
+  assert.match(derived, /<b>Who is affected<\/b>a customer, an admin<span class="src">userStories<\/span>/);
+  const unknown = pageOf(t, pageDraft({ workType: ["feature"] }));
+  assert.match(unknown, /<b>How to undo<\/b><span class="unknown">unknown<\/span>/);
+  assert.match(unknown, /<b>Who is affected<\/b><span class="unknown">unknown<\/span>/);
+});
+
+test("card text and checklist labels exist in Thai and English with the same keys", (t) => {
+  const thai = pageOf(t, pageDraft({ ...MIGRATION, language: "th" }));
+  assert.match(thai, /ข้อมูลก่อน|ข้อมูลตั้งต้น|ข้อมูล<\/span>/);
+  assert.match(thai, /ย้อนกลับได้ไหม/);
+  assert.match(thai, /ส่วนที่ต้องมี/);
+  const keys = (value, prefix = "") => Object.entries(value).flatMap(([key, item]) =>
+    item && typeof item === "object" ? keys(item, `${prefix}${key}.`) : [`${prefix}${key}`]);
+  assert.deepEqual(keys(packageText("th").cards).sort(), keys(packageText("en").cards).sort());
+  assert.deepEqual(keys(packageText("th").reasons).sort(), keys(packageText("en").reasons).sort());
+});
+
+test("Thai text uses installed sans fonts in order, loads nothing from the network, and the bar is static on phones", (t) => {
+  const html = pageOf(t, pageDraft({ language: "th", diagrams: undefined }));
+  assert.match(html, /--sans: "Sukhumvit Set", "Leelawadee UI", "Noto Sans Thai", Thonburi, Tahoma, system-ui, sans-serif;/);
+  assert.match(html, /font: 17px\/1\.75 var\(--sans\)/);
+  assert.doesNotMatch(html, /@import|<link |url\(http|(?<!sans-)serif/);
+  assert.match(html, /@media \(max-width: 640px\) \{[\s\S]*\.decision \{ position: static; \}/);
+  assert.match(html, /\.decision \{ position: sticky; bottom: 0;/);
+  assert.doesNotMatch(html, /<script|<form|<button|\son[a-z]+=/);
+});
+
+// Review repairs: sub-field checks, partial scratch, matching counts, no fallbacks.
+test("the checklist names the missing fields of a section that is only partly written", (t) => {
+  const bug = pageOf(t, pageDraft({ workType: ["bugfix"], bugfix: { reproduction: "r", rootCause: "c" } }));
+  assert.match(bug, /<li class="n"><span class="mk" aria-hidden="true">✕<\/span><span>Bug analysis <span class="why">missing: Guards against return<\/span>/);
+  assert.doesNotMatch(bug, /<li class="y"><span class="mk" aria-hidden="true">✓<\/span><span>Bug analysis/);
+  const refactor = pageOf(t, pageDraft({ workType: ["refactor"], componentMap: [{ component: "c" }], refactor: { invariants: ["same"] } }));
+  assert.match(refactor, /Refactor invariants <span class="why">missing: Proof of sameness<\/span>/);
+  const whole = pageOf(t, pageDraft({ workType: ["bugfix"], bugfix: { reproduction: "r", rootCause: "c", regression: "g" } }));
+  assert.match(whole, /<li class="y"><span class="mk" aria-hidden="true">✓<\/span><span>Bug analysis<\/span>/);
+});
+
+test("partial scratch without before and after still warns and shows no empty cards", (t) => {
+  const html = pageOf(t, pageDraft({ scratch: { get: "G line", ifFail: "F line" } }));
+  assert.match(html, /<p class="notice warn small">No plain-language summary yet/);
+  assert.doesNotMatch(html, /class="ba(?: single)?"/);
+  assert.match(html, /<p class="get"><b>What you get<\/b>G line<\/p>/);
+  assert.doesNotMatch(pageOf(t, pageDraft()), /No plain-language summary yet/);
+});
+
+test("the scope strip counts the same questions the box lists", (t) => {
+  const html = pageOf(t, pageDraft({ openQuestions: ["Partial refunds?", { question: "Who signs off?" }, "  ", { text: "  " }] }));
+  assert.match(html, /<b>2<\/b> open questions/);
+  assert.match(html, /Questions to answer before approving \(2\)/);
+  const blank = pageOf(t, pageDraft({ openQuestions: ["  "] }));
+  assert.match(blank, /<b>0<\/b> open questions/);
+  assert.doesNotMatch(blank, /id="open-questions"/);
+});
+
+test("failure cards come only from failure scenarios, never from an authored matrix", (t) => {
+  const html = pageOf(t, pageDraft({
+    requirements: [{ key: "r", scenarios: [{ kind: "success", when: "a", then: "b" }] }],
+    failureMatrix: [{ failure: "disk full", userSees: "an error", recovery: "free space" }]
+  }));
+  assert.doesNotMatch(html, /id="failure-cards"/);
+  assert.doesNotMatch(html, /disk full/);
+  assert.match(html, /<b>0<\/b> failure cases/);
+});
+
+test("with no reasons the page shows the level and scale but no reason list", (t) => {
+  const { runtime, id } = fixture(t, { state: pageDraft() });
+  const model = runtime.buildModel(id);
+  const html = renderApprovalPackage({ ...model, route: { ...model.route, reasons: [] } });
+  assert.match(html, /class="meter"/);
+  assert.match(html, /class="chip risk risk-/);
+  assert.doesNotMatch(html, /id="risk-why"/);
+});
+
+test("optional undo and who never make a draft fail, at any impact", () => {
+  const four = { get: "g", asIs: "a", toBe: "t", ifFail: "f" };
+  for (const impact of ["low", "medium", "high"]) {
+    for (const scratch of [{ ...four }, { ...four, undo: "u", who: "w" }, ...(impact === "low" ? [{ undo: "u", who: "w" }, {}] : [])])
+      assert.deepEqual(scratchFieldIssues({ impact, scratch }), [], `${impact} ${Object.keys(scratch)}`);
+  }
 });

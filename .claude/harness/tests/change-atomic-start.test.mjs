@@ -195,6 +195,11 @@ function minimalRapidV4(overrides = {}) {
     id: "single-shot-change",
     intent: "Return the bounded result",
     impact: "low",
+    // The four approval lines; a medium or high override of this draft owes them.
+    scratch: {
+      get: "A bounded result", asIs: "The result is unbounded",
+      toBe: "The result is bounded", ifFail: "The caller sees the unbounded result"
+    },
     coupling: "isolated",
     requirements: [{
       key: "bounded-result", capability: "single-shot-change", operation: "added",
@@ -1394,7 +1399,9 @@ test("a published API contract derives the standard lane and one actionable EDIT
   // Evidence capabilities and the reason are derived; the failure story is not.
   assert.doesNotMatch(issues, /requires evidence|needs 'why'/);
   assert.match(issues, /dev document \(code, inferred from paths[^\n]*standard lane: the harness derived impact medium[^\n]*\) needs 'failureMatrix'/);
-  assert.equal(result.intake.issues.length, 1);
+  // A derived medium impact owes the four approval lines like a declared one.
+  assert.equal(result.intake.issues.filter((issue) => /scratch\.(get|asIs|toBe|ifFail) is required for impact medium/.test(issue)).length, 4);
+  assert.equal(result.intake.issues.length, 5);
   assert.equal(existsSync(value.changes), false);
 
   writeJson(value.draftPath, derivedRiskV4({
@@ -1425,6 +1432,10 @@ test("a standard-lane draft without why, failure matrix, or evidence agrees in o
   const value = fixture(t);
   writeJson(value.draftPath, {
     intent: "List and delete notes through the JSON API",
+    scratch: {
+      get: "List and delete notes", asIs: "Notes cannot be deleted by id",
+      toBe: "A client lists notes and deletes one by id", ifFail: "An unknown id answers 404"
+    },
     requirements: [{
       description: "The API SHALL list notes and delete one by id",
       scenarios: [

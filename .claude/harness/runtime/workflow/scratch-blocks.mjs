@@ -32,7 +32,84 @@ const TEXT = {
     noProviderTail: "in evidence.yaml", externalRef: "external: needs a decision-ref",
     undeclared: "Not declared in the agreement.", noFailure: "No failure scenario in the agreement concerns this.",
     previewWord: "Preview", previewOnly: "(preview only; never proof)", openPreview: "Open the preview artifact",
-    head: {}, artifactNames: {}
+    head: {}, artifactNames: {},
+    decisionNeeded: "Decision needed: approve this spec before Build starts.",
+    riskLevels: { Low: "▽ Low", Medium: "◇ Medium", High: "▲ High", Critical: "▲▲ Critical" },
+    riskWhy: "Why this level", scope: "Scope", filesWord: "files touched", questionsWord: "open questions",
+    failuresWord: "failure cases", unknown: "unknown",
+    scratchMissing: "No plain-language summary yet. Ask the agent to add 'scratch' to the draft before you decide.",
+    moreExamples: "More examples", reviewerDetails: "Reviewer details",
+    reviewerSummary: "artifacts, domains, diagrams, and suggested previews", approvedBanner:
+      "Already approved for this revision. Nothing to decide here.",
+    pendingLanes: "Still waiting for approval from:", decide: "Your decision",
+    replyHow: "Copy one line into the chat. Nothing here changes state.",
+    replyApprove: "Approve", replyChange: "Request changes", replyReject: "Reject",
+    replyApproveText: "approve", replyChangeText: "request changes: <what to change>", replyRejectText: "reject",
+    consequence: "Approve = Build starts in an isolated workspace; your main checkout is not touched.",
+    // Risk scale, open questions, failure cards, and the type cards' text.
+    riskScale: "level {n} of 4", riskBasis: "Computed from what this change touches",
+    questionsBox: "Questions to answer before approving", questionsHint: "Answer together with the approval, for example: go ahead, no partial refunds.",
+    failureCards: "If it goes wrong", whenWord: "When", seesWord: "What happens", recoverWord: "Recovery",
+    reasons: {
+      impact: { high: "High impact", medium: "Medium impact", low: "Low impact", unspecified: "Impact not stated" },
+      risk: {
+        "access-control": "Controls who may do what", "persisted-data-change": "Changes stored data", "external-integration": "Talks to an outside system",
+        "performance-slo": "Has a speed target", "user-interface": "Changes what users see", "high-operational-risk": "Risky to run",
+        "external-side-effect": "Acts outside this system", financial: "Involves money", "input-domain": "Accepts outside input"
+      },
+      path: "Touches"
+    },
+    riskWords: { Low: "Low", Medium: "Medium", High: "High", Critical: "Critical" },
+    cardsFailed: "Part of this page could not be built; read the packet for that part",
+    fontNote: "", pathLabel: "path",
+    cards: {
+      ask: "Question to decide", undo: "How to undo", who: "Who is affected", derived: "from",
+      names: { A: "What users see", B: "Fixing a problem", C: "No behavior change", D: "Contract with others", E: "Data", F: "Back end and infrastructure", G: "People and compliance" },
+      asks: {
+        A: "What will users see and be able to do, and is that acceptable?", B: "What is the problem, and how will we know it is fixed?",
+        C: "Is it safe, and what must stay the same?", D: "Who uses this contract, and what happens to them?",
+        E: "Can data be damaged, and can it be undone?", F: "What happens when it breaks, what does it cost, and is the target met?",
+        G: "Whose data is used, for how long, and what if it goes wrong?"
+      },
+      panels: {
+        userFlow: "User path", uiStates: "Screen states", experimentDesign: "Experiment", releasePlan: "Release plan", bugfix: "The problem",
+        incident: "Incident", disclosure: "Disclosure", refactor: "What must stay the same", dependencyChange: "Package change",
+        configContract: "Config values", apiContracts: "Contract", boundaries: "Connections", libraryContract: "Library contract",
+        deprecationPlan: "Deprecation plan", dataModel: "Data before and after", migrationPlan: "Migration plan", rollout: "Rollout",
+        infraPlan: "Infrastructure", nfr: "Quality targets", performanceAnalysis: "Performance", jobContract: "If it breaks (jobs)",
+        integrations: "External systems", observability: "Signals and alerts", privacyAssessment: "Personal data", threatModel: "Threats", modelCard: "Model"
+      },
+      f: {
+        purpose: "Purpose", reproduction: "How to reproduce", rootCause: "Root cause", regression: "Guards against return", link: "Link",
+        mitigation: "Stopgap", minimumScope: "Smallest scope", followUp: "Follow-up", backport: "Also fixed on", class: "Class",
+        affectedVersions: "Versions hit", owner: "Owner", invariants: "Must stay the same", characterization: "Proof of sameness",
+        package: "Package", from: "From", to: "To", breaking: "Breaking", cves: "CVE", rollbackPin: "Pin to go back", key: "Key", default: "Default",
+        validation: "Accepted values", method: "Method", path: "Path", auth: "Access", errors: "Errors", mode: "Mode", timeout: "Timeout",
+        retry: "Retry", semver: "Version bump", changelog: "Changelog", what: "What", replacement: "Replacement", warning: "Warning",
+        removalCondition: "Removed when", consumers: "Consumers", entity: "Entity", fields: "Fields", migration: "Migration", rollback: "Rollback",
+        cutover: "Cutover", rollbackWindow: "Can go back within", parity: "Parity check", strategy: "How", deployOrder: "Order", rollbackProof: "Proof of rollback",
+        planDiff: "What changes", environments: "Environments", blastRadius: "Blast radius", costDelta: "Cost", characteristic: "Quality", measure: "Measure",
+        baseline: "Now", target: "Target", hypothesis: "Hypothesis", states: "States", idempotency: "Duplicate guard", kind: "Kind", failure: "Failure",
+        signal: "Signal", slo: "Goal", alert: "Alert", data: "Data", field: "Field", retention: "Kept for", threat: "Threat", likelihood: "Likelihood",
+        impact: "Impact", control: "Control", residual: "Remaining", intendedUse: "Used for", model: "Model", fallback: "If wrong", evaluation: "Evaluation set",
+        primaryMetric: "Main metric", allocation: "Split", decisionRule: "Decision rule", guardrails: "Guardrails", stopRules: "Stop rules",
+        minimumVersion: "Minimum version", stagedRollout: "Staged", crashGate: "Crash gate", screen: "Screen", accessibility: "Accessibility", exports: "Exports"
+      },
+      checkTitle: "Required sections", checkOf: "of", missingWord: "missing", recommendedWord: "recommended",
+      checkLegend: "✓ present · ✕ required section missing · ! recommended (not a rule yet)", checkNone: "Nothing is required for this kind of work.",
+      sections: {
+        summary: "Summary (why)", failureMatrix: "Failure table", userFlow: "User flow", uiStates: "Screen states", componentMap: "Component map",
+        releaseNote: "Release note", bugfix: "Bug analysis", "bugfix.disclosure": "Security disclosure", "bugfix.incident": "Incident",
+        "bugfix.backport": "Backport branches", refactor: "Refactor invariants", apiContracts: "API contract", boundaries: "Connections",
+        libraryContract: "Library contract", dataModel: "Data model", migrationPlan: "Migration plan", rollout: "Rollout and rollback",
+        jobContract: "Job contract", diagrams: "Diagram", integrations: "External systems", configContract: "Config contract", nfr: "Quality targets",
+        performanceAnalysis: "Performance analysis", dependencyChange: "Package change", deprecationPlan: "Deprecation plan", infraPlan: "Infrastructure plan",
+        observability: "Observability", privacyAssessment: "Privacy assessment", threatModel: "Threat model", experimentDesign: "Experiment design",
+        releasePlan: "Release plan", modelCard: "Model card",
+        "modelCard.evaluation": "Model evaluation", "experimentDesign.guardrails": "Experiment guardrails",
+        "experimentDesign.stopRules": "Experiment stop rules", "infraPlan.costDelta": "Cost change"
+      }
+    }
   },
   th: {
     get: "จะได้อะไร", change: "ของเดิมเปลี่ยนอะไร", ifFail: "ถ้าพลาดเป็นยังไง", before: "ก่อน", after: "หลัง",
@@ -54,6 +131,83 @@ const TEXT = {
     system: "ระบบทำ", user: "ผู้ใช้เห็น", stage: "ขั้น", who: "ใคร / สัดส่วน", whenCol: "เมื่อไร",
     noEvidence: "ยังไม่มีหลักฐาน", artifactCol: "Artifact", domainsCol: "Domain", evidenceCol: "หลักฐาน",
     allChanges: "ทุก change", noRole: "บทบาทนี้ไม่ต้องอนุมัติ change นี้", noDomain: "ไม่มี domain เฉพาะ",
+    decisionNeeded: "ต้องตัดสินใจ: อนุมัติ spec นี้ก่อนเริ่ม Build",
+    riskLevels: { Low: "▽ ต่ำ", Medium: "◇ ปานกลาง", High: "▲ สูง", Critical: "▲▲ วิกฤต" },
+    riskWhy: "ทำไมระดับนี้", scope: "ขอบเขต", filesWord: "ไฟล์ที่แตะ", questionsWord: "คำถามที่ยังเปิด",
+    failuresWord: "กรณีที่อาจพลาด", unknown: "ไม่ทราบ",
+    scratchMissing: "ยังไม่มีสรุปภาษาคน ให้ agent เติม 'scratch' ใน draft ก่อนตัดสินใจ",
+    moreExamples: "ตัวอย่างอื่น", reviewerDetails: "รายละเอียดสำหรับผู้ตรวจ",
+    reviewerSummary: "artifact, domain, แผนภาพ และ preview ที่แนะนำ", approvedBanner:
+      "อนุมัติแล้วสำหรับฉบับนี้ ไม่มีอะไรต้องตัดสินใจ",
+    pendingLanes: "ยังรออนุมัติจาก:", decide: "การตัดสินใจของคุณ",
+    replyHow: "คัดลอกหนึ่งบรรทัดไปตอบในแชท หน้านี้ไม่เปลี่ยนสถานะอะไร",
+    replyApprove: "อนุมัติ", replyChange: "ขอแก้ไข", replyReject: "ปฏิเสธ",
+    replyApproveText: "ลุยเลย", replyChangeText: "ขอแก้: <ระบุสิ่งที่ต้องแก้>", replyRejectText: "ปฏิเสธ",
+    // แถบความเสี่ยง คำถามที่ค้าง การ์ดกรณีพลาด และข้อความของการ์ดตามชนิดงาน
+    riskScale: "ระดับที่ {n} จาก 4", riskBasis: "ระบบคำนวณจากสิ่งที่ change นี้แตะ",
+    questionsBox: "คำถามที่ต้องตอบก่อนอนุมัติ", questionsHint: "ตอบรวมไปกับการอนุมัติได้ เช่น ลุยเลย ไม่ต้องคืนบางส่วน",
+    failureCards: "ถ้าพลาด เกิดอะไรขึ้น", whenWord: "เมื่อ", seesWord: "ผลที่เห็น", recoverWord: "กู้คืน",
+    reasons: {
+      impact: { high: "ผลกระทบสูง", medium: "ผลกระทบปานกลาง", low: "ผลกระทบต่ำ", unspecified: "ไม่ได้ระบุผลกระทบ" },
+      risk: {
+        "access-control": "ควบคุมว่าใครทำอะไรได้", "persisted-data-change": "แก้ข้อมูลที่เก็บถาวร", "external-integration": "เชื่อมระบบภายนอก",
+        "performance-slo": "มีเป้าความเร็ว", "user-interface": "เปลี่ยนสิ่งที่ผู้ใช้เห็น", "high-operational-risk": "เสี่ยงตอนใช้งานจริง",
+        "external-side-effect": "ทำสิ่งนอกระบบนี้", financial: "เกี่ยวกับเงิน", "input-domain": "รับข้อมูลจากภายนอก"
+      },
+      path: "แตะ"
+    },
+    riskWords: { Low: "ต่ำ", Medium: "ปานกลาง", High: "สูง", Critical: "วิกฤต" },
+    cardsFailed: "สร้างบางส่วนของหน้านี้ไม่ได้ ให้อ่านส่วนนั้นจาก packet",
+    fontNote: "", pathLabel: "path",
+    cards: {
+      ask: "คำถามที่ต้องตัดสิน", undo: "ย้อนกลับได้ไหม", who: "ใครได้รับผลกระทบ", derived: "จาก",
+      names: { A: "สิ่งที่ผู้ใช้เห็น", B: "แก้ปัญหา", C: "ไม่เปลี่ยนพฤติกรรม", D: "สัญญากับคนอื่น", E: "ข้อมูล", F: "หลังบ้านและโครงสร้าง", G: "คนและกฎหมาย" },
+      asks: {
+        A: "ผู้ใช้จะเห็นและทำอะไรได้ใหม่ และรับได้ไหม", B: "ปัญหาคืออะไร และจะรู้ได้อย่างไรว่าหายแล้ว",
+        C: "ปลอดภัยไหม และอะไรต้องคงเดิม", D: "ใครใช้สัญญานี้อยู่ และพวกเขาจะโดนอะไร",
+        E: "ข้อมูลเสียหายไหม และย้อนกลับได้ไหม", F: "พังแล้วเป็นอย่างไร ค่าใช้จ่ายเท่าไร และได้ตามเป้าไหม",
+        G: "ข้อมูลของใครถูกใช้ เก็บนานแค่ไหน และถ้าผิดทำอย่างไร"
+      },
+      panels: {
+        userFlow: "เส้นทางของผู้ใช้", uiStates: "สถานะหน้าจอ", experimentDesign: "การทดลอง", releasePlan: "แผนปล่อย", bugfix: "ปัญหา",
+        incident: "เหตุการณ์", disclosure: "การเปิดเผยช่องโหว่", refactor: "สิ่งที่ต้องคงเดิม", dependencyChange: "การเปลี่ยนแพ็กเกจ",
+        configContract: "ค่า config", apiContracts: "สัญญา", boundaries: "การเชื่อมต่อ", libraryContract: "สัญญาของไลบรารี",
+        deprecationPlan: "แผนเลิกใช้", dataModel: "ข้อมูลก่อน → หลัง", migrationPlan: "แผนย้าย", rollout: "การปล่อย",
+        infraPlan: "โครงสร้างที่เปลี่ยน", nfr: "เป้าคุณภาพ", performanceAnalysis: "ประสิทธิภาพ", jobContract: "ถ้าพัง (งานเบื้องหลัง)",
+        integrations: "ระบบภายนอก", observability: "สัญญาณและการแจ้งเตือน", privacyAssessment: "ข้อมูลส่วนบุคคล", threatModel: "ภัยคุกคาม", modelCard: "โมเดล"
+      },
+      f: {
+        purpose: "วัตถุประสงค์", reproduction: "ทำซ้ำอย่างไร", rootCause: "สาเหตุ", regression: "กันกลับมา", link: "ลิงก์",
+        mitigation: "มาตรการชั่วคราว", minimumScope: "ขอบเขตต่ำสุด", followUp: "ติดตามต่อ", backport: "แก้ใน branch", class: "ชนิด",
+        affectedVersions: "เวอร์ชันที่โดน", owner: "ผู้รับผิดชอบ", invariants: "ต้องคงเดิม", characterization: "หลักฐานว่าเหมือนเดิม",
+        package: "แพ็กเกจ", from: "จาก", to: "เป็น", breaking: "breaking", cves: "CVE", rollbackPin: "pin ถอยกลับ", key: "key", default: "ค่าเริ่มต้น",
+        validation: "ค่าที่รับ", method: "เมธอด", path: "path", auth: "สิทธิ์", errors: "error", mode: "โหมด", timeout: "timeout",
+        retry: "ลองใหม่", semver: "ระดับเวอร์ชัน", changelog: "changelog", what: "อะไร", replacement: "ตัวแทน", warning: "คำเตือน",
+        removalCondition: "ลบเมื่อ", consumers: "ผู้ใช้", entity: "ตาราง", fields: "ฟิลด์", migration: "การย้าย", rollback: "ย้อนกลับ",
+        cutover: "ตัดสลับ", rollbackWindow: "ถอยได้ภายใน", parity: "ตรวจเทียบ", strategy: "วิธี", deployOrder: "ลำดับ", rollbackProof: "หลักฐานว่าถอยได้",
+        planDiff: "สิ่งที่เปลี่ยน", environments: "สภาพแวดล้อม", blastRadius: "รัศมีผลกระทบ", costDelta: "ค่าใช้จ่าย", characteristic: "คุณภาพ", measure: "ตัววัด",
+        baseline: "ตอนนี้", target: "เป้า", hypothesis: "สมมติฐาน", states: "สถานะ", idempotency: "กันซ้ำ", kind: "ชนิด", failure: "ความล้มเหลว",
+        signal: "สัญญาณ", slo: "เป้า", alert: "แจ้งเตือน", data: "ข้อมูล", field: "ฟิลด์", retention: "เก็บนาน", threat: "ภัย", likelihood: "โอกาส",
+        impact: "ผลกระทบ", control: "มาตรการ", residual: "ที่เหลือ", intendedUse: "ใช้ทำอะไร", model: "โมเดล", fallback: "ถ้าผิด", evaluation: "ชุดประเมิน",
+        primaryMetric: "ตัววัดหลัก", allocation: "สัดส่วน", decisionRule: "กฎตัดสิน", guardrails: "ราวกั้น", stopRules: "เงื่อนไขหยุด",
+        minimumVersion: "เวอร์ชันต่ำสุด", stagedRollout: "ทีละขั้น", crashGate: "เกณฑ์ crash", screen: "หน้าจอ", accessibility: "การเข้าถึง", exports: "สิ่งที่ส่งออก"
+      },
+      checkTitle: "ส่วนที่ต้องมี", checkOf: "จาก", missingWord: "ขาด", recommendedWord: "แนะนำ",
+      checkLegend: "✓ มีครบ · ✕ ขาดส่วนบังคับ · ! แนะนำ (ยังไม่ใช่กฎ)", checkNone: "งานชนิดนี้ไม่ต้องมีส่วนเพิ่ม",
+      sections: {
+        summary: "สรุป (why)", failureMatrix: "ตาราง failure", userFlow: "เส้นทางผู้ใช้", uiStates: "สถานะหน้าจอ", componentMap: "แผนผังส่วนประกอบ",
+        releaseNote: "release note", bugfix: "วิเคราะห์บั๊ก", "bugfix.disclosure": "การเปิดเผยช่องโหว่", "bugfix.incident": "เหตุการณ์",
+        "bugfix.backport": "branch ที่รับการแก้", refactor: "สิ่งที่ต้องคงเดิมใน refactor", apiContracts: "สัญญา API", boundaries: "การเชื่อมต่อ",
+        libraryContract: "สัญญาไลบรารี", dataModel: "โมเดลข้อมูล", migrationPlan: "แผนย้าย", rollout: "การปล่อยและการถอย",
+        jobContract: "สัญญางานเบื้องหลัง", diagrams: "แผนภาพ", integrations: "ระบบภายนอก", configContract: "สัญญา config", nfr: "เป้าคุณภาพ",
+        performanceAnalysis: "วิเคราะห์ประสิทธิภาพ", dependencyChange: "การเปลี่ยนแพ็กเกจ", deprecationPlan: "แผนเลิกใช้", infraPlan: "แผนโครงสร้าง",
+        observability: "การสังเกตระบบ", privacyAssessment: "ประเมินความเป็นส่วนตัว", threatModel: "threat model", experimentDesign: "ออกแบบการทดลอง",
+        releasePlan: "แผนปล่อย", modelCard: "model card",
+        "modelCard.evaluation": "ประเมินโมเดล", "experimentDesign.guardrails": "ราวกั้นการทดลอง",
+        "experimentDesign.stopRules": "เงื่อนไขหยุดการทดลอง", "infraPlan.costDelta": "ค่าใช้จ่ายที่เปลี่ยน"
+      }
+    },
+    consequence: "อนุมัติ = เริ่ม Build ในพื้นที่แยก โค้ดหลักของคุณยังไม่ถูกแตะ",
     packet: "Packet:", suggestionsNote: "ไม่บังคับ คำแนะนำไม่บล็อกการอนุมัติหรือ Build",
     capabilityWord: "capability", noProvider: "ยังไม่มี provider ประกาศ provider ที่มี capability",
     noProviderTail: "ใน evidence.yaml", externalRef: "ภายนอก: ต้องมี decision-ref",

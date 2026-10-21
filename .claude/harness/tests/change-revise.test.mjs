@@ -24,6 +24,12 @@ function requirement(key, outcome) {
   };
 }
 
+// The four approval lines a medium or high draft owes when started or revised.
+const APPROVER_SCRATCH = {
+  get: "Intake accepts orders at a bounded rate", asIs: "Intake has no stated rate",
+  toBe: "Intake accepts 20 messages per second", ifFail: "Orders are rejected naming storage"
+};
+
 function semanticDraft({ requirements, id = undefined, version = 3 } = {}) {
   const rows = requirements || [
     requirement("throughput", "The service accepts 20 messages per second"),
@@ -35,6 +41,7 @@ function semanticDraft({ requirements, id = undefined, version = 3 } = {}) {
     intent: "Revisable change",
     why: "Exercise pre-Build revision",
     impact: "medium",
+    scratch: APPROVER_SCRATCH,
     coupling: "isolated",
     requirements: rows,
     tasks: [{
@@ -759,6 +766,7 @@ function folderDraft(outcome = "The service accepts 20 messages per second") {
   return {
     version: 5, id: "revisable-change", intent: "Revisable change",
     why: "Exercise pre-Build revision", impact: "medium", coupling: "isolated",
+    scratch: APPROVER_SCRATCH,
     requirements: rows,
     tasks: [{ key: "implement", outcome: "Implement the requirements",
       covers: rows.map((row) => row.key), paths: ["src/**"], verify: "npm test" }],

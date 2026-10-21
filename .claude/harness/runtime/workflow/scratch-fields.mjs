@@ -4,6 +4,9 @@
 // Each issue names the exact field so intake returns one batched EDIT.
 
 export const SCRATCH_KEYS = Object.freeze(["get", "asIs", "toBe", "ifFail"]);
+// Accepted with the same one-line shape but never required: how to undo the
+// change and who it affects. The approval card derives or marks them unknown.
+export const OPTIONAL_SCRATCH_KEYS = Object.freeze(["undo", "who"]);
 export const SCRATCH_TEXT_MAX = 240;
 
 // type -> { field: rule }. A rule is "text" (non-empty string), "list" (non-empty
@@ -77,11 +80,23 @@ function prototypePathIssue(path, at) {
   return null;
 }
 
+// A medium or high change is approved from the page, so its four plain lines
+// are required there; low stays optional. Only the declared impact counts, and
+// only a draft is checked: a started change keeps the draft it was approved with.
+export function scratchRequiredIssues(source) {
+  const impact = text(source?.impact).toLowerCase();
+  if (impact !== "medium" && impact !== "high") return [];
+  const scratch = isObject(source?.scratch) ? source.scratch : {};
+  return SCRATCH_KEYS.filter((key) => scratch[key] === undefined || !text(scratch[key])).map((key) =>
+    `semantic draft scratch.${key} is required for impact ${impact}: ` +
+    `one plain line of at most ${SCRATCH_TEXT_MAX} characters for the approver`);
+}
+
 export function scratchFieldIssues(source) {
   const issues = [];
   if (source?.scratch !== undefined) {
     if (!isObject(source.scratch)) issues.push("semantic draft scratch must be an object of { get, asIs, toBe, ifFail }");
-    else for (const key of SCRATCH_KEYS) {
+    else for (const key of [...SCRATCH_KEYS, ...OPTIONAL_SCRATCH_KEYS]) {
       const value = source.scratch[key];
       if (value === undefined) continue;
       if (typeof value !== "string" || !text(value) || /\r?\n/.test(value) || text(value).length > SCRATCH_TEXT_MAX)

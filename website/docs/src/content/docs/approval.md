@@ -77,9 +77,54 @@ is labeled: **proof** only when a valid passing receipt backs it, **preview**,
 or **no evidence yet**. The package never changes the change's state, and if
 it cannot be written, approval continues from the packet.
 
-**What to read first.** When the agent wrote them, the top of the page answers
+**The page follows the decision.** From top to bottom: the change id with a
+risk level (a word, a symbol, and a four-step scale, never colour alone) and
+each reason for it in plain words; the four summary lines, with before and
+after side by side; a scope strip (files touched, open questions, failure
+cases; a count the draft cannot give reads **unknown**, never 0); the decision
+cards for your kind of work; a checklist of required sections; failure cases as
+cards (when it happens, what happens, how to recover); the first two examples
+open and the rest collapsed; the open questions in full; a collapsed
+**Reviewer details** section (role tables, technical domains, diagrams,
+suggested previews); and a decision bar. The bar says that approving starts
+Build in an isolated workspace and leaves your main checkout untouched, and
+lists reply lines to copy into the chat (approve, request changes, reject). The
+page has no button, form, or script beyond the Mermaid loader and records
+nothing: your chat reply is the decision. If this revision is already approved
+the bar says so and shows no reply lines; if approval lanes are still missing it
+names the roles above the reply lines. Text uses the Thai-capable sans fonts
+already on your machine and nothing is fetched; on a phone the bar sits at the
+end of the page instead of covering it.
+
+**Decision cards.** Each kind of work shows one card with the question you are
+deciding and the fields that answer it. A field the draft does not give reads
+**unknown**; nothing is guessed. If a change spans several kinds, each card
+appears once, hardest-to-undo first (E, G, F, D, A, B, C).
+
+| Card | Kind of work | The question |
+|---|---|---|
+| A | feature, ui, client-release, experiment | What will users see and do? |
+| B | bugfix | What is the problem, and how will we know it is fixed? |
+| C | refactor, dependency, config, docs, test, chore | Is it safe, and what must stay the same? |
+| D | api, library, deprecation | Who uses this contract, and what happens to them? |
+| E | data, migration | Can data be damaged, and can it be undone? |
+| F | async, integration, infra, observability, performance | What happens when it breaks, and what does it cost? |
+| G | privacy, ml | Whose data is used, for how long, and what if it goes wrong? |
+
+Under the cards, two lines say how to undo the change and who it affects. They
+come from the author's `scratch.undo` and `scratch.who` when written, otherwise
+from fields the draft already has (named beside the answer), otherwise
+**unknown**. The checklist shows each required section as present or missing
+using the compiler's own rule; since a standard change cannot start without
+them, a missing section shows up mainly on rapid-lane or older drafts. Sections
+marked **recommended** are advice, not requirements. If a card or the checklist
+cannot be built, the page shows a warning for it and the rest still renders.
+
+**What to read first.** The summary at the top of the page answers
 three plain questions: what you get, what changes (before and after, with a
-count when known), and what happens if it fails. Below that come concrete
+count when known), and what happens if it fails. A medium or high change must
+have this summary (`scratch`) before it starts; for low it is optional, and the
+page warns when it is missing. Below that come concrete
 examples with real values, chosen for the kind of work: a clickable prototype,
 API requests and responses for each status, rules with numbers, rows before and
 after a migration, a permission table, and so on. Each example has an
@@ -88,8 +133,8 @@ after a migration, a permission table, and so on. Each example has an
 and before that it says what will be compared. The page uses Thai or English to
 match the agreement. Diagrams are drawn by a copy of Mermaid shipped with the
 harness on your machine; nothing is fetched over the network, and the page
-shows the diagram text if that file is missing. Summaries and examples are
-optional: without them you get the per-role view above.
+shows the diagram text if that file is missing. Examples are optional:
+without them you get only the collapsed reviewer details.
 
 **Previews are optional.** Before Build, the agent may run one declared
 provider against a throwaway copy of the target to show early behavior. A

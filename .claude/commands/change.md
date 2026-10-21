@@ -12,6 +12,8 @@ Create or update **$ARGUMENTS**. Shared rules: `.claude/harness/AGENT.md`.
    `workType`, `requirements[{description with SHALL, scenarios[{when, then}]}]`,
    `tasks[{outcome, verify, paths}]`; `proposal.md` `## Why`. `verify` fails
    on wrong behavior. Prose: the requested language, else the request's.
+   `impact` medium/high also needs `scratch{get, asIs, toBe, ifFail}`: one
+   plain line each for the approver.
 3. Run `claude-foundation change start .foundation/drafts/<id>`; if the
    request approved the spec, append `--approve-spec --decision-ref <ref>`
    (`/dev`: `--through proven` too): one call starts, approves, continues.
@@ -33,8 +35,12 @@ product code during Change.
 ## Gate: spec approval
 
 Unless approved, link the packet; explain scope, behavior, acceptance criteria,
-and open questions in ordinary words; validation is not approval. Record
-it with `claude-foundation advance <id> --approve-spec --decision-ref <ref>`
-or step 3's flags. Change stops here.
+and open questions in ordinary words; validation is not approval. Ask through
+the host's structured question tool with the draft's four `scratch` lines
+(get, asIs, toBe, ifFail) and these options: approve, approve with edits (ask
+what to change), show details (the approval package path), reject. A reply such
+as "ลุยเลย" or "approve" is the approval. Record it with
+`claude-foundation advance <id> --approve-spec --decision-ref <ref>` or step
+3's flags. Change stops here.
 
 Report product changes in the user's language; hide commands/jargon.

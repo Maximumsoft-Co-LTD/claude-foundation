@@ -638,6 +638,8 @@ function v5Draft(extra = {}) {
   return {
     version: 5, id: "refund-api", intent: "Add a refund API", language: "en",
     why: "Customers wait days for refunds", impact: "low", coupling: "isolated",
+    scratch: { get: "Refunds apply once", asIs: "A repeated request can refund twice",
+      toBe: "A repeated request refunds once", ifFail: "An unknown order is rejected naming the order" },
     requirements: [{
       key: "refund-once", capability: "refund-api", operation: "added",
       outcome: "A refund is applied once",

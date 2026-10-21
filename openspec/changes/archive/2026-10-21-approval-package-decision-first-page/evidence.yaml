@@ -1,0 +1,149 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "decision-first-page-package",
+      "requirementKey": "decision-first-page",
+      "scenario": "สรุปมาก่อน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-first-page-package-2",
+      "requirementKey": "decision-first-page",
+      "scenario": "ไม่มี scratch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-first-page-3",
+      "requirementKey": "decision-first-page",
+      "scenario": "ไม่ทราบตัวเลขขอบเขต",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "reviewer-details-collapsed-package-change-role-tables-diagram",
+      "requirementKey": "reviewer-details-collapsed",
+      "scenario": "พับรายละเอียด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "reviewer-details-collapsed-diagram",
+      "requirementKey": "reviewer-details-collapsed",
+      "scenario": "ไม่มีไฟล์ mermaid",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "copyable-decision-bar-1",
+      "requirementKey": "copyable-decision-bar",
+      "scenario": "ยังไม่อนุมัติ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "copyable-decision-bar-package",
+      "requirementKey": "copyable-decision-bar",
+      "scenario": "อนุมัติแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "copyable-decision-bar-3",
+      "requirementKey": "copyable-decision-bar",
+      "scenario": "lane ยังไม่ครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "copyable-decision-bar-package-2",
+      "requirementKey": "copyable-decision-bar",
+      "scenario": "ไม่มี script เพิ่ม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-required-medium-change-start",
+      "requirementKey": "scratch-required-medium",
+      "scenario": "medium ไม่มี scratch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-required-medium-change-start-2",
+      "requirementKey": "scratch-required-medium",
+      "scenario": "low ไม่มี scratch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "scratch-required-medium-advance-change-amend-revise-draft",
+      "requirementKey": "scratch-required-medium",
+      "scenario": "change เดิมที่อนุมัติแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "chat-approval-card-agent-spec",
+      "requirementKey": "chat-approval-card",
+      "scenario": "ถามด้วยการ์ด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "chat-approval-card-approve",
+      "requirementKey": "chat-approval-card",
+      "scenario": "ใช้ถ้อยคำเดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs) && (node --test .claude/harness/tests/semantic-draft.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs",
+        "node --test .claude/harness/tests/semantic-draft.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

@@ -314,6 +314,8 @@ test("e2e compile: a v5 folder starts a change with exact prose and derived sect
   writeJsonFile(join(dir, "change.json"), {
     version: 5, id: "refund-api", intent: "Add a refund API", language: "th",
     why: "ลูกค้ารอเงินคืนหลายวัน", impact: "low", coupling: "isolated",
+    scratch: { get: "คืนเงินครั้งเดียวต่อคำขอ", asIs: "คำขอซ้ำอาจคืนเงินสองครั้ง",
+      toBe: "คำขอซ้ำคืนเงินครั้งเดียว", ifFail: "ไม่พบออเดอร์ ระบบปฏิเสธพร้อมระบุออเดอร์" },
     requirements: [{
       key: "refund-once", capability: "refund-api", operation: "added",
       outcome: "A refund is applied once",
@@ -352,6 +354,8 @@ test("e2e compile: a v5 folder starts a change with exact prose and derived sect
 const startChangeJson = () => ({
   version: 5, id: "refund-api", intent: "Add a refund API", language: "en",
   why: "Customers wait days for refunds", impact: "low", coupling: "isolated",
+  scratch: { get: "Refunds apply once", asIs: "A repeated request can refund twice",
+    toBe: "A repeated request refunds once", ifFail: "An unknown order is rejected naming the order" },
   requirements: [{
     key: "refund-once", capability: "refund-api", operation: "added",
     outcome: "A refund is applied once",

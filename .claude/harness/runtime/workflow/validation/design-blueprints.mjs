@@ -65,7 +65,8 @@ function entryRows(key, value) {
   return null;
 }
 
-const OBJECT_FIELDS = {
+// Exported so the approval page's checklist names the same missing fields.
+export const OBJECT_FIELDS = {
   bugfix: ["reproduction", "rootCause", "regression"],
   refactor: ["invariants", "characterization"]
 };

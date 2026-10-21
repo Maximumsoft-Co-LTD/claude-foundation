@@ -1514,6 +1514,7 @@ export function createChangeLifecycle({
     if (isSemanticVersion(source.version)) {
       const normalized = normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
+        requireScratch: true,
         repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
@@ -1910,6 +1911,7 @@ export function createChangeLifecycle({
     const normalized = validateCompiledDraft
       ? normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
+        requireScratch: true,
         repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
