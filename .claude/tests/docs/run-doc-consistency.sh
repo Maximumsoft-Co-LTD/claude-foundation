@@ -63,11 +63,11 @@ assert_file_contains "hook documentation separates native dispatch" \
 assert_cmd_zero "host capability contract covers every supported host truthfully" \
   node -e '
     const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-    const expected = ["claude-code", "opencode", "cursor", "codex"];
+    const expected = ["claude-code", "opencode", "cursor", "codex", "gemini"];
     const keys = Object.keys(c.hosts || {}).sort();
     const guards = c.hosts || {};
     const ok = c.version === 2 && JSON.stringify(keys) === JSON.stringify(expected.sort()) &&
-      expected.every((host) => guards[host].nativeDispatch === "available" &&
+      expected.every((host) => guards[host].nativeDispatch === (host === "gemini" ? "unavailable" : "available") &&
         guards[host].finalEnforcement === "Land gates" &&
         guards[host].workflowGuarantees.terminalTruth === "runtime-enforced" &&
         guards[host].workflowGuarantees.staleProof === "runtime-enforced" &&
@@ -79,6 +79,8 @@ assert_cmd_zero "host capability contract covers every supported host truthfully
       guards.opencode.workflowGuarantees.phaseIsolation === "live-plugin-and-runtime" &&
       guards.cursor.liveMutationGuards.coverage === "unavailable" &&
       guards.codex.liveMutationGuards.coverage === "unavailable" &&
+      guards.gemini.liveMutationGuards.coverage === "unavailable" &&
+      guards.gemini.workflowGuarantees.phaseIsolation === "final-audit-only" &&
       guards.cursor.workflowGuarantees.phaseIsolation === "final-audit-only" &&
       guards.codex.workflowGuarantees.phaseIsolation === "final-audit-only" &&
       guards.cursor.unattendedWrites.mode === "blocked-without-equivalent-boundary" &&
@@ -91,7 +93,7 @@ assert_cmd_zero "host wiring table matches the canonical capability rows" \
     const [contractPath, docsPath] = process.argv.slice(1);
     const hosts = JSON.parse(fs.readFileSync(contractPath, "utf8")).hosts;
     const docs = fs.readFileSync(docsPath, "utf8");
-    const labels = {"claude-code":"Claude Code", opencode:"OpenCode", cursor:"Cursor", codex:"Codex CLI"};
+    const labels = {"claude-code":"Claude Code", opencode:"OpenCode", cursor:"Cursor", codex:"Codex CLI", gemini:"Gemini CLI"};
     const ok = Object.entries(hosts).every(([id, row]) => {
       const line = docs.split(/\r?\n/).find((candidate) => candidate.startsWith(`| ${labels[id]} |`));
       const guards = row.liveMutationGuards;

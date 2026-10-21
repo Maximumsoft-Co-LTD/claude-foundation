@@ -11,9 +11,11 @@ const contract = JSON.parse(readFileSync(join(harness, "adapters",
 test("every shipped host declares typed workflow guarantees", () => {
   assert.equal(contract.version, 2);
   assert.deepEqual(Object.keys(contract.hosts).sort(),
-    ["claude-code", "codex", "cursor", "opencode"]);
+    ["claude-code", "codex", "cursor", "gemini", "opencode"]);
   for (const [host, row] of Object.entries(contract.hosts)) {
-    assert.equal(row.nativeDispatch, "available", host);
+    // Gemini CLI native dispatch is not verified, so it is declared unavailable
+    // rather than guessed.
+    assert.equal(row.nativeDispatch, host === "gemini" ? "unavailable" : "available", host);
     assert.ok(row.workflowGuarantees, host);
     assert.equal(row.workflowGuarantees.terminalTruth, "runtime-enforced", host);
     assert.equal(row.workflowGuarantees.staleProof, "runtime-enforced", host);
@@ -24,7 +26,7 @@ test("every shipped host declares typed workflow guarantees", () => {
 });
 
 test("hosts without live hooks never claim phase-isolation parity", () => {
-  for (const host of ["cursor", "codex"]) {
+  for (const host of ["cursor", "codex", "gemini"]) {
     const row = contract.hosts[host];
     assert.equal(row.liveMutationGuards.phase, "unavailable");
     assert.equal(row.workflowGuarantees.phaseIsolation, "final-audit-only");

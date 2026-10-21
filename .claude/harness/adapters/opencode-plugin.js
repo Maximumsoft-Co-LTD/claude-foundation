@@ -105,8 +105,21 @@ export const FoundationGuard = async ({ directory, worktree }) => {
   // leaks one small string, bounded by the session.
   const touched = new Map();
 
+  // The OpenCode session id, exported as FOUNDATION_SESSION_ID so the harness
+  // binds the main session (.claude/harness/EVIDENCE.md, Main-session
+  // identity). Provider and model identity are not exposed to these hooks, so
+  // they stay with the operator (FOUNDATION_MAIN_PROVIDER_FAMILY etc.).
+  let sessionId = "";
+
   return {
+    // Shell commands inherit the session id; hooks that run it get it too.
+    "shell.env": async (input, output) => {
+      const id = String(input?.sessionID || sessionId || "").trim();
+      if (id) output.env = { ...output.env, FOUNDATION_SESSION_ID: id };
+    },
+
     "tool.execute.before": async (input, output) => {
+      if (input.sessionID) sessionId = String(input.sessionID);
       const tool = TOOL_NAMES[String(input.tool || "").toLowerCase()];
       if (!tool) return;
       const event = { tool_name: tool, tool_input: toolInput(tool, output.args || {}) };

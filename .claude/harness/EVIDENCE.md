@@ -681,6 +681,30 @@ revalidates those fields, the contract reason, and final workspace identity.
 New standard changes must explicitly decide whether acceptance is required;
 silence remains `undecided` and blocks validation rather than becoming approval.
 
+## Main-session identity
+
+A `main-session` reviewer, and self-review provenance generally, needs the
+calling session's identity. The runtime reads, first non-empty wins, the
+session id from `FOUNDATION_CLAUDE_SESSION_ID`, `FOUNDATION_SESSION_ID`,
+`CODEX_THREAD_ID`, then `FOUNDATION_MAIN_SESSION_ID`. `--main-session-id`
+must equal it when set; it never overrides the host's id.
+
+| Field | Flag (wins) | Environment fallback |
+|---|---|---|
+| identity | `--main-session-identity` | `FOUNDATION_MAIN_IDENTITY` |
+| provider family | `--main-session-provider-family` | `FOUNDATION_MAIN_PROVIDER_FAMILY` |
+| model family | `--main-session-model-family` | `FOUNDATION_MAIN_MODEL_FAMILY` |
+| model id | `--main-session-model` | `FOUNDATION_MODEL_ID` |
+
+Telemetry for the same session fills any field left empty. Provider and
+identity are inferred only for Claude Code (`FOUNDATION_CLAUDE_SESSION_ID`,
+set by the session-context hook) and Codex (`CODEX_THREAD_ID`). Any other
+host must provide the session id (`FOUNDATION_SESSION_ID`) plus all four
+fields, or the request reports the missing ones instead of guessing. The
+OpenCode plugin exports `FOUNDATION_SESSION_ID`; it cannot see the provider or
+model, so set the other variables for that host. Gemini CLI ships no
+integration; export every variable above.
+
 Every review outcome that stops short of a verdict (`configured-reviewer-
 infrastructure-exhausted`, `main-session-provenance-unavailable`, and bare
 `authority run` refusals) carries `next.command`, and `authority run` routes in

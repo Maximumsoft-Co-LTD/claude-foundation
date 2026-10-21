@@ -87,6 +87,7 @@ orchestration contract and is reported separately from live mutation guards.
 | OpenCode | available | `.opencode/plugins/foundation.js` (placed by the OpenCode adapter install) replays these hooks via `tool.execute.before/after` | partial: phase live; secrets live; lint live; session digest unavailable |
 | Cursor | available | none — Cursor has no tool hooks | unavailable: phase unavailable; secrets unavailable; lint unavailable; session digest unavailable |
 | Codex CLI | available | none — Codex has no tool hooks | unavailable: phase unavailable; secrets unavailable; lint unavailable; session digest unavailable |
+| Gemini CLI | unavailable | none — no Foundation guard wiring is shipped; capabilities are declared unavailable until verified | unavailable: phase unavailable; secrets unavailable; lint unavailable; session digest unavailable |
 
 Hosts without live guards still pass through the runtime's Land gates, and
 `no-direct-main-commit.sh` remains available as an opt-in git hook. When
