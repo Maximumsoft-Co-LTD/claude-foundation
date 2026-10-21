@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 310" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">From a promised behavior to proof</title>
+  <desc id="d">A scenario becomes a claim with a stable ID, the claim selects capabilities, a provider runs the project's own tool, and the result is stored as a receipt. A passing receipt can land; fail, error or inconclusive blocks Land. Changing code, agreement, configuration or lockfiles makes a receipt stale, and only affected checks rerun.</desc>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#17181c"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="959" height="309" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <g stroke="#17181c" stroke-width="1.5" marker-end="url(#a)">
+    <path d="M180 54h35"/><path d="M367 54h35"/><path d="M554 54h35"/><path d="M741 54h35"/>
+  </g>
+  <g fill="#fff" stroke="#17181c" stroke-width="1.5">
+    <rect x="30" y="24" width="150" height="60" rx="8"/><rect x="217" y="24" width="150" height="60" rx="8"/><rect x="404" y="24" width="150" height="60" rx="8"/><rect x="591" y="24" width="150" height="60" rx="8"/>
+  </g>
+  <rect x="778" y="24" width="152" height="60" rx="8" fill="#17181c"/>
+  <g text-anchor="middle">
+    <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="16" font-weight="500" fill="#17181c">
+      <text x="105" y="50">Scenario</text><text x="292" y="50">Claim</text><text x="479" y="50">Capability</text><text x="666" y="50">Provider</text><text x="854" y="50" fill="#f2eee5">Receipt</text>
+    </g>
+    <g font-size="12" fill="#373a42">
+      <text x="105" y="70">observable behavior</text><text x="292" y="70">stable ID</text><text x="479" y="70">what can show it</text><text x="666" y="70">runs YOUR tool</text><text x="854" y="70" fill="#f2eee5">result + fingerprints</text>
+    </g>
+  </g>
+  <g stroke="#bcb4a6" stroke-width="1.5">
+    <path d="M105 84v22"/><path d="M292 84v22"/><path d="M479 84v22"/><path d="M666 84v22"/><path d="M854 84v22"/>
+  </g>
+  <g fill="#e8e1d4">
+    <rect x="30" y="106" width="150" height="34" rx="6"/><rect x="217" y="106" width="150" height="34" rx="6"/><rect x="404" y="106" width="150" height="34" rx="6"/><rect x="591" y="106" width="150" height="34" rx="6"/><rect x="778" y="106" width="152" height="34" rx="6"/>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="11.5" fill="#17181c" text-anchor="middle">
+    <text x="105" y="127">owner edits name</text><text x="292" y="127">profile-update</text><text x="479" y="127">test · browser</text><text x="666" y="127">playwright, vitest…</text><text x="854" y="127">pass | fail | …</text>
+  </g>
+
+  <rect x="30" y="170" width="290" height="110" rx="8" fill="#e1ece6" stroke="#087a64" stroke-width="1.5"/>
+  <text x="46" y="196" font-size="13" font-weight="700" fill="#087a64">pass → can land</text>
+  <g font-size="12" fill="#373a42"><text x="46" y="218">The provider ran and the claim held,</text><text x="46" y="236">and the receipt still matches the</text><text x="46" y="254">current code and agreement.</text></g>
+
+  <rect x="335" y="170" width="290" height="110" rx="8" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+  <text x="351" y="196" font-size="13" font-weight="700" fill="#8f2a11">fail · error · inconclusive → blocks</text>
+  <g font-size="12" fill="#373a42"><text x="351" y="218">Never a pass. inconclusive usually means</text><text x="351" y="236">the wiring does not report against your</text><text x="351" y="254">claim — not that the code is broken.</text></g>
+
+  <rect x="640" y="170" width="290" height="110" rx="8" fill="#fff" stroke="#bcb4a6" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="656" y="196" font-size="13" font-weight="700" fill="#17181c">Stale → rerun only what changed</text>
+  <g font-size="12" fill="#373a42"><text x="656" y="218">Edit code, the agreement, config or a</text><text x="656" y="236">lockfile and the bound receipt expires.</text><text x="656" y="254">Untouched receipts are reused.</text></g>
+</svg>

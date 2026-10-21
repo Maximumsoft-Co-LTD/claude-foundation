@@ -1,14 +1,18 @@
 ---
 title: Claim และ capability
-description: scenario ที่สังเกตได้กลายเป็น claim ที่มี ID คงที่อย่างไร และ capability ตัวไหนใน 19 ตัวที่พิสูจน์มันได้จริง
+description: scenario ที่สังเกตได้กลายเป็น claim ที่มี ID คงที่อย่างไร และ capability ตัวไหนใน 25 ตัวที่พิสูจน์มันได้จริง
 ---
 
 <!-- docs-audience: agents-integrators -->
 **ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
 
+**พูดง่าย ๆ:** *claim* คือคำสัญญาเรื่องพฤติกรรมที่ change ให้ไว้ *capability* คือประเภทของการตรวจที่แสดงคำสัญญานั้นได้ (เช่น test, browser, accessibility) *provider* คือเครื่องมือของโปรเจกต์ที่รันการตรวจ และ *receipt* คือบันทึกผล หน้านี้สำหรับ agent และผู้ทำ integration ที่ประกาศว่า change ต้องพิสูจน์อะไร คุณต้องมี change ที่มี acceptance scenario และจะได้รายการ claim ที่กำหนดว่าการตรวจใดต้องผ่านก่อน Land ดู [อภิธานศัพท์](/docs/th/glossary/)
+
 กฎหลักของ Change Loop คือ **คำสั่งที่ผ่านไม่ได้แปลว่าเป็นหลักฐานโดยอัตโนมัติ**
 
 ทุก scenario ที่ยอมรับได้และสังเกตได้จะได้ claim ID ที่คงที่ แต่ละ claim ประกาศ capability ที่พิสูจน์มันได้จริง หลักฐานที่ขาด, stale, fail, error หรือ inconclusive จะบล็อกการ land
+
+![scenario กลายเป็น claim เลือก capability รันผ่าน provider และเก็บเป็น receipt ที่ผ่าน บล็อก หรือ stale](/docs/diagrams/evidence-th.svg)
 
 ## สัญญาเชิงพฤติกรรม
 
@@ -64,7 +68,16 @@ override อยู่ใน [`execution.yaml`](/docs/th/evidence/adapters/) แ�
 | `deployment` | การแพ็กเกจ การตั้งค่า health check ตอน rollout และพฤติกรรม rollback ถูกพิสูจน์ |
 | `dependency-supply-chain` | นโยบายเรื่องช่องโหว่ ไลเซนส์ lockfile และ provenance ของ dependency ผ่าน |
 
-รวม 19 ตัว change ส่วนใหญ่ใช้แค่สองสามตัว
+| `evaluation` | การประเมินโมเดลหรือการจัดอันดับได้คะแนนไม่ต่ำกว่า threshold |
+| `parity` | implementation ใหม่ให้ผลตรงกับ reference บนชุดเปรียบเทียบที่ประกาศไว้ |
+| `plan-check` | plan ของ infra หรือ migration มีเฉพาะการเปลี่ยนแปลงที่ประกาศไว้ |
+| `release-health` | สัญญาณ crash, error และ adoption ยังปกติระหว่าง rollout (หลัง release) |
+| `experiment-guardrail` | metric guardrail อยู่ในกรอบหลัง release |
+
+รวม 25 ตัว change ส่วนใหญ่ใช้แค่สองสามตัว สองตัวสุดท้ายเป็นด่าน rollout หลัง release
+ที่ถูกบันทึกใน proposal ที่ archive และไม่เคยบล็อก proof หรือ Land work type ที่ต้องใช้
+capability เฉพาะทาง (เช่น `ml` → `evaluation`, `infra` → `plan-check`) ดูที่
+[evidence contract](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/EVIDENCE.md#work-type-capabilities)
 
 provider ของ `security-static`, `resilience`, `compatibility`, `data-migration`
 หรือ `cross-repo-contract` ที่แค่รันคำสั่งเทสซ้ำ ไม่ได้สังเกตอะไรเกินกว่าเทส

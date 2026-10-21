@@ -18,7 +18,7 @@
     <meta property="og:url" content="https://claude-foundation.dev/" />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2317181c'/%3E%3Cpath d='M8 17h16M16 9v16' stroke='%23ff5c35' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='17' r='4' fill='%23f4f0e7' stroke='%2317181c'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2317181c'/%3E%3Ccircle cx='32' cy='32' r='15' fill='none' stroke='%23ff5c35' stroke-width='5' stroke-linecap='round' stroke-dasharray='70.7 23.55' transform='rotate(-45 32 32)'/%3E%3Cpath d='M26.3 16.5 24.9 24.9 17.9 17.9Z' fill='%23ff5c35' stroke='%23ff5c35' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M25 33l5 5 9-11' fill='none' stroke='%23f2eee5' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -27,9 +27,9 @@
 
     <header class="nav" id="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="#top" aria-label="claude-foundation home">
-          <span class="brand-mark">f</span>
-          <span>claude<b>-foundation</b></span>
+        <a class="brand" href="#top" aria-label="Change Loop home">
+          <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#17181c"/><circle cx="32" cy="32" r="15" fill="none" stroke="#ff5c35" stroke-width="5" stroke-linecap="round" stroke-dasharray="70.7 23.55" transform="rotate(-45 32 32)"/><path d="M26.3 16.5 24.9 24.9 17.9 17.9Z" fill="#ff5c35" stroke="#ff5c35" stroke-width="2" stroke-linejoin="round"/><path d="M25 33l5 5 9-11" fill="none" stroke="#f2eee5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>change<b>loop</b></span>
         </a>
         <nav class="nav-links" aria-label="Primary navigation">
           <a href="#flow">Flow</a>
@@ -61,12 +61,17 @@
               <em>Skip the ceremony.</em>
             </h1>
             <p class="hero-lede reveal in" data-delay="2">
-              A lean control plane for brownfield software work.
+              AI coding agents can say “done” without proof. Change Loop makes your agent agree on
+              the change first, build it in a safe copy, and show checked evidence before anything
+              touches your project.
+            </p>
+            <p class="hero-lede reveal in" data-delay="2">
               <strong>OpenSpec holds the agreement.</strong> Your native coding agent builds it.
-              Deterministic providers prove every observable claim.
+              Project tools prove every promised behavior.
             </p>
             <div class="hero-actions reveal in" data-delay="3">
               <a class="button primary" href="#install">Install the harness <span>→</span></a>
+              <a class="button text" href="./docs/journey/">See one change start to finish <span>→</span></a>
               <a class="button text" href="#flow">See the loop <span>↓</span></a>
             </div>
             <ul class="hero-notes reveal in" data-delay="4">
@@ -112,7 +117,7 @@
         <div class="wrap facts">
           <div class="fact reveal"><strong>8</strong><span>agent slash commands</span></div>
           <div class="fact reveal" data-delay="1"><strong>5</strong><span>executable adapter types</span></div>
-          <div class="fact reveal" data-delay="2"><strong>19</strong><span>evidence capabilities</span></div>
+          <div class="fact reveal" data-delay="2"><strong>25</strong><span>evidence capabilities</span></div>
           <div class="fact reveal" data-delay="3"><strong>1</strong><span>task ledger: tasks.md</span></div>
         </div>
       </section>
@@ -164,6 +169,15 @@
             <h2>Move backward when reality changes.<br />Move forward only with evidence.</h2>
             <p>Not a waterfall. Investigation is optional; Land is the explicit completion boundary.</p>
           </div>
+
+          <figure class="flow-figure reveal">
+            <img src="./docs/diagrams/loop-en.svg" alt="The Change Loop lifecycle: Investigate (optional), Change, Build, Prove, Land." loading="lazy" />
+            <figcaption>
+              New here? Read <a href="./docs/journey/">one change from start to finish</a>, then follow the
+              <a href="./docs/">docs reading order</a>. Unfamiliar terms are in the
+              <a href="./docs/glossary/">glossary</a>.
+            </figcaption>
+          </figure>
 
           <div class="loop reveal" role="img" aria-label="Investigate optionally leads to Change, then Build, Prove, and Land. Change, Build, and Prove may move backward while the agreement evolves.">
             <div class="loop-track" aria-hidden="true"></div>
@@ -224,8 +238,9 @@
             <p class="eyebrow reveal">Evidence, not confidence</p>
             <h2 class="reveal">A passing command is not automatically proof.</h2>
             <p class="reveal">
-              Every observable acceptance scenario receives a stable claim ID. Each claim requires
-              the capabilities that can actually demonstrate it. Missing, stale, failed, erroneous,
+              Every behavior the change promises (a <em>claim</em>) gets a stable ID and is checked
+              by the kinds of check (<em>capabilities</em>) that can actually demonstrate it; each
+              check leaves a recorded result (a <em>receipt</em>). Missing, stale, failed, erroneous,
               or inconclusive evidence blocks landing.
             </p>
             <p class="callout reveal">
@@ -286,7 +301,7 @@
               <h3>Select what the claim needs—never the full catalog by default.</h3>
             </div>
             <button class="catalog-toggle" id="catalog-toggle" aria-expanded="false" aria-controls="capability-list">
-              Show all 19 <span>+</span>
+              Show all 25 <span>+</span>
             </button>
           </div>
           <div class="capability-list" id="capability-list">
@@ -295,6 +310,8 @@
             <span>security-static</span><span>cross-repo-contract</span><span>review</span><span>acceptance</span>
             <span>static-analysis</span><span>data-migration</span><span>accessibility</span><span>resilience</span>
             <span>observability</span><span>deployment</span><span>dependency-supply-chain</span>
+            <span>concurrency</span><span>evaluation</span><span>parity</span><span>plan-check</span>
+            <span>release-health</span><span>experiment-guardrail</span>
           </div>
         </div>
       </section>
@@ -595,8 +612,8 @@ claude-foundation init /path/to/project --yes</code></pre>
     <footer>
       <div class="wrap footer-inner">
         <a class="brand" href="#top">
-          <span class="brand-mark">f</span>
-          <span>claude<b>-foundation</b></span>
+          <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#17181c"/><circle cx="32" cy="32" r="15" fill="none" stroke="#ff5c35" stroke-width="5" stroke-linecap="round" stroke-dasharray="70.7 23.55" transform="rotate(-45 32 32)"/><path d="M26.3 16.5 24.9 24.9 17.9 17.9Z" fill="#ff5c35" stroke="#ff5c35" stroke-width="2" stroke-linejoin="round"/><path d="M25 33l5 5 9-11" fill="none" stroke="#f2eee5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>change<b>loop</b></span>
         </a>
         <p>OpenSpec-native software change harness. <b>v3.6.7</b> · runtime API 42 · provider protocol 13</p>
         <div class="footer-links">

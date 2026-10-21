@@ -6,6 +6,31 @@ description: Compile one semantic draft into a validated OpenSpec agreement.
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** Change turns what you want into a written agreement before
+any code is written. You describe the outcome in your own words; the agent reads
+the code and drafts the agreement (what will behave differently, how each promise
+will be checked, which files may change); the harness validates it and creates
+the change folder `openspec/changes/<id>/`. You get a proposal to read and
+approve. Nothing is built until you do.
+
+## What you do
+
+1. **Say what you want**, including constraints and things you do not want.
+2. **Answer questions only you can answer.** The agent asks at most three linked
+   decisions at a time, and never asks about things it can read from the code.
+3. **Read the approval summary** (see [Approval](/docs/approval/)) and approve in
+   your own words, for example "go ahead". Silence or urgency alone is not
+   approval.
+4. **Change your mind early.** Before Build, the agent revises the same change; an
+   additive revision keeps your approval, and removing agreed behavior asks you
+   again. After Build starts, new behavior goes through one amendment.
+
+Next step: `advance <change> --through build` (the agent runs it).
+
+## What the agent compiles
+
+Everything below is for agents and integrators. You never write these files by hand.
+
 ```text
 /change <intent | existing-change> [--prototype-selection <path>]
 ```

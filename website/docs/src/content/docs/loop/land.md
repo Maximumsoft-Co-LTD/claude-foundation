@@ -6,6 +6,19 @@ description: Explicitly apply, verify, archive, and clean up the current change.
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** Land is the one step where you give the go-ahead and the
+proven work moves from the [sandbox](/docs/glossary/) into your real checkout.
+You say `/land` (or any clear instruction to land). The harness re-checks that
+approval and proof are still current, applies the files, archives the agreement,
+and cleans up. You get an **uncommitted diff**: Git HEAD and the index do not
+change, and nothing is committed, pushed, or opened as a pull request. Review the
+diff, then commit through your normal Git process.
+
+Only `archived` means done. `proven` means the evidence passed, not that the work
+reached your project.
+
+## For agents and integrators
+
 ```text
 /land <change>
 ```

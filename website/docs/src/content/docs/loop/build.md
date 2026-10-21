@@ -6,6 +6,17 @@ description: Implement the compiled agreement in isolation through one coordinat
 <!-- docs-audience: agents-integrators -->
 **Audience:** coding agents and integration operators. CLI commands and schemas below are system reference, not a user checklist. Users can follow [Quickstart](/docs/quickstart/).
 
+**In plain words:** Build is where the agent writes the code and tests the
+agreement calls for. You do nothing here unless the agent asks you a question
+that only you can answer. The work happens in a
+[sandbox](/docs/glossary/) (an isolated copy), so your checkout is not touched.
+The harness prepares tools, tracks tasks, and recovers from setup problems itself.
+You get the finished work inside the sandbox, then Prove starts automatically.
+Build never delivers anything to your project; only [`/land`](/docs/loop/land/)
+does.
+
+## For agents and integrators
+
 ```text
 /build <change>
 ```

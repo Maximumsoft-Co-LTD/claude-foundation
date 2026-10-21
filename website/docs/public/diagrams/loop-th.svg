@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 350" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">วงจร Change Loop</title>
+  <desc id="d">ห้าขั้นตอนจากซ้ายไปขวา: Investigate (ทางเลือก) ตามด้วย Change, Build, Prove และ Land แต่ละขั้นแสดงสิ่งที่ได้และผู้ลงมือ Change, Prove และ Land มีคุณเกี่ยวข้อง ลูกศรย้อนจาก Prove ไป Change แสดงว่าเมื่อ requirement เปลี่ยนจะแก้ change เดิม</desc>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#17181c"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="959" height="349" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <g stroke="#17181c" stroke-width="1.5" marker-end="url(#a)">
+    <path d="M190 69h23"/><path d="M375 69h23"/><path d="M560 69h23"/><path d="M745 69h23"/>
+  </g>
+  <g stroke="#bcb4a6" stroke-width="1.5">
+    <path d="M110 114v32"/><path d="M295 114v32"/><path d="M480 114v32"/><path d="M665 114v32"/><path d="M850 114v32"/>
+    <path d="M110 180v24"/><path d="M295 180v24"/><path d="M480 180v24"/><path d="M665 180v24"/><path d="M850 180v24"/>
+  </g>
+
+  <rect x="30" y="24" width="160" height="90" rx="8" fill="#fff" stroke="#17181c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <rect x="215" y="24" width="160" height="90" rx="8" fill="#fff" stroke="#17181c" stroke-width="1.5"/>
+  <rect x="400" y="24" width="160" height="90" rx="8" fill="#fff" stroke="#17181c" stroke-width="1.5"/>
+  <rect x="585" y="24" width="160" height="90" rx="8" fill="#fff" stroke="#17181c" stroke-width="1.5"/>
+  <rect x="770" y="24" width="160" height="90" rx="8" fill="#17181c"/>
+
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="11" fill="#6a6c71" letter-spacing="1">
+    <text x="44" y="46">00 · OPTIONAL</text><text x="229" y="46">01</text><text x="414" y="46">02</text><text x="599" y="46">03</text>
+    <text x="784" y="46" fill="#bcb4a6">04</text>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="18" font-weight="500" fill="#17181c" text-anchor="middle">
+    <text x="110" y="78">/investigate</text><text x="295" y="78">/change</text><text x="480" y="78">/build</text><text x="665" y="78">/prove</text>
+    <text x="850" y="78" fill="#f2eee5">/land</text>
+  </g>
+  <g font-size="13" fill="#373a42" text-anchor="middle">
+    <text x="110" y="100">สำรวจ (อ่านอย่างเดียว)</text><text x="295" y="100">ตกลงว่าจะทำอะไร</text><text x="480" y="100">ลงมือทำแบบแยกพื้นที่</text><text x="665" y="100">รันเครื่องมือจริงของคุณ</text>
+    <text x="850" y="100" fill="#f2eee5">นำเข้าครั้งเดียว ตั้งใจ</text>
+  </g>
+
+  <g fill="#e8e1d4">
+    <rect x="30" y="146" width="160" height="34" rx="6"/><rect x="215" y="146" width="160" height="34" rx="6"/><rect x="400" y="146" width="160" height="34" rx="6"/><rect x="585" y="146" width="160" height="34" rx="6"/><rect x="770" y="146" width="160" height="34" rx="6"/>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="12" fill="#17181c" text-anchor="middle">
+    <text x="110" y="167">findings</text><text x="295" y="167">OpenSpec agreement</text><text x="480" y="167">sandbox worktree</text><text x="665" y="167">receipts (evidence)</text><text x="850" y="167">archived ✓</text>
+  </g>
+
+  <rect x="30" y="204" width="160" height="46" rx="6" fill="none" stroke="#bcb4a6"/>
+  <rect x="215" y="204" width="160" height="46" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+  <rect x="400" y="204" width="160" height="46" rx="6" fill="none" stroke="#bcb4a6"/>
+  <rect x="585" y="204" width="160" height="46" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+  <rect x="770" y="204" width="160" height="46" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+  <g font-size="12" fill="#373a42" text-anchor="middle">
+    <text x="110" y="224">Agent อ่านโค้ด</text><text x="110" y="240">คุณช่วยชี้เจตนา</text>
+    <text x="295" y="224" font-weight="700" fill="#8f2a11">คุณอนุมัติ</text><text x="295" y="240">ข้อตกลง</text>
+    <text x="480" y="224">Agent ลงมือทำ</text><text x="480" y="240">harness คุมขอบเขต</text>
+    <text x="665" y="224" font-weight="700" fill="#8f2a11">คุณตรวจ</text><text x="665" y="240">ผลของหลักฐาน</text>
+    <text x="850" y="224" font-weight="700" fill="#8f2a11">คุณอนุญาต</text><text x="850" y="240">ด่านเดียวที่เด็ดขาด</text>
+  </g>
+
+  <path d="M665 256V286Q665 304 647 304H313Q295 304 295 286V258" fill="none" stroke="#c53a19" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="480" y="330" font-size="13" fill="#373a42" text-anchor="middle">requirement เปลี่ยน? แก้ change <tspan font-weight="700">เดิม</tspan> — proof ที่ล้าสมัยถูกยกเลิก งานที่ยังใช้ได้ถูกใช้ซ้ำ</text>
+</svg>

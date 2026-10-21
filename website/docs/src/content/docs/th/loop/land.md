@@ -6,6 +6,16 @@ description: Apply ตรวจ archive และ cleanup งานปัจจ�
 <!-- docs-audience: agents-integrators -->
 **ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
 
+**พูดง่าย ๆ:** Land คือขั้นเดียวที่คุณให้ไฟเขียว และงานที่ prove แล้วย้ายจาก
+[sandbox](/docs/th/glossary/) เข้าโฟลเดอร์จริงของคุณ คุณสั่ง `/land` (หรือบอกชัดเจนว่าให้ land)
+harness ตรวจอีกครั้งว่าการอนุมัติและ proof ยังใช้ได้ แล้ว apply ไฟล์ archive ข้อตกลง และ cleanup
+ผลที่ได้คือ **diff ที่ยังไม่ commit**: Git HEAD และ index ไม่เปลี่ยน ไม่มีการ commit, push
+หรือเปิด pull request ให้ตรวจ diff แล้ว commit ตามขั้นตอน Git ปกติของคุณ
+
+จบจริงเมื่อเป็น `archived` เท่านั้น `proven` หมายถึงหลักฐานผ่าน ไม่ได้หมายถึงงานเข้าโปรเจกต์แล้ว
+
+## สำหรับ agent และผู้ดูแล integration
+
 ```text
 /land <change>
 ```

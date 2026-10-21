@@ -213,17 +213,9 @@ h1 em {
 }
 
 .brand-mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  color: var(--paper);
-  border-radius: 6px;
-  background: var(--ink);
-  font-family: var(--display);
-  font-size: 18px;
-  font-style: italic;
-  transform: rotate(-4deg);
+  width: 30px;
+  height: 30px;
+  flex: none;
 }
 
 .nav-links {
@@ -284,10 +276,40 @@ h1 em {
   color: var(--ink);
 }
 
+.hero-lede + .hero-lede {
+  margin-top: -16px;
+}
+
 .hero-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
+}
+
+.flow-figure {
+  max-width: 980px;
+  margin: 8px auto 32px;
+  text-align: center;
+}
+
+.flow-figure img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line-dark);
+  border-radius: 10px;
+  background: white;
+}
+
+.flow-figure figcaption {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.flow-figure figcaption a {
+  color: var(--signal-dark);
+  text-decoration: underline;
 }
 
 .button {

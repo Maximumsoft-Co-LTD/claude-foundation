@@ -53,23 +53,60 @@ export default defineConfig({
       // the default locale for a missing translation, which silently strands a
       // Thai reader on an English page — the fallback is a safety net, not a
       // licence to ship half a locale.
-      // Keep the first-run path short. Configuration and tool integration are
-      // separate destinations, reached after the reader has tried one change.
+      // Groups follow the order a reader needs them: understand, install and
+      // try one change, learn the day-to-day rules, then configure, then the
+      // agent/operator references. Everything after "Use it" is collapsed so
+      // the first-run path stays short.
       sidebar: [
         {
-          label: "Get started",
-          translations: { th: "เริ่มต้น" },
+          label: "1 · Understand",
+          translations: { th: "1 · ทำความเข้าใจ" },
           items: [
             { slug: "index", label: "What is Change Loop?", translations: { th: "Change Loop คืออะไร" } },
+            { slug: "journey", label: "One change, start to finish", translations: { th: "หนึ่ง change ตั้งแต่ต้นจนจบ" } },
+            { slug: "glossary", label: "Glossary", translations: { th: "อภิธานศัพท์" } },
+          ],
+        },
+        {
+          label: "2 · Try it",
+          translations: { th: "2 · ลองใช้" },
+          items: [
             { slug: "install", label: "Install", translations: { th: "ติดตั้ง" } },
             { slug: "quickstart", label: "Quickstart", translations: { th: "เริ่มใช้งาน" } },
+          ],
+        },
+        {
+          label: "3 · Use it daily",
+          translations: { th: "3 · ใช้งานประจำวัน" },
+          items: [
             { slug: "loop", label: "Workflow overview", translations: { th: "ภาพรวม workflow" } },
+            { slug: "approval", label: "Your decisions and approval", translations: { th: "การอนุมัติโดยคน" } },
             { slug: "artifacts", label: "Files and ownership", translations: { th: "ไฟล์และเจ้าของข้อมูล" } },
           ],
         },
         {
-          label: "Lifecycle reference for agents",
-          translations: { th: "Lifecycle อ้างอิงสำหรับ agent" },
+          label: "4 · Configure your project",
+          translations: { th: "4 · ตั้งค่าโปรเจกต์" },
+          collapsed: true,
+          items: [
+            { slug: "foundation-config", label: "Configure foundation.json", translations: { th: "ตั้งค่า foundation.json" } },
+            { slug: "multi-repository", label: "Multi-repository workflow", translations: { th: "Workflow หลาย Repository" } },
+            { slug: "consumer-quality", label: "Consumer quality gates", translations: { th: "Quality gate ของโปรเจกต์" } },
+          ],
+        },
+        {
+          label: "5 · Connect evidence tools",
+          translations: { th: "5 · เชื่อมเครื่องมือสร้างหลักฐาน" },
+          collapsed: true,
+          items: [
+            { slug: "evidence/claims", label: "Claims and capabilities", translations: { th: "Claim และ capability" } },
+            { slug: "evidence/adapters", label: "Adapters and wiring", translations: { th: "Adapter และการต่อสาย" } },
+            { slug: "evidence/receipts", label: "Receipts and staleness", translations: { th: "Receipt และความ stale" } },
+          ],
+        },
+        {
+          label: "6 · Reference for agents",
+          translations: { th: "6 · อ้างอิงสำหรับ agent" },
           collapsed: true,
           items: [
             { slug: "loop/investigate", label: "/investigate" },
@@ -77,33 +114,6 @@ export default defineConfig({
             { slug: "loop/build", label: "/build" },
             { slug: "loop/prove", label: "/prove" },
             { slug: "loop/land", label: "/land" },
-          ],
-        },
-        {
-          label: "Configure your project",
-          translations: { th: "ตั้งค่าโปรเจกต์" },
-          collapsed: true,
-          items: [
-            { slug: "foundation-config", label: "Configure foundation.json", translations: { th: "ตั้งค่า foundation.json" } },
-            { slug: "multi-repository", label: "Multi-repository workflow", translations: { th: "Workflow หลาย Repository" } },
-            { slug: "approval", label: "Human approval", translations: { th: "การอนุมัติโดยคน" } },
-          ],
-        },
-        {
-          label: "Evidence integration",
-          translations: { th: "การเชื่อมต่อเครื่องมือสร้างหลักฐาน" },
-          collapsed: true,
-          items: [
-            { slug: "evidence/claims", label: "Claims and capabilities", translations: { th: "Claim และ capability" } },
-            { slug: "evidence/adapters", label: "Adapters and wiring", translations: { th: "Adapter และการต่อสาย" } },
-            { slug: "consumer-quality", label: "Consumer quality gates", translations: { th: "Quality gate ของโปรเจกต์" } },
-            { slug: "evidence/receipts", label: "Receipts and staleness", translations: { th: "Receipt และความ stale" } },
-          ],
-        },
-        {
-          label: "Operator reference",
-          translations: { th: "อ้างอิงสำหรับ operator" },
-          items: [
             { slug: "cli", label: "CLI reference", translations: { th: "คำสั่ง CLI" } },
           ],
         },

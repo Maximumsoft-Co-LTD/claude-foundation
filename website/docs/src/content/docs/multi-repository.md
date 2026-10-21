@@ -12,6 +12,45 @@ test runs in one repository but needs code or contracts from others.
 If the change needs only one repository, stop here: the normal
 [Quickstart](/docs/quickstart/) already covers the simpler path.
 
+## A scenario: one change across an API repo and a web repo
+
+![The project declares its repositories, the change selects which to write or read, and one proof and one Land cover them all.](/docs/diagrams/multirepo-en.svg)
+
+You ask for a new field on the profile page. The API repository must return it,
+and the web repository must show it. A shared `contracts` repository describes
+the response shape and must not be edited.
+
+**The decision: declare scope first.** Before Build, say (or confirm) which
+repositories this change may *write* (`api`, `app`), which it may only *read*
+(`contracts`), and what must happen first (`api` before `app`). Change Loop will
+not touch, test against, or deliver any repository outside that declaration.
+
+**What you see:**
+
+- The agent's statement of scope before you approve: repositories written,
+  repositories read, and their order.
+- Build and Prove progress per repository. The web checks run against the
+  API's new, not-yet-delivered code, because both live in isolated
+  [sandboxes](/docs/glossary/).
+- At the end, a result that names which repositories were read, written, proven,
+  and still waiting to Land.
+
+**What you decide:**
+
+1. Confirm the repository scope and order (the one consequential choice).
+2. Approve the agreement, as for any change.
+3. Say `/land` once. Every writable repository then receives its changes as an
+   **uncommitted diff**; Git HEAD and index stay unchanged everywhere. You review
+   each diff and commit through your normal Git process. Only `archived` means
+   done; `proven` does not.
+
+If a read repository moves while you work, the agent re-syncs and re-proves
+automatically. You do not run sandbox or sync commands.
+
+Everything below is the mechanics the agent and project maintainers use.
+
+## For agents and integrators
+
 ## First, understand the three scopes
 
 These files answer different questions. Configure them in this order:

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">หนึ่ง change ข้ามหลาย repository</title>
+  <desc id="d">ประกาศขอบเขตสามชั้นตามลำดับ: โปรเจกต์ระบุ repository ที่ใช้ได้ change เลือกว่าจะอ่านหรือเขียนตัวไหน และคำสั่งหลักฐานระบุสิ่งที่ต้องใช้ จากนั้น change เดียว build repository api ก่อน แล้วจึง app ที่ขึ้นกับ api ส่วน contracts และ partner SDK อ่านอย่างเดียว proof หนึ่งชุดครอบทั้งหมด และ Land ครั้งเดียวนำเข้าพร้อมกัน</desc>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#17181c"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="959" height="359" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <g font-size="11.5" font-weight="700" fill="#6a6c71">
+    <text x="30" y="30">1 · โครงของโปรเจกต์</text><text x="330" y="30">2 · ขอบเขตของ change นี้</text><text x="650" y="30">3 · proof ชุดเดียว Land ครั้งเดียว</text>
+  </g>
+
+  <g fill="#fff" stroke="#17181c" stroke-width="1.5">
+    <rect x="30" y="44" width="240" height="46" rx="6"/><rect x="30" y="100" width="240" height="46" rx="6"/><rect x="30" y="156" width="240" height="46" rx="6"/><rect x="30" y="212" width="240" height="46" rx="6"/>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="13" font-weight="500" fill="#17181c">
+    <text x="44" y="72">api</text><text x="44" y="128">app</text><text x="44" y="184">contracts</text><text x="44" y="240">partner-sdk</text>
+  </g>
+  <g font-size="11.5" fill="#6a6c71" text-anchor="end">
+    <text x="258" y="72">services/api</text><text x="258" y="128">apps/web</text><text x="258" y="184">อ่านอย่างเดียว</text><text x="258" y="240">อยู่นอกรีโปหลัก</text>
+  </g>
+  <text x="30" y="282" font-size="12" fill="#373a42">ทุก repository ต้องเป็น Git repo ที่ init แล้ว</text>
+
+  <g stroke="#17181c" stroke-width="1.5" marker-end="url(#a)"><path d="M272 67h52"/><path d="M272 123h52"/><path d="M272 179h52"/><path d="M272 235h52"/></g>
+  <g>
+    <rect x="330" y="44" width="240" height="46" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+    <rect x="330" y="100" width="240" height="46" rx="6" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+    <rect x="330" y="156" width="240" height="46" rx="6" fill="#efe9dc" stroke="#bcb4a6"/>
+    <rect x="330" y="212" width="240" height="46" rx="6" fill="#efe9dc" stroke="#bcb4a6"/>
+  </g>
+  <g font-size="12.5" fill="#373a42">
+    <text x="344" y="72"><tspan font-weight="700" fill="#8f2a11">write</tspan> · build ก่อน</text>
+    <text x="344" y="128"><tspan font-weight="700" fill="#8f2a11">write</tspan> · หลัง api (dependsOn)</text>
+    <text x="344" y="184"><tspan font-weight="700">read</tspan> · เป็นส่วนของ proof identity</text>
+    <text x="344" y="240"><tspan font-weight="700">read</tspan> · เป็นส่วนของ proof identity</text>
+  </g>
+  <text x="330" y="282" font-size="12" fill="#373a42">เลือกเฉพาะที่ change ต้องใช้</text>
+
+  <g stroke="#17181c" stroke-width="1.5" marker-end="url(#a)"><path d="M572 67h72"/><path d="M572 123h72"/></g>
+  <rect x="650" y="44" width="280" height="102" rx="8" fill="#17181c"/>
+  <g font-size="13" fill="#f2eee5">
+    <text x="666" y="72" font-weight="700">Build แบบแยกพื้นที่</text>
+    <text x="666" y="92">หนึ่ง sandbox ต่อ repo ที่เขียน</text>
+    <text x="666" y="112">Prove ครั้งเดียวครอบทั้งหมด</text>
+    <text x="666" y="132">Land ครั้งเดียว สะดุดแล้ว resume ได้</text>
+  </g>
+  <rect x="650" y="156" width="280" height="102" rx="8" fill="#e1ece6" stroke="#087a64" stroke-width="1.5"/>
+  <g font-size="12.5" fill="#373a42">
+    <text x="666" y="182" font-weight="700" fill="#087a64">ผลลัพธ์: archived</text>
+    <text x="666" y="202">diff ที่ยังไม่ commit หนึ่งชุดต่อ</text>
+    <text x="666" y="220">repository ที่เขียน ไม่มีการ commit</text>
+    <text x="666" y="238">หรือ push แทนคุณ</text>
+  </g>
+
+  <text x="480" y="326" font-size="13" fill="#373a42" text-anchor="middle">ประกาศตามลำดับนี้ check พิสูจน์ repository ที่โปรเจกต์หรือ change ยังไม่ได้เลือกไม่ได้</text>
+</svg>

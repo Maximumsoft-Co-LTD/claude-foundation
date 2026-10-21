@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">ใครเป็นเจ้าของไฟล์ไหน</title>
+  <desc id="d">สามคอลัมน์ ของคุณ: ไฟล์ตั้งค่าโปรเจกต์ ไฟล์คำสั่งสำหรับ agent และข้อตกลง OpenSpec ของ change ที่ agent แก้แทนคุณได้ ติดตั้งโดย Change Loop: command, skill, rule, hook, harness และ schema ถูกเขียนทับทุกครั้งที่ติดตั้ง สร้างโดย harness: โฟลเดอร์ .foundation ที่มี sandbox, receipt และ log Git ไม่ track และไม่ควรแก้ด้วยมือ</desc>
+  <rect x=".5" y=".5" width="959" height="359" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <rect x="24" y="24" width="296" height="268" rx="8" fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5"/>
+  <rect x="332" y="24" width="296" height="268" rx="8" fill="#fff" stroke="#17181c" stroke-width="1.5"/>
+  <rect x="640" y="24" width="296" height="268" rx="8" fill="#e1ece6" stroke="#087a64" stroke-width="1.5"/>
+
+  <g font-size="15" font-weight="700" text-anchor="start">
+    <text x="42" y="54" fill="#8f2a11">ของคุณ</text>
+    <text x="350" y="54" fill="#17181c">ติดตั้งโดย Change Loop</text>
+    <text x="658" y="54" fill="#087a64">สร้างโดย harness</text>
+  </g>
+  <g font-size="12" fill="#373a42">
+    <text x="42" y="76">คงอยู่ทุกครั้งที่อัปเกรด</text>
+    <text x="350" y="76">ถูกเขียนทับทุกครั้งที่ติดตั้ง</text>
+    <text x="658" y="76">state ของเครื่อง Git ไม่ track</text>
+  </g>
+
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="12" fill="#17181c">
+    <text x="42" y="108">foundation.json</text>
+    <text x="42" y="130">openspec/config.yaml</text>
+    <text x="42" y="152">openspec/repositories.yaml</text>
+    <text x="42" y="174">openspec/changes/&lt;id&gt;/</text>
+    <text x="42" y="196">.claude/settings.json</text>
+    <text x="42" y="218">CLAUDE.md · AGENTS.md</text>
+
+    <text x="350" y="108">.claude/commands</text>
+    <text x="350" y="130">.claude/skills · rules · hooks</text>
+    <text x="350" y="152">.claude/harness</text>
+    <text x="350" y="174">.claude/orchestrator.md</text>
+    <text x="350" y="196">openspec/schemas</text>
+    <text x="350" y="218">WORKFLOW.md</text>
+
+    <text x="658" y="108">.foundation/sandboxes</text>
+    <text x="658" y="130">.foundation/receipts</text>
+    <text x="658" y="152">.foundation/transactions</text>
+    <text x="658" y="174">.foundation/logs</text>
+    <text x="658" y="196">.foundation/packages</text>
+    <text x="658" y="218">.foundation/runtime</text>
+  </g>
+
+  <g font-size="12" fill="#373a42">
+    <text x="42" y="250" font-weight="700" fill="#8f2a11">เปลี่ยนโดยสั่ง agent</text>
+    <text x="42" y="268">agent แก้ไฟล์เหล่านี้แทนคุณได้</text>
+    <text x="350" y="250" font-weight="700" fill="#17181c">ไม่ต้องแก้</text>
+    <text x="350" y="268">ที่แก้จะหายตอนอัปเกรด</text>
+    <text x="658" y="250" font-weight="700" fill="#087a64">ไม่แก้ ไม่ลบ</text>
+    <text x="658" y="268">harness ใช้กู้งานต่อ</text>
+  </g>
+
+  <text x="480" y="326" font-size="13" fill="#373a42" text-anchor="middle">ไม่แน่ใจว่าไฟล์ไหนแตะได้? ถาม agent หรือดู <tspan font-weight="700">ไฟล์และเจ้าของข้อมูล</tspan></text>
+</svg>

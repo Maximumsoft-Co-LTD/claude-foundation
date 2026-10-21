@@ -14,6 +14,7 @@ Investigate? → Change → Build → Prove → Land
 
 ## Recommended reading order
 
+New here? See [One change, start to finish](/docs/journey/) for the picture.
 For a first change, read the [Quickstart](/docs/quickstart/) and run the
 single-repository path before opening the reference pages below. Configure
 [`foundation.json`](/docs/foundation-config/) only when the project needs a

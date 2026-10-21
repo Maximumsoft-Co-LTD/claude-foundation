@@ -14,6 +14,7 @@ Investigate? → Change → Build → Prove → Land
 
 ## ลำดับอ่านที่แนะนำ
 
+เพิ่งเริ่มใช้? ดูภาพรวมที่ [หนึ่ง change ตั้งแต่ต้นจนจบ](/docs/th/journey/)
 ถ้านี่คือ change แรก ให้อ่าน [เริ่มใช้งาน](/docs/th/quickstart/) และลองเส้นทาง
 repository เดียวก่อนเปิดหน้าอ้างอิงด้านล่าง ตั้งค่า
 [`foundation.json`](/docs/th/foundation-config/) เฉพาะเมื่อโปรเจกต์ต้องเปลี่ยน

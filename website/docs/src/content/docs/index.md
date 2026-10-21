@@ -12,6 +12,8 @@ Change Loop is a **software-change harness for AI coding agents**. It gives the 
 Investigate? → Change → Build → Prove → Land
 ```
 
+![The five lifecycle steps, what each produces, who acts, and the return path when requirements shift.](/docs/diagrams/loop-en.svg)
+
 It is not an AI, and it does not write code. It is a deterministic control plane *around* your coding agent. It does not replace your agent, test framework, CI system, or Git workflow either — it drives the tools your repository already owns.
 
 The workflow is called **Change Loop**. Its installed package and CLI remain
@@ -57,14 +59,21 @@ owners. Reviewer independence is a separate policy choice; see
 
 ## Where to go next
 
-Start with installation and one change. Configuration and evidence references
-are available when you need them; you do not need to read the whole site first.
+Read in this order. You do not need the whole site before your first change.
 
-- [Install](/docs/install/) — requirements and the two supported install paths
-- [Quickstart](/docs/quickstart/) — take one change end to end
-- [The change loop](/docs/loop/) — what each of the five commands does and why
-- [Consumer quality gates](/docs/consumer-quality/) — add CRAP, mutation, baselines, and debt without widening Change scope
+1. [One change, start to finish](/docs/journey/) — a picture and a worked example; where you appear
+2. [Install](/docs/install/) — requirements and the two supported install paths
+3. [Quickstart](/docs/quickstart/) — take one change end to end
+4. [The change loop](/docs/loop/) — why the steps are separate and how work moves backward
+5. [Your decisions](/docs/approval/) — what only you approve
+6. [Files and ownership](/docs/artifacts/) — what is yours and what the harness manages
+
+Later, as needed: [configure `foundation.json`](/docs/foundation-config/),
+[work across repositories](/docs/multi-repository/),
+[add quality gates](/docs/consumer-quality/), or
+[connect evidence tools](/docs/evidence/claims/). Agents and integrators use the
+lifecycle pages and the [CLI reference](/docs/cli/).
 
 :::note[Version]
-These docs track Change Loop **v3.6.7** — runtime API 41, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
+These docs track Change Loop **v3.6.7** — runtime API 42, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
 :::

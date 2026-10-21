@@ -6,6 +6,8 @@ description: คำสั่งที่ agent ของคุณรัน จ�
 <!-- docs-audience: agents-integrators -->
 **ผู้อ่าน:** Coding agent และผู้ดูแล integration คำสั่ง CLI และ schema ด้านล่างเป็นเอกสารระบบ ไม่ใช่รายการที่ผู้ใช้ต้องทำเอง ผู้ใช้เริ่มที่ [เริ่มใช้งาน](/docs/th/quickstart/)
 
+**พูดง่าย ๆ:** หน้านี้รวบรวมทุกคำสั่งของ `claude-foundation` จัดกลุ่มตามว่าอ่านอย่างเดียว แก้ change ที่กำลังทำอยู่ หรือต้องได้รับอนุญาตจากคุณอย่างชัดเจน เหมาะกับ agent ผู้ทำ integration และใครก็ตามที่อยากอ่านออกว่า agent กำลังทำอะไร ต้องติดตั้ง Change Loop แล้ว ([ติดตั้ง](/docs/th/install/)) ผลที่ได้คือคำสั่งที่แน่นอน หน้าที่ของมัน และเวอร์ชัน protocol ที่ใช้ ศัพท์ที่ไม่คุ้น (change, claim, receipt, provider, capability) อยู่ใน [อภิธานศัพท์](/docs/th/glossary/)
+
 agent ของคุณเป็นคนรันคำสั่งเหล่านี้ คุณแทบไม่ต้องรันเอง เอกสารนี้มีไว้ให้คุณอ่านออกว่า agent กำลังทำอะไร และรันเองได้เมื่ออยากรัน
 
 ทุกคำสั่งตอบ `--help` และ `claude-foundation describe [command] [--json]` อธิบายทั้ง surface — รวม `/deliver` แบบ optional พร้อม `/changes` และ alias `/feature` เรียกได้ทั้งชื่อเปล่าและแบบ `/slash` โดยอ่านจากไฟล์คำสั่งที่ ship มาโดยตรง จึงไม่มีสำเนาที่สองให้ drift

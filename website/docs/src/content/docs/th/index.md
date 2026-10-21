@@ -12,6 +12,8 @@ Change Loop คือ **harness สำหรับควบคุมการเ
 Investigate? → Change → Build → Prove → Land
 ```
 
+![ห้าขั้นของ lifecycle สิ่งที่แต่ละขั้นให้ ผู้ลงมือ และเส้นทางย้อนกลับเมื่อ requirement เปลี่ยน](/docs/diagrams/loop-th.svg)
+
 Change Loop ไม่ใช่ AI และไม่ได้เขียนโค้ดเอง มันเป็น control plane แบบ deterministic ที่ครอบ coding agent ของคุณอีกที และไม่ได้มาแทน agent, test framework, CI หรือ Git workflow เดิม — มันสั่งเครื่องมือที่รีโปคุณมีอยู่แล้ว
 
 ชื่อ workflow คือ **Change Loop** ส่วน package และ CLI ที่ติดตั้งยังใช้
@@ -57,14 +59,21 @@ Change Loop ไม่รับคำพูดของ agent เป็นหล�
 
 ## ไปต่อที่ไหน
 
-เริ่มจากติดตั้งและทำ change หนึ่งงานก่อน แล้วเปิดคู่มือตั้งค่าหรือเอกสารหลักฐาน
-เมื่อจำเป็น คุณไม่ต้องอ่านทั้งเว็บไซต์ก่อนเริ่มใช้งาน
+อ่านตามลำดับนี้ คุณไม่ต้องอ่านทั้งเว็บไซต์ก่อนทำ change แรก
 
-- [ติดตั้ง](/docs/th/install/) — requirement และวิธีติดตั้งสองแบบ
-- [เริ่มใช้งาน](/docs/th/quickstart/) — พา change หนึ่งตัวจนจบวงจร
-- [วงจรการเปลี่ยนแปลง](/docs/th/loop/) — ห้าคำสั่งทำอะไรและทำไม
-- [Quality gate ของโปรเจกต์](/docs/th/consumer-quality/) — เพิ่ม CRAP, mutation, baseline และ debt โดยไม่ขยาย Change scope
+1. [หนึ่ง change ตั้งแต่ต้นจนจบ](/docs/th/journey/) — ภาพและตัวอย่างจริง ดูว่าคุณอยู่ตรงไหน
+2. [ติดตั้ง](/docs/th/install/) — requirement และวิธีติดตั้งสองแบบ
+3. [เริ่มใช้งาน](/docs/th/quickstart/) — พา change หนึ่งตัวจนจบวงจร
+4. [วงจรการเปลี่ยนแปลง](/docs/th/loop/) — ทำไมแยกขั้นตอน และงานย้อนกลับอย่างไร
+5. [การอนุมัติโดยคน](/docs/th/approval/) — สิ่งที่มีแต่คุณที่อนุมัติได้
+6. [ไฟล์และเจ้าของข้อมูล](/docs/th/artifacts/) — อะไรเป็นของคุณ และอะไร harness ดูแล
+
+ภายหลังตามต้องการ: [ตั้งค่า `foundation.json`](/docs/th/foundation-config/),
+[ทำงานข้ามหลาย repository](/docs/th/multi-repository/),
+[เพิ่ม quality gate](/docs/th/consumer-quality/) หรือ
+[เชื่อมเครื่องมือสร้างหลักฐาน](/docs/th/evidence/claims/) ส่วน agent และ integrator
+ใช้หน้า lifecycle และ [คำสั่ง CLI](/docs/th/cli/)
 
 :::note[เวอร์ชัน]
-เอกสารชุดนี้อ้างอิง Change Loop **v3.6.7** — runtime API 41, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+เอกสารชุดนี้อ้างอิง Change Loop **v3.6.7** — runtime API 42, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 :::

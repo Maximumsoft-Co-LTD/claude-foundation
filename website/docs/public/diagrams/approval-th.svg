@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" role="img" aria-labelledby="t d" font-family="Manrope, 'Noto Sans Thai', system-ui, sans-serif">
+  <title id="t">เมื่อไหร่ Change Loop ต้องการการตัดสินใจจากคุณ</title>
+  <desc id="d">เส้นเวลา Change, Build, Prove และ Land พร้อมการตัดสินใจของผู้ใช้ในแต่ละจุด: อนุมัติ spec ตัดสิน trade-off จริง ให้ verdict หรือ waive check เมื่อจำเป็น และอนุญาต Land ส่วน commit, push หรือ pull request ต้องมีสิทธิ์แยก การ setup, sync conflict, การรอ resource และการซ่อมซ้ำ จะไม่ถามผู้ใช้</desc>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#17181c"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="959" height="329" rx="10" fill="#faf7f0" stroke="#d7d0c3"/>
+
+  <g stroke="#17181c" stroke-width="1.5" marker-end="url(#a)">
+    <path d="M190 49h37"/><path d="M377 49h37"/><path d="M564 49h37"/><path d="M751 49h37"/>
+  </g>
+  <g font-family="'DM Mono', ui-monospace, Menlo, monospace" font-size="16" font-weight="500" text-anchor="middle">
+    <rect x="40" y="26" width="150" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5"/><text x="115" y="55" fill="#17181c">/change</text>
+    <rect x="227" y="26" width="150" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5"/><text x="302" y="55" fill="#17181c">/build</text>
+    <rect x="414" y="26" width="150" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5"/><text x="489" y="55" fill="#17181c">/prove</text>
+    <rect x="601" y="26" width="150" height="46" rx="6" fill="#17181c"/><text x="676" y="55" fill="#f2eee5">/land</text>
+    <rect x="788" y="26" width="140" height="46" rx="6" fill="#fff" stroke="#17181c" stroke-width="1.5" stroke-dasharray="5 4"/><text x="858" y="55" fill="#17181c">หลัง Land</text>
+  </g>
+
+  <g stroke="#ff5c35" stroke-width="1.5">
+    <path d="M115 72v22"/><path d="M302 72v22"/><path d="M489 72v22"/><path d="M676 72v22"/><path d="M858 72v22"/>
+  </g>
+  <g fill="#ffe3da" stroke="#ff5c35" stroke-width="1.5">
+    <rect x="40" y="94" width="150" height="116" rx="6"/><rect x="227" y="94" width="150" height="116" rx="6"/><rect x="414" y="94" width="150" height="116" rx="6"/><rect x="601" y="94" width="150" height="116" rx="6"/><rect x="788" y="94" width="140" height="116" rx="6"/>
+  </g>
+  <g font-size="12" fill="#373a42" text-anchor="middle">
+    <text x="115" y="116" font-weight="700" fill="#8f2a11">อนุมัติ spec</text><text x="115" y="136">Build จะไม่เริ่ม</text><text x="115" y="152">จนกว่าคุณอนุมัติ</text><text x="115" y="168">บอก agent ว่าต้อง</text><text x="115" y="184">แก้อะไรก่อน</text>
+    <text x="302" y="116" font-weight="700" fill="#8f2a11">trade-off จริง</text><text x="302" y="136">ถามเฉพาะเมื่อ</text><text x="302" y="152">ทางเลือกเปลี่ยนความหมาย</text><text x="302" y="168">ของผลิตภัณฑ์ ขอบเขต</text><text x="302" y="184">หรืองบประมาณ</text>
+    <text x="489" y="116" font-weight="700" fill="#8f2a11">verdict หรือ waiver</text><text x="489" y="136">ยอมรับผลลัพธ์ถ้า</text><text x="489" y="152">กำหนดให้ต้องยอมรับ</text><text x="489" y="168">หรือ waive check ที่</text><text x="489" y="184">ล้มเหลว (บันทึกไว้)</text>
+    <text x="676" y="116" font-weight="700" fill="#8f2a11">สั่ง /land</text><text x="676" y="136">ด่านเด็ดขาดด่านเดียว</text><text x="676" y="152">Land เฉพาะ proof ที่ผ่าน</text><text x="676" y="168">ของ workspace</text><text x="676" y="184">ปัจจุบัน</text>
+    <text x="858" y="116" font-weight="700" fill="#8f2a11">Commit / push / PR</text><text x="858" y="136">สิทธิ์แยกต่างหาก:</text><text x="858" y="152">ทำเอง หรือใช้ /deliver</text><text x="858" y="168">ที่เป็นทางเลือก Land</text><text x="858" y="184">ไม่ทำสิ่งเหล่านี้เอง</text>
+  </g>
+
+  <rect x="40" y="236" width="888" height="68" rx="6" fill="#e1ece6" stroke="#087a64"/>
+  <text x="58" y="262" font-size="13" font-weight="700" fill="#087a64">ไม่ถามคุณ</text>
+  <text x="58" y="284" font-size="12.5" fill="#373a42">setup และ retry · sync conflict · รอ resource ที่ change อื่นถืออยู่ · ซ่อม check ที่ล้มซ้ำ ๆ · เขียนคำสั่งหรือ draft ภายใน</text>
+</svg>
