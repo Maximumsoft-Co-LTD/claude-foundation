@@ -35,6 +35,21 @@ function measurement(values) {
   return { measured, unavailable: values.length - measured };
 }
 
+function skillCalls(row) {
+  const usage = row.scorecard?.skillUsage;
+  return usage?.measurement === "measured" ? usage.skillToolCalls : undefined;
+}
+
+// Runs that loaded each skill, null when no run had a host stream.
+function skillCounts(rows) {
+  const measured = rows.filter((row) => skillCalls(row) !== undefined);
+  if (!measured.length) return null;
+  const counts = {};
+  for (const row of measured)
+    for (const name of row.scorecard.skillUsage.skillsLoaded) counts[name] = (counts[name] || 0) + 1;
+  return counts;
+}
+
 function runRows(root) {
   if (!existsSync(root)) return [];
   return readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory())
@@ -129,8 +144,15 @@ export function aggregateLabRuns(root, source = null) {
         medianToolErrors: median(rows.map((row) => row.scorecard?.friction?.toolErrors)),
         askUserActions: sum(rows.map((row) => row.scorecard?.friction?.advanceActions?.ASK_USER)),
         repairActions: sum(rows.map((row) => row.scorecard?.friction?.advanceActions?.REPAIR)),
+        // Skills the agent chose to load. Runs without a host stream are
+        // unavailable, never zero.
+        skillToolCalls: sum(rows.map(skillCalls)),
+        skillRuns: rows.some((row) => skillCalls(row) !== undefined)
+          ? rows.filter((row) => skillCalls(row) > 0).length : null,
+        skillsLoaded: skillCounts(rows),
         measurements: {
           friction: measurement(rows.map((row) => row.scorecard?.friction?.toolErrors)),
+          skillUsage: measurement(rows.map(skillCalls)),
           wallMs: measurement(rows.map((row) => row.scorecard?.timing?.wallMs)),
           costUsd: measurement(rows.map((row) => row.scorecard?.usage?.costUsd)),
           modelRequests: measurement(rows.map((row) =>

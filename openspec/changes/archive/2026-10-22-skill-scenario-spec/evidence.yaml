@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "aggregate-skill-usage-aggregate",
+      "requirementKey": "aggregate-skill-usage",
+      "scenario": "ผสมวัดได้และวัดไม่ได้",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "aggregate-skill-usage-aggregate-2",
+      "requirementKey": "aggregate-skill-usage",
+      "scenario": "วัดได้แต่ไม่มีใครโหลด",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "aggregate-skill-usage-aggregate-3",
+      "requirementKey": "aggregate-skill-usage",
+      "scenario": "ไม่มี host stream เลย",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "remove-skill-routing-catalog",
+      "requirementKey": "remove-skill-routing-catalog",
+      "scenario": "EDIT ไม่ระบุ skill",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/tests/bench/tests/openspec-native-aggregate.test.mjs) && (node --test .claude/harness/tests/advance-runtime.test.mjs)"
+      ],
+      "segments": [
+        "node --test .claude/tests/bench/tests/openspec-native-aggregate.test.mjs",
+        "node --test .claude/harness/tests/advance-runtime.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

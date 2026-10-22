@@ -63,6 +63,42 @@ test("lab aggregate requires every lifecycle, oracle, quality, and delivery gate
   }
 });
 
+test("aggregate rolls up skill loading and keeps unmeasured runs unknown", () => {
+  const root = mkdtempSync(join(tmpdir(), "foundation-lab-skill-"));
+  const card = (skillUsage) => ({
+    outcome: { status: "completed", complete: true }, oracle: { configured: false },
+    quality: { fail: 0 }, ...(skillUsage ? { skillUsage } : {})
+  });
+  const measured = (calls, loaded) => ({
+    measurement: "measured", skillToolCalls: calls, skillsLoaded: loaded, skillFilesRead: []
+  });
+  try {
+    for (const [runId, skillUsage] of [
+      ["r1", measured(0, [])], ["r2", measured(2, ["testing-fundamentals", "security-fundamentals"])],
+      ["r3", { measurement: "unavailable", skillToolCalls: null, skillsLoaded: null }]
+    ]) {
+      write(join(root, runId, "manifest.json"), { runId, scenario: "fixture", strictPass: true });
+      write(join(root, runId, "openspec-native-runs", runId, "scorecard.json"), card(skillUsage));
+    }
+    const [summary] = aggregateLabRuns(root);
+    assert.equal(summary.skillToolCalls, 2);
+    assert.equal(summary.skillRuns, 1);
+    assert.deepEqual(summary.skillsLoaded, { "testing-fundamentals": 1, "security-fundamentals": 1 });
+    assert.deepEqual(summary.measurements.skillUsage, { measured: 2, unavailable: 1 });
+    write(join(root, "r1", "manifest.json"), { runId: "r1", scenario: "other", strictPass: true });
+    const other = aggregateLabRuns(root).find((row) => row.scenario === "other");
+    assert.equal(other.skillRuns, 0);
+    assert.equal(other.skillToolCalls, 0);
+    write(join(root, "r1", "openspec-native-runs/r1/scorecard.json"), card(null));
+    const unknown = aggregateLabRuns(root).find((row) => row.scenario === "other");
+    assert.equal(unknown.skillRuns, null, "no host stream means unknown, not zero");
+    assert.equal(unknown.skillToolCalls, null);
+    assert.equal(unknown.skillsLoaded, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("aggregate groups by arm across result roots and compares arms pairwise", () => {
   const changeLoopRoot = mkdtempSync(join(tmpdir(), "foundation-lab-arm-cl-"));
   const baselineRoot = mkdtempSync(join(tmpdir(), "foundation-lab-arm-base-"));

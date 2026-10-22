@@ -28,22 +28,6 @@
 - **WHEN** change start
 - **THEN** ได้ EDIT พร้อมรายชื่อประเภทที่รับ
 
-### Requirement: Each work type routes to its skills
-
-ระบบ SHALL route ประเภทงานใหม่ไป skill ตาม catalog
-
-#### Scenario: route infra
-
-- **GIVEN** change ประเภท infra
-- **WHEN** advance ถึง Build
-- **THEN** action แนะนำ delivery-engineering และ architecture-fundamentals
-
-#### Scenario: งานเบาไม่ route
-
-- **GIVEN** change ประเภท docs
-- **WHEN** advance
-- **THEN** ไม่มีคำแนะนำ skill ด้านพฤติกรรม
-
 ### Requirement: Each work type requires its evidence
 
 ระบบ SHALL เพิ่ม capability ของหลักฐานตามประเภทงานใน catalog นอกเหนือจากที่ได้จาก path และ NFR
