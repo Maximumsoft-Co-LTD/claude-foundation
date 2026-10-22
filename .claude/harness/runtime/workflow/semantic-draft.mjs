@@ -1795,6 +1795,9 @@ export const MINIMAL_DRAFT_WRITING = Object.freeze({
   scratch: "Required when impact is medium or high, optional for low: scratch.get, asIs, toBe, ifFail are one plain line each " +
     "(at most 240 characters) for an approver who does not read code; put counts in asIs when known; " +
     "scratch.undo and scratch.who are optional lines for how to undo it and who is affected",
+  scenarios: "Write one scenario per rule, limit, endpoint, or error that the request or its referenced documents state, " +
+    "not one per heading; add each rule's failure and boundary cases (empty, minimum, maximum, wrong type, unauthorized). " +
+    "Every scenario becomes a test, so a thin spec yields thin tests",
   examples: "Optional typed examples with real values from the request, code, or data, never invented: " +
     `each { type, title, why?, postBuild?, capability? } where type is one of ${EXAMPLE_TYPES.join(", ")}`,
   limits: Object.freeze({ intentMaxCharacters: 70, whyMaxSentences: 3 })

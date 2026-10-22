@@ -1,5 +1,7 @@
 import { currentWaivers } from "../core/user-decisions.mjs";
 import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
+import { behaviorChangingWork } from "../evidence/test-discrimination.mjs";
+import { changeWorkTypes } from "./task-change.mjs";
 import { proofCursorToken } from "../evidence/proof-execution-runtime.mjs";
 import { isProcessAlive } from "../core/process-lock.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
@@ -70,6 +72,26 @@ export function noProgressOutput(output) {
     if (reason || commandText) parts.push(commandText ? `${reason || "next"} (${commandText})` : reason);
   }
   return parts.filter(Boolean).join("; ").slice(0, 2000);
+}
+
+// Scenarios a task owns: its ledger line links one claim per scenario.
+function taskScenarioCount(task) {
+  const linked = String(task?.instruction ?? task?.text ?? "").match(/\[claims:([^\]]*)\]/);
+  return linked ? linked[1].split(",").filter((claim) => claim.trim()).length : 0;
+}
+
+// The Build line that makes a test count: how many scenarios each behavior-
+// changing task covers, and the one rule for proving them. Null for work that
+// changes no behavior and for tasks with no linked claim. It names no skill.
+export function testAdequacyInstruction({ workTypes, tasks }) {
+  if (!behaviorChangingWork(workTypes)) return null;
+  const owned = (tasks || []).map((task) => ({ id: task.id, count: taskScenarioCount(task) }))
+    .filter((row) => row.id && row.count > 0);
+  if (!owned.length) return null;
+  const covers = owned.map((row) =>
+    `${row.id} covers ${row.count} ${row.count === 1 ? "scenario" : "scenarios"}`).join(", ");
+  return `${covers}: write at least one test per scenario that fails on the code before ` +
+    "your change and passes after it.";
 }
 
 function packetSpecFiles(dir) {
@@ -1062,9 +1084,11 @@ export function createAdvanceRuntime({
         // An EDIT names no skills: in every observed paid run agents skipped
         // routed skills, wherever the action put them. Agents choose skills
         // from the skills' own descriptions.
+        const adequacy = value.action === "EDIT"
+          ? testAdequacyInstruction({ workTypes: changeWorkTypes(changePath(id)), tasks }) : null;
         return { ...value, ...envelopeContextFiles({
           packetDir: changePath(id), state, tasks, paths, scopedPaths
-        }) };
+        }), ...(adequacy ? { instructions: [...(value.instructions || []), adequacy] } : {}) };
       });
     } catch { return value; }
   }

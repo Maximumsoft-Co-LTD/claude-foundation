@@ -1213,8 +1213,12 @@ test("envelope context keeps only files inside the workspace or repository bases
 // installed skills; prose and missing skills select nothing.
 async function skillEdit(t, {
   workType, riskSignals = [], proposal = "# Proposal\n", skills = [],
-  dispatch = { action: "run-in-session", reason: "one repository" }, root: withRoot = true
+  dispatch = { action: "run-in-session", reason: "one repository" }, root: withRoot = true,
+  claims = {}
 }) {
+  // A ledger line links one claim per scenario: "a [claims:x,y] — verify: ...".
+  const linked = (id) => claims[id] ? ` [claims:${Array.from({ length: claims[id] },
+    (_, index) => `${id}-c${index}`).join(",")}]` : "";
   const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -1235,8 +1239,8 @@ async function skillEdit(t, {
     ...(withRoot ? { projectRoot: root } : {}),
     agentDispatchValue: () => dispatch,
     agentPlanValue: () => ({ groups: [["T001", "T002"]], tasks: [
-      { id: "T001", text: "a — verify: `true`", repository: "root", paths: ["src/a.js"] },
-      { id: "T002", text: "b — verify: `true`", repository: "root", paths: ["src/b.js"] }
+      { id: "T001", text: `a${linked("T001")} — verify: \`true\``, repository: "root", paths: ["src/a.js"] },
+      { id: "T002", text: `b${linked("T002")} — verify: \`true\``, repository: "root", paths: ["src/b.js"] }
     ] }),
     relevantHash: () => "workspace-a", deliveredAiAttempts: () => [],
     authorityStatusValue: () => ({ requests: [] }),
@@ -1266,6 +1270,42 @@ test("a Build EDIT names no skills even when the project has matching ones", asy
   for (const task of value.tasks) assert.doesNotMatch(task.instruction, /skills:/);
   assert.match(value.instructions[0], /^Implement T001, T002 in this order inside the workspace\./);
   assert.ok(value.contextFiles.length > 0);
+});
+
+// A thin spec yields thin tests, so a behavior-changing Build EDIT states how
+// many scenarios each task owns and the one rule that makes a test count.
+test("a behavior-changing Build EDIT states each task's scenario count and the test rule", async (t) => {
+  const value = await skillEdit(t, {
+    workType: "feature", skills: ALL_SKILLS, claims: { T001: 4, T002: 1 }
+  });
+  assert.equal(value.action, "EDIT", JSON.stringify(value));
+  const line = value.instructions.at(-1);
+  assert.match(line, /^T001 covers 4 scenarios, T002 covers 1 scenario: write at least one test per scenario /);
+  assert.match(line, /fails on the code before your change and passes after it\.$/);
+  assert.equal("skills" in value, false);
+  assert.doesNotMatch(line, /skill|fundamentals/i);
+  assert.ok(!value.instructions.some((entry) => LOAD.test(entry)));
+});
+
+test("Build EDIT test guidance is absent for behavior-neutral work and for tasks without claims", async (t) => {
+  const plainLines = (await skillEdit(t, { workType: "feature" })).instructions;
+  for (const options of [
+    { workType: "refactor", claims: { T001: 3 } },
+    { workType: "docs", claims: { T001: 3 } },
+    { workType: "feature" }
+  ]) {
+    const value = await skillEdit(t, options);
+    assert.equal(value.action, "EDIT", JSON.stringify(value));
+    assert.deepEqual(value.instructions, plainLines, JSON.stringify(options));
+    assert.ok(!value.instructions.some((entry) => /scenario/.test(entry)));
+  }
+});
+
+test("test guidance counts only tasks that link claims and never prints zero", async (t) => {
+  const value = await skillEdit(t, { workType: "bugfix", claims: { T002: 2 } });
+  assert.match(value.instructions.at(-1), /^T002 covers 2 scenarios: /);
+  assert.doesNotMatch(value.instructions.at(-1), /T001/);
+  assert.doesNotMatch(value.instructions.join(" "), /covers 0/);
 });
 
 test("a parallel spawn-group EDIT names no skills", async (t) => {
