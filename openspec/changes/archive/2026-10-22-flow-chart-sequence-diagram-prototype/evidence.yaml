@@ -1,0 +1,310 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "flow-in-card-a-package",
+      "requirementKey": "flow-in-card-a",
+      "scenario": "มี userFlow",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "flow-in-card-a-package-2",
+      "requirementKey": "flow-in-card-a",
+      "scenario": "ไม่มี source",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "flow-in-card-a-userflow-source",
+      "requirementKey": "flow-in-card-a",
+      "scenario": "วาดไม่ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "sequence-in-cards-package",
+      "requirementKey": "sequence-in-cards",
+      "scenario": "sequence กับ api",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "sequence-in-cards-package-2",
+      "requirementKey": "sequence-in-cards",
+      "scenario": "state กับ async",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "sequence-in-cards-package-3",
+      "requirementKey": "sequence-in-cards",
+      "scenario": "ไม่มีการ์ดที่ตรง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "sequence-in-cards-package-4",
+      "requirementKey": "sequence-in-cards",
+      "scenario": "ไม่มีการ์ดเลย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-visible-1",
+      "requirementKey": "prototype-visible",
+      "scenario": "prototype ไม่ใช่ตัวแรก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-visible-a",
+      "requirementKey": "prototype-visible",
+      "scenario": "ไม่มี prototype",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-visible-package",
+      "requirementKey": "prototype-visible",
+      "scenario": "งานที่ไม่ใช่แบบ A",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-visible-change-start",
+      "requirementKey": "prototype-visible",
+      "scenario": "ไม่กั้นการเริ่ม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "diagram-layout-1",
+      "requirementKey": "diagram-layout",
+      "scenario": "กรอบเลื่อนได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "diagram-layout-diagram",
+      "requirementKey": "diagram-layout",
+      "scenario": "ไม่มี script เพิ่ม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-fixes-package",
+      "requirementKey": "visual-fixes",
+      "scenario": "ป้ายกะทัดรัด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-fixes-g",
+      "requirementKey": "visual-fixes",
+      "scenario": "หัวข้อต่างกัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "no-decision-bar-package",
+      "requirementKey": "no-decision-bar",
+      "scenario": "ไม่มีส่วนตัดสินใจ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "no-decision-bar-package-diagram",
+      "requirementKey": "no-decision-bar",
+      "scenario": "ไม่มี form หรือ script",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "no-decision-bar-commands-change-md",
+      "requirementKey": "no-decision-bar",
+      "scenario": "ถามในแชทเหมือนเดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-status-line-package",
+      "requirementKey": "approval-status-line",
+      "scenario": "อนุมัติแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-status-line-package-2",
+      "requirementKey": "approval-status-line",
+      "scenario": "lane ยังไม่ครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-status-line-package-3",
+      "requirementKey": "approval-status-line",
+      "scenario": "ไม่มีอะไรต้องบอก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-first-page-package",
+      "requirementKey": "decision-first-page",
+      "scenario": "สรุปมาก่อน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-first-page-package-2",
+      "requirementKey": "decision-first-page",
+      "scenario": "ไม่มี scratch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-first-page-3",
+      "requirementKey": "decision-first-page",
+      "scenario": "ไม่ทราบตัวเลขขอบเขต",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "มีคำถามค้าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package-2",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "ไม่มีคำถามค้าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package-3",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "คำถามเป็นข้อความอันตราย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "before-after-and-questions-package-4",
+      "requirementKey": "before-after-and-questions",
+      "scenario": "ไม่มีสรุปก่อน-หลัง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-polish-package",
+      "requirementKey": "visual-polish",
+      "scenario": "แถบความเสี่ยงมีสีตามระดับ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-polish-360px",
+      "requirementKey": "visual-polish",
+      "scenario": "ชิปยาวไม่ล้น",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-polish-package-2",
+      "requirementKey": "visual-polish",
+      "scenario": "แท็กก่อนหลังพอดีตัว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-polish-package-3",
+      "requirementKey": "visual-polish",
+      "scenario": "โหมดมืด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

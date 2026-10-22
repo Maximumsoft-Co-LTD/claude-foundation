@@ -332,16 +332,16 @@ function pageOf(t, state, language) {
   return readFileSync(join(value.packagesDir, `${value.id}.html`), "utf8");
 }
 
-test("the page leads with the summary and scope, then examples, collapsed reviewer details, and the decision bar", (t) => {
+test("the page leads with the summary and scope, then collapsed reviewer details, and ends there", (t) => {
   for (const language of ["en", "th"]) {
-    const html = pageOf(t, pageDraft({ language }));
+    const html = pageOf(t, pageDraft({ language, diagrams: undefined }));
     const at = (needle) => html.indexOf(needle);
-    const order = ['id="risk-why"', 'id="scratch"', 'id="scope"', 'id="reviewer-details"', 'id="decision"'].map(at);
+    const order = ['id="risk-why"', 'id="scratch"', 'id="scope"', 'id="reviewer-details"'].map(at);
     assert.ok(order.every((index) => index > 0), language);
     assert.deepEqual(order, [...order].sort((a, b) => a - b), language);
     assert.match(html, /<details id="reviewer-details"><summary>/);
-    for (const inside of ['id="roles"', 'id="domains"', 'id="diagrams"'])
-      assert.ok(at(inside) > at('id="reviewer-details"') && at(inside) < at('id="decision"'), inside);
+    for (const inside of ['id="roles"', 'id="domains"'])
+      assert.ok(at(inside) > at('id="reviewer-details"') && at(inside) < at("</main>"), inside);
     assert.match(html, language === "th" ? /ต้องตัดสินใจ/ : /Decision needed/);
   }
 });
@@ -372,32 +372,25 @@ test("only the first two examples are open; the rest are collapsed", (t) => {
   assert.ok(many.indexOf("one") < many.indexOf('id="more-examples"'));
 });
 
-test("an unapproved spec shows copy-only reply lines and the consequence, with no script or handler", (t) => {
-  const html = pageOf(t, pageDraft({ diagrams: undefined }));
-  const bar = html.slice(html.indexOf('id="decision"'));
-  assert.equal((bar.match(/<textarea readonly /g) || []).length, 3);
-  assert.match(bar, />approve<\/textarea>/);
-  assert.match(bar, /Approve = Build starts in an isolated workspace/);
-  assert.doesNotMatch(html, /<script|<form|<button|\son[a-z]+=/);
-  const thai = pageOf(t, pageDraft({ language: "th", diagrams: undefined }));
-  assert.match(thai, />ลุยเลย<\/textarea>/);
-  assert.match(thai, /อนุมัติ = เริ่ม Build ในพื้นที่แยก/);
+test("the page has no decision section, reply lines, form, script, or handler", (t) => {
+  for (const language of ["en", "th"]) {
+    const html = pageOf(t, pageDraft({ language, diagrams: undefined }));
+    assert.doesNotMatch(html, /id="decision"|class="decision"|<textarea|class="replies"/);
+    assert.doesNotMatch(html, /<script|<form|<button|\son[a-z]+=/);
+    assert.doesNotMatch(html, /การตัดสินใจของคุณ|Your decision|คัดลอกหนึ่งบรรทัด|Copy one line/);
+  }
 });
 
-test("an approved revision shows no reply lines; a changed revision asks again", (t) => {
+test("a quiet status line says approved, or names the roles still to approve, and is absent otherwise", (t) => {
   const approved = pageOf(t, { ...pageDraft(), specApproval: { required: true, identity: "x", revision: 1 } });
-  assert.match(approved, /Already approved for this revision/);
+  assert.match(approved, /id="approval-status"[^>]*>Approved for this revision\./);
   assert.doesNotMatch(approved, /<textarea/);
   const stale = pageOf(t, { ...pageDraft(), specApproval: { required: true, identity: "x", revision: 0 } });
-  assert.match(stale, /<textarea readonly /);
-});
-
-test("pending approval lanes are named above the reply lines", (t) => {
-  const html = pageOf(t, { ...pageDraft(), specApproval: { required: true, requiredLanes: ["qa", "security"], lanes: {} } });
-  const lanes = html.indexOf('id="pending-lanes"');
-  assert.ok(lanes > 0 && lanes < html.indexOf("<textarea"));
-  assert.match(html, /Still waiting for approval from: qa, security/);
-  assert.doesNotMatch(html, /Already approved/);
+  assert.doesNotMatch(stale, /id="approval-status"|id="pending-lanes"/);
+  const lanes = pageOf(t, { ...pageDraft(), specApproval: { required: true, requiredLanes: ["qa", "security"], lanes: {} } });
+  assert.match(lanes, /id="pending-lanes"[^>]*>Still waiting for approval from: qa, security/);
+  assert.doesNotMatch(lanes, /id="approval-status"/);
+  assert.ok(lanes.indexOf('id="pending-lanes"') < lanes.indexOf('id="scratch"'));
 });
 
 // Readable page: risk scale, before/after cards, questions, failure cards. The
@@ -423,7 +416,7 @@ test("a path-derived reason names the path and what it implies", (t) => {
 
 test("before and after are paired cards; one side alone is not padded; open questions are listed in full", (t) => {
   const both = pageOf(t, pageDraft({ openQuestions: ["Partial refunds?", { question: "Who signs off?" }, "  "] }));
-  assert.match(both, /<div class="card before"><span class="tag">Before<\/span>A line<\/div><div class="arrow" aria-hidden="true">→<\/div><div class="card after"><span class="tag">After<\/span>T line<\/div>/);
+  assert.match(both, /<div class="card before"><span class="side-tag">Before<\/span>A line<\/div><div class="arrow" aria-hidden="true">→<\/div><div class="card after"><span class="side-tag">After<\/span>T line<\/div>/);
   assert.match(both, /id="open-questions"[^>]*><h2>Questions to answer before approving \(2\)<\/h2><ul><li>Partial refunds\?<\/li><li>Who signs off\?<\/li><\/ul>/);
   const one = pageOf(t, pageDraft({ scratch: { ...SCRATCH, toBe: undefined } }));
   assert.match(one, /class="ba single"/);
@@ -523,13 +516,12 @@ test("card text and checklist labels exist in Thai and English with the same key
   assert.deepEqual(keys(packageText("th").reasons).sort(), keys(packageText("en").reasons).sort());
 });
 
-test("Thai text uses installed sans fonts in order, loads nothing from the network, and the bar is static on phones", (t) => {
+test("Thai text uses installed sans fonts in order and loads nothing from the network", (t) => {
   const html = pageOf(t, pageDraft({ language: "th", diagrams: undefined }));
   assert.match(html, /--sans: "Sukhumvit Set", "Leelawadee UI", "Noto Sans Thai", Thonburi, Tahoma, system-ui, sans-serif;/);
   assert.match(html, /font: 17px\/1\.75 var\(--sans\)/);
   assert.doesNotMatch(html, /@import|<link |url\(http|(?<!sans-)serif/);
-  assert.match(html, /@media \(max-width: 640px\) \{[\s\S]*\.decision \{ position: static; \}/);
-  assert.match(html, /\.decision \{ position: sticky; bottom: 0;/);
+  assert.match(html, /@media \(max-width: 640px\)/);
   assert.doesNotMatch(html, /<script|<form|<button|\son[a-z]+=/);
 });
 
@@ -575,7 +567,7 @@ test("with no reasons the page shows the level and scale but no reason list", (t
   const { runtime, id } = fixture(t, { state: pageDraft() });
   const model = runtime.buildModel(id);
   const html = renderApprovalPackage({ ...model, route: { ...model.route, reasons: [] } });
-  assert.match(html, /class="meter"/);
+  assert.match(html, /class="meter lvl-/);
   assert.match(html, /class="chip risk risk-/);
   assert.doesNotMatch(html, /id="risk-why"/);
 });
@@ -629,4 +621,115 @@ test("the checklist has no recommended entries while no section is only advised"
   const html = pageOf(t, pageDraft({ workType: ["ml"], modelCard: { intendedUse: "u", model: "m", fallback: "f", versionPin: "1", evaluation: "unknown: no set yet" } }));
   assert.doesNotMatch(html, /class="skip"/);
   assert.match(html, /<dt>Evaluation set<\/dt><dd><span class="unknown">unknown<\/span> no set yet<\/dd>|Evaluation[^<]*<\/dt><dd><span class="unknown">unknown<\/span> no set yet/);
+});
+
+// Diagrams and prototype on the cards, no decision bar, and visual polish.
+const FLOW = "flowchart LR\n  A --> B";
+const SEQ = "sequenceDiagram\n  U->>S: go";
+const STATE = "stateDiagram-v2\n  [*] --> a";
+const section = (html, id) => {
+  const start = html.indexOf(`id="card-${id}"`);
+  if (start < 0) return "";
+  const next = html.indexOf('<section class="type-card"', start + 1);
+  const end = next > 0 ? next : html.indexOf('<div class="two">', start);
+  return html.slice(start, end > 0 ? end : undefined);
+};
+const count = (html, text) => html.split(text).length - 1;
+const diagramDraft = (extra = {}) => pageDraft({ diagrams: undefined, ...extra });
+const mermaid = (type, key = "m") => ({ key, type: "mermaid", purpose: `P-${key}`, source: type });
+
+test("the user flow is drawn inside card A, once, and not repeated in reviewer details", (t) => {
+  const html = pageOf(t, diagramDraft({ userFlow: { purpose: "Flow", source: FLOW } }));
+  const card = section(html, "A");
+  assert.equal(count(card, 'class="mermaid"'), 1);
+  assert.match(card, /<details class="diagram" open><summary>Flow<\/summary><div class="dg"><pre class="mermaid">flowchart LR/);
+  assert.equal(count(html, "flowchart LR"), 1);
+  assert.doesNotMatch(html.slice(html.indexOf('id="reviewer-details"')), /class="mermaid"/);
+});
+
+test("a user flow with a purpose but no source shows the purpose and no empty frame", (t) => {
+  const html = pageOf(t, diagramDraft({ userFlow: { purpose: "Only words" } }));
+  assert.match(section(html, "A"), /Only words/);
+  assert.doesNotMatch(html, /class="diagram"|class="mermaid"/);
+});
+
+test("without the Mermaid file the diagram source stays readable text in its card", (t) => {
+  const value = fixture(t, { state: diagramDraft({ userFlow: { purpose: "Flow", source: FLOW } }) });
+  const model = { ...value.runtime.buildModel(value.id), mermaidHref: null };
+  const html = renderApprovalPackage(model);
+  assert.match(section(html, "A"), /<pre class="mermaid">flowchart LR\n  A --&gt; B<\/pre>/);
+  assert.doesNotMatch(html, /<script/);
+});
+
+test("each diagram is placed once in the card it explains, by its kind", (t) => {
+  const api = pageOf(t, diagramDraft({ workType: ["api", "feature"], apiContracts: [], diagrams: [mermaid(SEQ)] }));
+  assert.equal(count(section(api, "D"), SEQ.split("\n")[0]), 1);
+  assert.doesNotMatch(section(api, "A"), /sequenceDiagram/);
+  assert.equal(count(api, "sequenceDiagram"), 1);
+  const jobs = pageOf(t, diagramDraft({ workType: ["async"], diagrams: [mermaid(STATE)] }));
+  assert.equal(count(section(jobs, "F"), "stateDiagram-v2"), 1);
+  const docs = pageOf(t, diagramDraft({ workType: ["docs"], diagrams: [mermaid(SEQ)] }));
+  assert.equal(count(section(docs, "C"), "sequenceDiagram"), 1);
+  assert.equal(count(docs, "sequenceDiagram"), 1);
+});
+
+test("a diagram with no card to take it stays in the reviewer details", (t) => {
+  const html = pageOf(t, diagramDraft({ workType: undefined, diagrams: [mermaid(SEQ)] }));
+  assert.doesNotMatch(html, /id="card-/);
+  const details = html.slice(html.indexOf('id="reviewer-details"'));
+  assert.equal(count(details, "sequenceDiagram"), 1);
+  assert.match(details, /id="diagrams"/);
+});
+
+test("a diagram frame is titled, open, and scrolls sideways; the page adds no script beyond the Mermaid loader", (t) => {
+  const html = pageOf(t, diagramDraft({ userFlow: { purpose: "Flow", source: FLOW } }));
+  assert.match(html, /\.diagram \.dg \{ overflow-x: auto;/);
+  assert.equal(count(html, "<script"), count(html, "<script src="));
+  assert.doesNotMatch(html, /<form|<button|\son[a-z]+=/);
+});
+
+test("a prototype leads the examples and stays open; other examples keep their order", (t) => {
+  const examples = [TERMINAL("first"), TERMINAL("second"), { type: "prototype", title: "Proto", path: "p.html" }];
+  const html = pageOf(t, diagramDraft({ examples }));
+  const order = ["Proto", "first", "second"].map((title) => html.indexOf(`<h3>${title}</h3>`));
+  assert.ok(order.every((index) => index > 0));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+  assert.ok(html.indexOf('<h3>Proto</h3>') < html.indexOf('id="more-examples"') || !html.includes('id="more-examples"'));
+  assert.match(html.slice(html.indexOf('id="example-0"')), /^id="example-0"><div class="block-h"><h3>Proto<\/h3>/);
+});
+
+test("card A says there is no prototype yet only when it is shown without one", (t) => {
+  assert.match(section(pageOf(t, diagramDraft({ workType: ["ui"] })), "A"), /id="no-prototype"[^>]*>No prototype yet\./);
+  assert.match(pageOf(t, diagramDraft({ workType: ["ui"], language: "th" })), /id="no-prototype"[^>]*>ยังไม่มี prototype/);
+  const withProto = pageOf(t, diagramDraft({ workType: ["ui"], examples: [{ type: "prototype", title: "P", path: "p.html" }] }));
+  assert.doesNotMatch(withProto, /id="no-prototype"/);
+  assert.doesNotMatch(pageOf(t, diagramDraft({ workType: ["bugfix"] })), /id="no-prototype"/);
+});
+
+test("a ui draft without a prototype raises no issue about prototypes", () => {
+  const issues = scratchFieldIssues({ language: "en", workType: ["ui"], examples: [] });
+  assert.doesNotMatch(JSON.stringify(issues), /prototype/i);
+});
+
+test("before and after tags are compact, and the two personal-data cards have different headings", (t) => {
+  const html = pageOf(t, diagramDraft());
+  assert.doesNotMatch(html.slice(html.indexOf('class="ba'), html.indexOf('id="scope"')), /class="tag"/);
+  assert.match(html, /\.ba \.side-tag \{ display: block; width: fit-content;/);
+  const privacy = { privacyAssessment: { purpose: "p", retention: "r", data: [{ field: "email", class: "pii" }] } };
+  for (const language of ["en", "th"]) {
+    const card = section(pageOf(t, diagramDraft({ language, workType: ["privacy"], ...privacy })), "G");
+    const heads = [...card.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1]);
+    assert.ok(heads.length >= 2 && new Set(heads).size === heads.length, `${language}: ${heads}`);
+  }
+});
+
+test("the risk meter is coloured by level with the level also in words, and the page wraps long chips in both themes", (t) => {
+  const html = pageOf(t, diagramDraft());
+  assert.match(html, /class="meter lvl-(Low|Medium|High|Critical)"/);
+  for (const level of ["Low", "Medium", "High", "Critical"]) assert.match(html, new RegExp(`\\.meter\\.lvl-${level} li\\.on`));
+  assert.match(html, /class="chip risk risk-/);
+  assert.match(html, /\.why li \{[^}]*overflow-wrap: anywhere/);
+  assert.match(html, /\.chips li \{[^}]*max-width: 100%/);
+  assert.match(html, /@media \(prefers-color-scheme: dark\) \{ :root \{[^}]*--high:[^}]*--shadow: none/);
+  assert.doesNotMatch(html, /\.meter\.lvl-[A-Za-z]+ li\.on \{ background: #/);
 });

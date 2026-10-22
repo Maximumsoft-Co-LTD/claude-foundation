@@ -97,7 +97,7 @@ const PANELS = Object.freeze({
   ],
   G: [
     { key: "privacyAssessment", kind: "rows", source: "privacyAssessment", fields: ["purpose", "retention"], need: ["privacy"] },
-    { key: "privacyData", kind: "table", source: "privacyAssessment.data", cols: ["field", "class"], need: ["privacy"], title: "privacyAssessment" },
+    { key: "privacyData", kind: "table", source: "privacyAssessment.data", cols: ["field", "class"], need: ["privacy"], title: "privacyData" },
     { key: "threatModel", kind: "table", source: "threatModel.threats", cols: ["threat", "likelihood", "impact", "control", "residual"], need: ["privacy", "security"] },
     { key: "hardening", kind: "rows", source: "hardening", fields: ["weakness", "control", "verification"], need: ["security"] },
     { key: "modelCard", kind: "rows", source: "modelCard", fields: ["intendedUse", "model", "fallback", "evaluation"], need: ["ml"] }
@@ -210,7 +210,41 @@ export function renderChecklist(draft, t) {
     `<p class="legend">${esc(c.checkLegend)}</p></section>`;
 }
 
-export function renderTypeCards(draft, t) {
+// Where a diagram reads best: a sequence is an interface story (D, then F), a
+// state machine is a data or job story (F, then E), a user flow is a screen
+// story (A). The first preferred card that is shown wins; none shown falls back
+// to the first card on the page, and no cards at all leaves it for the
+// reviewer section. Each diagram is placed exactly once.
+const DIAGRAM_PREFERENCE = Object.freeze({ sequence: ["D", "F", "A"], state: ["F", "E", "A"], flow: ["A"], other: ["A"] });
+
+function diagramKind(row) {
+  if (row.key === "user-flow") return "flow";
+  const head = String(row.source || "").trim().split(/\s+/)[0] || "";
+  if (/^sequenceDiagram/i.test(head)) return "sequence";
+  if (/^stateDiagram/i.test(head)) return "state";
+  return "other";
+}
+
+export function placeDiagrams(draft, diagrams) {
+  const ids = isObject(draft) ? cardsFor(inferWorkTypes(draft)) : [];
+  const byCard = {};
+  const leftover = [];
+  for (const row of diagrams) {
+    const target = DIAGRAM_PREFERENCE[diagramKind(row)].find((id) => ids.includes(id)) || ids[0];
+    if (!target) { leftover.push(row); continue; }
+    (byCard[target] ||= []).push(row);
+  }
+  return { byCard, leftover };
+}
+
+// One titled frame per diagram: open, collapsible, and scrolling sideways when
+// it is wider than the screen. Without Mermaid the source stays readable text.
+function diagramFrame(row) {
+  return `<details class="diagram" open><summary>${esc(row.purpose || row.key)}</summary>` +
+    `<div class="dg"><pre class="mermaid">${esc(row.source)}</pre></div></details>`;
+}
+
+export function renderTypeCards(draft, t, { placement = { byCard: {} }, noPrototype = false } = {}) {
   if (!isObject(draft)) return "";
   const c = t.cards;
   const types = inferWorkTypes(draft);
@@ -222,7 +256,9 @@ export function renderTypeCards(draft, t) {
     const panels = PANELS[id].filter((panel) => !panel.variant || panel.variant === variant)
       .map((panel) => renderPanel(panel, draft, types, t)).join("");
     return `<section class="type-card" id="card-${id}" data-card="${id}"><div class="head"><span class="badge">${esc(id)} · ${esc(c.names[id])}</span>` +
-      `<p class="q"><span>${esc(c.ask)}</span>${esc(c.asks[id])}</p></div><div class="grid">${panels}</div></section>`;
+      `<p class="q"><span>${esc(c.ask)}</span>${esc(c.asks[id])}</p></div><div class="grid">${panels}</div>` +
+      `${list(placement.byCard[id]).map(diagramFrame).join("")}` +
+      (id === "A" && noPrototype ? `<p class="notice small" id="no-prototype">${esc(t.noPrototype)}</p>` : "") + `</section>`;
   }).join("");
   return `<section id="type-cards">${cards}<div class="two">${fact(c.undo, undo, t)}${fact(c.who, who, t)}</div></section>`;
 }

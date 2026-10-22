@@ -83,18 +83,18 @@ each reason for it in plain words; the four summary lines, with before and
 after side by side; a scope strip (files touched, open questions, failure
 cases; a count the draft cannot give reads **unknown**, never 0); the decision
 cards for your kind of work; a checklist of required sections; failure cases as
-cards (when it happens, what happens, how to recover); the first two examples
-open and the rest collapsed; the open questions in full; a collapsed
-**Reviewer details** section (role tables, technical domains, diagrams,
-suggested previews); and a decision bar. The bar says that approving starts
-Build in an isolated workspace and leaves your main checkout untouched, and
-lists reply lines to copy into the chat (approve, request changes, reject). The
-page has no button, form, or script beyond the Mermaid loader and records
-nothing: your chat reply is the decision. If this revision is already approved
-the bar says so and shows no reply lines; if approval lanes are still missing it
-names the roles above the reply lines. Text uses the Thai-capable sans fonts
-already on your machine and nothing is fetched; on a phone the bar sits at the
-end of the page instead of covering it.
+cards (when it happens, what happens, how to recover); the examples, with a
+prototype first and open; the open questions in full; and a collapsed
+**Reviewer details** section (role tables, technical domains, suggested
+previews). Diagrams sit in the card they explain: the flow chart in card A, a
+sequence diagram in card D (else F), a state diagram in card F (else E); each
+is open, can be collapsed, and scrolls sideways when wide. If card A has no
+prototype it says so; that is a note, never a block. The page has no decision
+section, button, form, or script beyond the Mermaid loader and records
+nothing: you decide by replying in the chat. A quiet line under the risk level
+says when this revision is already approved, or names the approval lanes still
+missing. Text uses the Thai-capable sans fonts already on your machine and
+nothing is fetched.
 
 **Decision cards.** Each kind of work shows one card with the question you are
 deciding and the fields that answer it. A field the draft does not give reads

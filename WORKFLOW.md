@@ -593,20 +593,26 @@ cards; a scope strip of files touched, open questions, and failure cases (a
 count the draft cannot give reads `unknown`, never 0); the decision cards for
 the change's kind of work; the required-section checklist; failure cases as
 cards of trigger, what happens, and recovery (recovery appears only when the
-draft states it); the first two examples, with the rest collapsed; the open
-questions in full; one collapsed reviewer-details section holding the summary,
-technical domains, role tables, suggested previews, and diagrams; and a decision
-bar. The bar states that approving starts Build in the isolated workspace and
-leaves the main checkout untouched, and lists copyable reply lines for approve,
-request changes, and reject in read-only text. The page carries no form, button,
-handler, or script beyond the Mermaid loader, and records nothing: the user's
-chat reply is the decision. When the spec is already approved for the page's
-revision, the bar says so and offers no reply lines. When `approval.roles` lanes
-are still missing, their roles are named above the reply lines. A change with no
-typed draft hides the scope strip, the cards, and the checklist. The page uses
-the installed Thai-capable sans fonts (Sukhumvit Set, Leelawadee UI, Noto Sans
-Thai, Thonburi, Tahoma) at a 17px base and loads nothing from the network; at
-640px or narrower the bar is an ordinary block at the end of the page.
+draft states it); the first two examples open, with a
+prototype always first, and the rest collapsed; the open questions in full; and one
+collapsed reviewer-details section holding the summary, technical domains, role
+tables, suggested previews, and any diagram no card took. The page has no
+decision section: it carries no form, button, handler, textarea, or script
+beyond the Mermaid loader, and records nothing; the user's reply in the chat is
+the decision. Under the risk block one quiet status line says the spec is
+approved for the page's revision, or names the `approval.roles` lanes still
+missing, and is absent when there is nothing to say. A change with no typed
+draft hides the scope strip, the cards, and the checklist. The page uses the
+installed Thai-capable sans fonts (Sukhumvit Set, Leelawadee UI, Noto Sans Thai,
+Thonburi, Tahoma) at a 17px base and loads nothing from the network.
+
+**Diagrams and prototype on the cards.** Each diagram sits, open and
+collapsible and scrolling sideways when wide, in the card it explains, once: the
+`userFlow.source` flow chart in card A; a `sequenceDiagram` in card D, else F,
+else A; a `stateDiagram` in card F, else E, else A; any other diagram in card A.
+A diagram whose preferred cards are not shown goes to the first card shown, and
+with no cards at all stays in reviewer details. Card A says there is no
+prototype yet when it is shown without one; this is a note, never a gate.
 
 **Decision cards.** Each work type maps to one of seven kinds of decision, and
 the page shows the card of every kind the change's declared or inferred work

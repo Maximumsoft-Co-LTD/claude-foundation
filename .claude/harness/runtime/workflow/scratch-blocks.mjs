@@ -40,12 +40,8 @@ const TEXT = {
     scratchMissing: "No plain-language summary yet. Ask the agent to add 'scratch' to the draft before you decide.",
     moreExamples: "More examples", reviewerDetails: "Reviewer details",
     reviewerSummary: "artifacts, domains, diagrams, and suggested previews", approvedBanner:
-      "Already approved for this revision. Nothing to decide here.",
-    pendingLanes: "Still waiting for approval from:", decide: "Your decision",
-    replyHow: "Copy one line into the chat. Nothing here changes state.",
-    replyApprove: "Approve", replyChange: "Request changes", replyReject: "Reject",
-    replyApproveText: "approve", replyChangeText: "request changes: <what to change>", replyRejectText: "reject",
-    consequence: "Approve = Build starts in an isolated workspace; your main checkout is not touched.",
+      "Approved for this revision.",
+    pendingLanes: "Still waiting for approval from:",
     // Risk scale, open questions, failure cards, and the type cards' text.
     riskScale: "level {n} of 4", riskBasis: "Computed from what this change touches",
     questionsBox: "Questions to answer before approving", questionsHint: "Answer together with the approval, for example: go ahead, no partial refunds.",
@@ -61,6 +57,7 @@ const TEXT = {
     },
     riskWords: { Low: "Low", Medium: "Medium", High: "High", Critical: "Critical" },
     cardsFailed: "Part of this page could not be built; read the packet for that part",
+    noPrototype: "No prototype yet.",
     fontNote: "", pathLabel: "path",
     cards: {
       ask: "Question to decide", undo: "How to undo", who: "Who is affected", derived: "from", noneWord: "none",
@@ -77,7 +74,7 @@ const TEXT = {
         configContract: "Config values", apiContracts: "Contract", boundaries: "Connections", libraryContract: "Library contract",
         deprecationPlan: "Deprecation plan", dataModel: "Data before and after", migrationPlan: "Migration plan", rollout: "Rollout",
         infraPlan: "Infrastructure", nfr: "Quality targets", performanceAnalysis: "Performance", jobContract: "If it breaks (jobs)",
-        integrations: "External systems", observability: "Signals and alerts", privacyAssessment: "Personal data", threatModel: "Threats", modelCard: "Model",
+        integrations: "External systems", observability: "Signals and alerts", privacyAssessment: "Personal data", privacyData: "Personal data fields", threatModel: "Threats", modelCard: "Model",
         dataFix: "Data fix", hardening: "Security hardening", pipelinePlan: "Pipeline change"
       },
       f: {
@@ -139,11 +136,8 @@ const TEXT = {
     scratchMissing: "ยังไม่มีสรุปภาษาคน ให้ agent เติม 'scratch' ใน draft ก่อนตัดสินใจ",
     moreExamples: "ตัวอย่างอื่น", reviewerDetails: "รายละเอียดสำหรับผู้ตรวจ",
     reviewerSummary: "artifact, domain, แผนภาพ และ preview ที่แนะนำ", approvedBanner:
-      "อนุมัติแล้วสำหรับฉบับนี้ ไม่มีอะไรต้องตัดสินใจ",
-    pendingLanes: "ยังรออนุมัติจาก:", decide: "การตัดสินใจของคุณ",
-    replyHow: "คัดลอกหนึ่งบรรทัดไปตอบในแชท หน้านี้ไม่เปลี่ยนสถานะอะไร",
-    replyApprove: "อนุมัติ", replyChange: "ขอแก้ไข", replyReject: "ปฏิเสธ",
-    replyApproveText: "ลุยเลย", replyChangeText: "ขอแก้: <ระบุสิ่งที่ต้องแก้>", replyRejectText: "ปฏิเสธ",
+      "อนุมัติแล้วสำหรับฉบับนี้",
+    pendingLanes: "ยังรออนุมัติจาก:",
     // แถบความเสี่ยง คำถามที่ค้าง การ์ดกรณีพลาด และข้อความของการ์ดตามชนิดงาน
     riskScale: "ระดับที่ {n} จาก 4", riskBasis: "ระบบคำนวณจากสิ่งที่ change นี้แตะ",
     questionsBox: "คำถามที่ต้องตอบก่อนอนุมัติ", questionsHint: "ตอบรวมไปกับการอนุมัติได้ เช่น ลุยเลย ไม่ต้องคืนบางส่วน",
@@ -159,6 +153,7 @@ const TEXT = {
     },
     riskWords: { Low: "ต่ำ", Medium: "ปานกลาง", High: "สูง", Critical: "วิกฤต" },
     cardsFailed: "สร้างบางส่วนของหน้านี้ไม่ได้ ให้อ่านส่วนนั้นจาก packet",
+    noPrototype: "ยังไม่มี prototype",
     fontNote: "", pathLabel: "path",
     cards: {
       ask: "คำถามที่ต้องตัดสิน", undo: "ย้อนกลับได้ไหม", who: "ใครได้รับผลกระทบ", derived: "จาก", noneWord: "ไม่มี",
@@ -175,7 +170,7 @@ const TEXT = {
         configContract: "ค่า config", apiContracts: "สัญญา", boundaries: "การเชื่อมต่อ", libraryContract: "สัญญาของไลบรารี",
         deprecationPlan: "แผนเลิกใช้", dataModel: "ข้อมูลก่อน → หลัง", migrationPlan: "แผนย้าย", rollout: "การปล่อย",
         infraPlan: "โครงสร้างที่เปลี่ยน", nfr: "เป้าคุณภาพ", performanceAnalysis: "ประสิทธิภาพ", jobContract: "ถ้าพัง (งานเบื้องหลัง)",
-        integrations: "ระบบภายนอก", observability: "สัญญาณและการแจ้งเตือน", privacyAssessment: "ข้อมูลส่วนบุคคล", threatModel: "ภัยคุกคาม", modelCard: "โมเดล",
+        integrations: "ระบบภายนอก", observability: "สัญญาณและการแจ้งเตือน", privacyAssessment: "ข้อมูลส่วนบุคคล", privacyData: "ฟิลด์ข้อมูลส่วนบุคคล", threatModel: "ภัยคุกคาม", modelCard: "โมเดล",
         dataFix: "การแก้ข้อมูล", hardening: "การเสริมความปลอดภัย", pipelinePlan: "การเปลี่ยน pipeline"
       },
       f: {
@@ -209,7 +204,6 @@ const TEXT = {
         releasePlan: "แผนปล่อย", modelCard: "model card", dataFix: "แผนแก้ข้อมูล", hardening: "การเสริมความปลอดภัย", pipelinePlan: "แผน pipeline"
       }
     },
-    consequence: "อนุมัติ = เริ่ม Build ในพื้นที่แยก โค้ดหลักของคุณยังไม่ถูกแตะ",
     packet: "Packet:", suggestionsNote: "ไม่บังคับ คำแนะนำไม่บล็อกการอนุมัติหรือ Build",
     capabilityWord: "capability", noProvider: "ยังไม่มี provider ประกาศ provider ที่มี capability",
     noProviderTail: "ใน evidence.yaml", externalRef: "ภายนอก: ต้องมี decision-ref",

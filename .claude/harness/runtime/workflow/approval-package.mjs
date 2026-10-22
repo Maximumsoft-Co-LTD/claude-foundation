@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { APPROVAL_ROLES, routeChange } from "../contracts/scratch-router.mjs";
 import { missingApprovalLanes } from "../core/user-decisions.mjs";
 import { esc, packageText, renderExample } from "./scratch-blocks.mjs";
-import { renderChecklist, renderTypeCards, show } from "./approval-cards.mjs";
+import { placeDiagrams, renderChecklist, renderTypeCards, show } from "./approval-cards.mjs";
 
 // The harness ships Mermaid once; a package loads it by relative path.
 export const MERMAID_VENDOR = fileURLToPath(new URL("../../vendor/mermaid.min.js", import.meta.url));
@@ -297,21 +297,17 @@ function scopeStrip(model, t) {
     `${item(counts.questions, t.questionsWord)}${item(counts.failures, t.failuresWord)}</ul></section>`;
 }
 
-// Reply lines are plain text for the user to copy into the chat; the page
-// records nothing, and it adds no script or form.
-function decisionBar(model, t) {
+// One quiet line under the header: this revision is approved, or the roles that
+// have not approved yet. The page records and asks nothing; the decision is
+// made in the chat.
+function statusLine(model, t) {
   const { approved, missingLanes } = model.approval ?? { approved: false, missingLanes: [] };
-  if (approved) return `<section class="decision" id="decision"><p class="notice">${esc(t.approvedBanner)}</p></section>`;
-  const lines = [t.replyApproveText, t.replyChangeText, t.replyRejectText];
-  const names = [t.replyApprove, t.replyChange, t.replyReject];
-  return `<section class="decision" id="decision"><h2>${esc(t.decide)}</h2>` +
-    (missingLanes.length ? `<p class="warn" id="pending-lanes">${esc(t.pendingLanes)} ${esc(missingLanes.join(", "))}</p>` : "") +
-    `<p class="muted small">${esc(t.consequence)}</p><p class="muted small">${esc(t.replyHow)}</p>` +
-    `<ul class="replies">${lines.map((line, index) => `<li><label for="reply-${index}">${esc(names[index])}</label>` +
-      `<textarea readonly rows="1" id="reply-${index}">${esc(line)}</textarea></li>`).join("")}</ul></section>`;
+  if (approved) return `<p class="notice status" id="approval-status">${esc(t.approvedBanner)}</p>`;
+  return missingLanes.length
+    ? `<p class="warn status" id="pending-lanes">${esc(t.pendingLanes)} ${esc(missingLanes.join(", "))}</p>` : "";
 }
 
-// The risk level, hero, and decision bar below replace the chip-only header of
+// The risk level and hero below replace the chip-only header of
 // the first approval-page change; everything else of that change is kept.
 const RISK_STEP = Object.freeze({ Low: 1, Medium: 2, High: 3, Critical: 4 });
 
@@ -336,7 +332,7 @@ function riskBlock(route, state, t) {
   const labels = Object.keys(RISK_STEP);
   return `<div class="riskbox"><p><span class="chip risk risk-${esc(route.level)}">${esc(t.risk)}: ${esc(t.riskLevels?.[route.level] || route.level)}</span>` +
     ` <span class="muted small">${esc(t.riskScale.replace("{n}", step))} · ${esc(t.riskBasis)} · ${esc(t.revision)} ${esc(state.contractRevision || 0)}</span></p>` +
-    `<ul class="meter" aria-hidden="true">${labels.map((_, index) => `<li${index < step ? ' class="on"' : ""}></li>`).join("")}</ul>` +
+    `<ul class="meter lvl-${esc(route.level)}" aria-hidden="true">${labels.map((_, index) => `<li${index < step ? ' class="on"' : ""}></li>`).join("")}</ul>` +
     `<p class="meter-labels" aria-hidden="true">${labels.map((name) => `<span${name === route.level ? ' class="on"' : ""}>${esc(t.riskWords[name])}</span>`).join("")}</p>` +
     (route.reasons.length ? `<ul class="why" id="risk-why" aria-label="${esc(t.riskWhy)}">${route.reasons.map((reason) => `<li>${esc(reasonText(reason, t))}</li>`).join("")}</ul>` : "") + `</div>`;
 }
@@ -378,7 +374,7 @@ function heroSection(model, t) {
   if (!any) return `<section class="hero" id="scratch"><p class="q-get"><b>${esc(t.get)}</b>${esc(model.state.intent || model.id)}</p>` +
     `<p class="notice warn small">${esc(t.scratchMissing)}</p></section>`;
   const side = (key, tag, cls) => line(key)
-    ? `<div class="card ${cls}"><span class="tag">${esc(tag)}</span>${esc(line(key))}</div>` : "";
+    ? `<div class="card ${cls}"><span class="side-tag">${esc(tag)}</span>${esc(line(key))}</div>` : "";
   const before = side("asIs", t.before, "before");
   const after = side("toBe", t.after, "after");
   return `<section class="hero" id="scratch">` +
@@ -400,7 +396,10 @@ function safely(build, t) {
 export function renderApprovalPackage(model) {
   const { id, state, route, draft, diagrams, artifacts, suggestions, legacy, proposal } = model;
   const t = packageText(draft?.language);
-  const examples = Array.isArray(draft?.examples) ? draft.examples.filter((row) => row && typeof row === "object") : [];
+  const declared = Array.isArray(draft?.examples) ? draft.examples.filter((row) => row && typeof row === "object") : [];
+  // A prototype is what an approver most wants to see: it goes first and open;
+  // the rest keep their order.
+  const examples = [...declared.filter((row) => row.type === "prototype"), ...declared.filter((row) => row.type !== "prototype")];
   const evidenceText = { proof: t.proof, preview: t.preview, stale: t.stale, none: t.noEvidence };
   const artifactName = (row) => t.artifactNames?.[row.id] || row.label;
   const roleSections = APPROVAL_ROLES.map((role) => {
@@ -417,10 +416,21 @@ export function renderApprovalPackage(model) {
     }).join("");
     return `<section class="role" id="role-${role}"><h3>${esc(ROLE_LABELS[role])}</h3>${body}${details}</section>`;
   }).join("\n");
-  const diagramBlocks = diagrams.length
-    ? diagrams.map((row) => `<figure><figcaption>${esc(row.purpose || row.key)}</figcaption>` +
-      `<pre class="mermaid">${esc(row.source)}</pre></figure>`).join("\n")
-    : `<p>${esc(t.noDiagrams)}</p>`;
+  // Diagrams sit in the cards they explain; only those no card took stay in the
+  // reviewer section. If the cards cannot be built, every diagram stays there.
+  let typeCards = "";
+  let leftover = diagrams;
+  if (!legacy) {
+    try {
+      const placement = placeDiagrams(draft, diagrams);
+      typeCards = renderTypeCards(draft, t, { placement, noPrototype: !examples.some((row) => row.type === "prototype") });
+      leftover = placement.leftover;
+    } catch (error) { typeCards = safely(() => { throw error; }, t); }
+  }
+  const diagramBlocks = leftover.length
+    ? leftover.map((row) => `<details class="diagram" open><summary>${esc(row.purpose || row.key)}</summary>` +
+      `<div class="dg"><pre class="mermaid">${esc(row.source)}</pre></div></details>`).join("\n")
+    : diagrams.length ? "" : `<p>${esc(t.noDiagrams)}</p>`;
   const needsMermaid = diagrams.length > 0 || examples.some((row) => row.type === "mermaid");
   const mermaid = needsMermaid && model.mermaidHref ? `<script src="${esc(model.mermaidHref)}"></script>` : "";
   const OPEN_EXAMPLES = 2;
@@ -431,7 +441,7 @@ export function renderApprovalPackage(model) {
         ? `<details id="more-examples"><summary>${esc(t.moreExamples)} (${examples.length - OPEN_EXAMPLES})</summary>${
           examples.slice(OPEN_EXAMPLES).map((row, index) => exampleSection(row, index + OPEN_EXAMPLES, model, t)).join("\n")}</details>`
         : ""}</section>` : "";
-  const reviewerCount = artifacts.length + diagrams.length + suggestions.length;
+  const reviewerCount = artifacts.length + leftover.length + suggestions.length;
   const suggestionBlock = suggestions.length
     ? `<section id="preview-suggestions"><h2>${esc(t.suggestions)}</h2><p>${esc(t.suggestionsNote)}</p><ul>${
       suggestions.map((row) => `<li><strong>${esc(row.artifact)}</strong> (${esc(t.capabilityWord)} <code>${esc(row.capability)}</code>): ${
@@ -451,11 +461,12 @@ export function renderApprovalPackage(model) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(id)} approval package</title>
 <style>
-:root { --bg: #f6f7f9; --fg: #17212b; --muted: #5a6876; --line: #d5dce3; --accent: #1f5f8b; --ok: #2e7d4f; --warn: #9a6400; --bad: #b3261e; --card: #ffffff;
+:root { --bg: #f6f7f9; --fg: #17212b; --muted: #5a6876; --line: #d5dce3; --accent: #1f5f8b; --ok: #2e7d4f; --warn: #9a6400; --bad: #b3261e; --high: #b8530a; --card: #ffffff; --shadow: 0 1px 2px rgba(16, 24, 40, .07), 0 2px 8px rgba(16, 24, 40, .04);
   --sans: "Sukhumvit Set", "Leelawadee UI", "Noto Sans Thai", Thonburi, Tahoma, system-ui, sans-serif; }
-@media (prefers-color-scheme: dark) { :root { --bg: #11171d; --fg: #e4eaf0; --muted: #94a3b2; --line: #2a3644; --accent: #6fb0dd; --ok: #6cc596; --warn: #e8b052; --bad: #ff9088; --card: #19222b; color-scheme: dark; } }
+@media (prefers-color-scheme: dark) { :root { --bg: #11171d; --fg: #e4eaf0; --muted: #94a3b2; --line: #2a3644; --accent: #6fb0dd; --ok: #6cc596; --warn: #e8b052; --bad: #ff9088; --high: #ffa05c; --card: #19222b; --shadow: none; color-scheme: dark; } }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.75 var(--sans); }
-main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 24px; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 24px; min-width: 0; }
+main > * { min-width: 0; }
 h1, h2, h3 { line-height: 1.25; margin: 0 0 8px; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -521,46 +532,48 @@ pre.mermaid { overflow-x: auto; background: transparent; border: 1px solid var(-
 .scope ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; }
 .scope li b { font-size: 1.25em; }
 #reviewer-details > summary { cursor: pointer; padding: 8px 0; }
-.decision { position: sticky; bottom: 0; background: var(--bg); border-top: 2px solid var(--accent); padding: 12px 0; display: grid; gap: 6px; }
-.decision h2 { font-size: 1.05em; margin: 0; }
-.replies { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.replies label { display: block; font-size: .85em; color: var(--muted); }
-.replies textarea { width: 100%; box-sizing: border-box; font: inherit; background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; resize: none; }
 h1, h2, h3 { font-weight: 600; }
+h1 { font-size: 1.9rem; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.diagram { border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: var(--shadow); margin-top: 12px; }
+.diagram > summary { cursor: pointer; padding: 8px 14px; font-weight: 600; }
+.diagram .dg { overflow-x: auto; padding: 0 14px 12px; }
+.diagram pre.mermaid { border: 0; padding: 0; margin: 0; }
 .riskbox { display: grid; gap: 6px; } .riskbox .chip { font-size: 1em; padding: 2px 12px; }
 .meter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; list-style: none; margin: 0; padding: 0; }
-.meter li { height: 10px; border: 1.5px solid var(--fg); border-radius: 2px; } .meter li.on { background: var(--fg); }
+.meter li { height: 10px; border: 1.5px solid var(--muted); border-radius: 3px; } .meter li.on { background: var(--fg); border-color: var(--fg); }
+.meter.lvl-Low li.on { background: var(--ok); border-color: var(--ok); } .meter.lvl-Medium li.on { background: var(--warn); border-color: var(--warn); }
+.meter.lvl-High li.on { background: var(--high); border-color: var(--high); } .meter.lvl-Critical li.on { background: var(--bad); border-color: var(--bad); }
+.status { margin: 4px 0 0; }
 .meter-labels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; font-size: .78em; color: var(--muted); margin: 0; }
 .meter-labels .on { color: var(--fg); font-weight: 700; }
 .why { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
-.why li { border: 1px dashed var(--muted); border-radius: 999px; padding: 0 12px; font-size: .88em; }
+.why li { border: 1px dashed var(--muted); border-radius: 14px; padding: 0 12px; font-size: .88em; max-width: 100%; overflow-wrap: anywhere; }
 .get { font-size: 1.3em; line-height: 1.5; border-left: 5px solid var(--ok); padding: 4px 0 4px 16px; margin: 0; } .get b { display: block; font-size: .6em; color: var(--muted); font-weight: 600; }
 .ba { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: stretch; } .ba.single { grid-template-columns: 1fr; }
-.ba .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
-.ba .tag { display: block; font: 700 .75em ui-monospace, Menlo, monospace; letter-spacing: .06em; margin-bottom: 4px; }
-.ba .before { border-top: 4px solid var(--bad); } .ba .before .tag { color: var(--bad); }
-.ba .after { border-top: 4px solid var(--ok); } .ba .after .tag { color: var(--ok); }
+.ba .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; box-shadow: var(--shadow); }
+.ba .side-tag { display: block; width: fit-content; font: 700 .8em ui-monospace, Menlo, monospace; letter-spacing: .06em; margin-bottom: 4px; }
+.ba .before { border-top: 4px solid var(--bad); } .ba .before .side-tag { color: var(--bad); }
+.ba .after { border-top: 4px solid var(--ok); } .ba .after .side-tag { color: var(--ok); }
 .ba .arrow { align-self: center; font-size: 1.6rem; color: var(--muted); }
 .ask-box { border: 2px solid var(--warn); border-radius: 10px; padding: 12px 16px; background: var(--card); } .ask-box h2 { font-size: 1.05em; } .ask-box ul { margin: 4px 0; padding-left: 1.2em; }
-.fail { display: grid; gap: 10px; } .fail .row { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px 12px; grid-template-columns: 1fr 1fr; }
+.fail { display: grid; gap: 10px; } .fail .row { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); display: grid; gap: 6px 12px; grid-template-columns: 1fr 1fr; }
 .fail .row > div > span { display: block; font: 700 .72em ui-monospace, Menlo, monospace; color: var(--muted); }
 .fail .trig { grid-column: 1 / -1; font-weight: 600; border-bottom: 1px dashed var(--line); padding-bottom: 4px; } .fail .trig::before { content: "⚠ "; color: var(--warn); }
 .type-card { display: grid; gap: 10px; } .type-card + .type-card { margin-top: 18px; }
 .type-card .head { display: grid; gap: 6px; } .badge { font: 700 .78em ui-monospace, Menlo, monospace; letter-spacing: .06em; color: var(--muted); }
 .type-card .q { background: var(--card); border-left: 5px solid var(--warn); border-radius: 6px; padding: 8px 14px; font-weight: 600; margin: 0; } .type-card .q span { display: block; color: var(--warn); font-size: .8em; }
-.grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; } .grid .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; min-width: 0; } .grid .card h3 { font-size: 1rem; color: var(--muted); }
+.grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; } .grid .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; min-width: 0; box-shadow: var(--shadow); } .grid .card h3 { font-size: 1rem; color: var(--muted); }
 .grid .wide { grid-column: 1 / -1; }
 .line { display: grid; grid-template-columns: 7.5em 1fr; gap: 4px 12px; padding: 4px 0; border-bottom: 1px dashed var(--line); } .line:last-child { border-bottom: 0; } .line dt { color: var(--muted); font-size: .88em; } .line dd { margin: 0; } dl { margin: 0; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; } .chips li { border: 1.5px solid var(--line); border-radius: 999px; padding: 0 12px; font-size: .92em; }
-.two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 12px; } .fact { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; } .fact b { display: block; font-size: .8em; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; } .chips li { border: 1.5px solid var(--line); border-radius: 14px; padding: 0 12px; font-size: .92em; max-width: 100%; overflow-wrap: anywhere; }
+.two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 12px; } .fact { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); } .fact b { display: block; font-size: .8em; color: var(--muted); }
 .src { font: 600 .72em ui-monospace, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; margin-left: 6px; } .unknown { color: var(--warn); font-weight: 600; }
-.check { background: var(--card); border: 2px solid var(--fg); border-radius: 12px; padding: 12px 16px; } .check h2 { font-size: 1rem; }
+.check { background: var(--card); border: 2px solid var(--fg); border-radius: 12px; padding: 12px 16px; box-shadow: var(--shadow); } .check h2 { font-size: 1rem; }
 .check ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px 20px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); } .check li { display: flex; gap: 8px; align-items: baseline; }
 .mk { font-weight: 700; min-width: 1.4em; } .check .y .mk { color: var(--ok); } .check .n { background: rgba(179, 38, 30, .12); border-radius: 6px; padding: 0 6px; margin: 0 -6px; } .check .n .mk, .check .n .why { color: var(--bad); }
 .tag.rec, .check .skip .mk { color: var(--warn); } .tag { font: 700 .7em ui-monospace, Menlo, monospace; border: 1.5px solid currentColor; border-radius: 4px; padding: 0 6px; white-space: nowrap; } .legend { font-size: .82em; color: var(--muted); margin: 8px 0 0; }
 @media (max-width: 640px) {
   .ba, .grid, .two, .fail .row { grid-template-columns: 1fr; } .ba .arrow { transform: rotate(90deg); justify-self: center; } .line { grid-template-columns: 1fr; }
-  .decision { position: static; }
 }
 </style>
 </head>
@@ -570,12 +583,13 @@ h1, h2, h3 { font-weight: 600; }
 <h1>${esc(id)}</h1>
 <p class="decision-needed"><strong>${esc(t.decisionNeeded)}</strong></p>
 ${riskBlock(route, state, t)}
+${statusLine(model, t)}
 ${legacy ? `<p class="notice">${esc(t.legacy)}</p>` : ""}
 ${warnings}
 </header>
 ${heroSection(model, t)}
 ${scopeStrip(model, t)}
-${legacy ? "" : safely(() => renderTypeCards(draft, t), t)}
+${typeCards}
 ${legacy ? "" : safely(() => renderChecklist(draft, t), t)}
 ${failureCards(model, t)}
 ${exampleBlocks}
@@ -591,11 +605,8 @@ ${questionsBox(model, t)}
 ${roleSections}
 </section>
 ${suggestionBlock}
-<section id="diagrams"><h2>${esc(t.diagrams)}</h2>
-${diagramBlocks}
-</section>
+${diagramBlocks ? `<section id="diagrams"><h2>${esc(t.diagrams)}</h2>\n${diagramBlocks}\n</section>` : ""}
 </details>
-${decisionBar(model, t)}
 </main>
 ${mermaid}
 </body>
