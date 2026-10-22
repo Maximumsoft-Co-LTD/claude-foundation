@@ -63,7 +63,7 @@ const TEXT = {
     cardsFailed: "Part of this page could not be built; read the packet for that part",
     fontNote: "", pathLabel: "path",
     cards: {
-      ask: "Question to decide", undo: "How to undo", who: "Who is affected", derived: "from",
+      ask: "Question to decide", undo: "How to undo", who: "Who is affected", derived: "from", noneWord: "none",
       names: { A: "What users see", B: "Fixing a problem", C: "No behavior change", D: "Contract with others", E: "Data", F: "Back end and infrastructure", G: "People and compliance" },
       asks: {
         A: "What will users see and be able to do, and is that acceptable?", B: "What is the problem, and how will we know it is fixed?",
@@ -77,7 +77,8 @@ const TEXT = {
         configContract: "Config values", apiContracts: "Contract", boundaries: "Connections", libraryContract: "Library contract",
         deprecationPlan: "Deprecation plan", dataModel: "Data before and after", migrationPlan: "Migration plan", rollout: "Rollout",
         infraPlan: "Infrastructure", nfr: "Quality targets", performanceAnalysis: "Performance", jobContract: "If it breaks (jobs)",
-        integrations: "External systems", observability: "Signals and alerts", privacyAssessment: "Personal data", threatModel: "Threats", modelCard: "Model"
+        integrations: "External systems", observability: "Signals and alerts", privacyAssessment: "Personal data", threatModel: "Threats", modelCard: "Model",
+        dataFix: "Data fix", hardening: "Security hardening", pipelinePlan: "Pipeline change"
       },
       f: {
         purpose: "Purpose", reproduction: "How to reproduce", rootCause: "Root cause", regression: "Guards against return", link: "Link",
@@ -93,7 +94,9 @@ const TEXT = {
         signal: "Signal", slo: "Goal", alert: "Alert", data: "Data", field: "Field", retention: "Kept for", threat: "Threat", likelihood: "Likelihood",
         impact: "Impact", control: "Control", residual: "Remaining", intendedUse: "Used for", model: "Model", fallback: "If wrong", evaluation: "Evaluation set",
         primaryMetric: "Main metric", allocation: "Split", decisionRule: "Decision rule", guardrails: "Guardrails", stopRules: "Stop rules",
-        minimumVersion: "Minimum version", stagedRollout: "Staged", crashGate: "Crash gate", screen: "Screen", accessibility: "Accessibility", exports: "Exports"
+        minimumVersion: "Minimum version", stagedRollout: "Staged", crashGate: "Crash gate", screen: "Screen", accessibility: "Accessibility", exports: "Exports",
+        scope: "Scope", snapshot: "Snapshot before", dryRun: "Dry run", rerunSafe: "Safe to rerun", weakness: "Weakness", verification: "How it is verified",
+        changes: "What changes", permissions: "Permissions and secrets"
       },
       checkTitle: "Required sections", checkOf: "of", missingWord: "missing", recommendedWord: "recommended",
       checkLegend: "✓ present · ✕ required section missing · ! recommended (not a rule yet)", checkNone: "Nothing is required for this kind of work.",
@@ -105,9 +108,7 @@ const TEXT = {
         jobContract: "Job contract", diagrams: "Diagram", integrations: "External systems", configContract: "Config contract", nfr: "Quality targets",
         performanceAnalysis: "Performance analysis", dependencyChange: "Package change", deprecationPlan: "Deprecation plan", infraPlan: "Infrastructure plan",
         observability: "Observability", privacyAssessment: "Privacy assessment", threatModel: "Threat model", experimentDesign: "Experiment design",
-        releasePlan: "Release plan", modelCard: "Model card",
-        "modelCard.evaluation": "Model evaluation", "experimentDesign.guardrails": "Experiment guardrails",
-        "experimentDesign.stopRules": "Experiment stop rules", "infraPlan.costDelta": "Cost change"
+        releasePlan: "Release plan", modelCard: "Model card", dataFix: "Data fix plan", hardening: "Security hardening", pipelinePlan: "Pipeline plan"
       }
     }
   },
@@ -160,7 +161,7 @@ const TEXT = {
     cardsFailed: "สร้างบางส่วนของหน้านี้ไม่ได้ ให้อ่านส่วนนั้นจาก packet",
     fontNote: "", pathLabel: "path",
     cards: {
-      ask: "คำถามที่ต้องตัดสิน", undo: "ย้อนกลับได้ไหม", who: "ใครได้รับผลกระทบ", derived: "จาก",
+      ask: "คำถามที่ต้องตัดสิน", undo: "ย้อนกลับได้ไหม", who: "ใครได้รับผลกระทบ", derived: "จาก", noneWord: "ไม่มี",
       names: { A: "สิ่งที่ผู้ใช้เห็น", B: "แก้ปัญหา", C: "ไม่เปลี่ยนพฤติกรรม", D: "สัญญากับคนอื่น", E: "ข้อมูล", F: "หลังบ้านและโครงสร้าง", G: "คนและกฎหมาย" },
       asks: {
         A: "ผู้ใช้จะเห็นและทำอะไรได้ใหม่ และรับได้ไหม", B: "ปัญหาคืออะไร และจะรู้ได้อย่างไรว่าหายแล้ว",
@@ -174,7 +175,8 @@ const TEXT = {
         configContract: "ค่า config", apiContracts: "สัญญา", boundaries: "การเชื่อมต่อ", libraryContract: "สัญญาของไลบรารี",
         deprecationPlan: "แผนเลิกใช้", dataModel: "ข้อมูลก่อน → หลัง", migrationPlan: "แผนย้าย", rollout: "การปล่อย",
         infraPlan: "โครงสร้างที่เปลี่ยน", nfr: "เป้าคุณภาพ", performanceAnalysis: "ประสิทธิภาพ", jobContract: "ถ้าพัง (งานเบื้องหลัง)",
-        integrations: "ระบบภายนอก", observability: "สัญญาณและการแจ้งเตือน", privacyAssessment: "ข้อมูลส่วนบุคคล", threatModel: "ภัยคุกคาม", modelCard: "โมเดล"
+        integrations: "ระบบภายนอก", observability: "สัญญาณและการแจ้งเตือน", privacyAssessment: "ข้อมูลส่วนบุคคล", threatModel: "ภัยคุกคาม", modelCard: "โมเดล",
+        dataFix: "การแก้ข้อมูล", hardening: "การเสริมความปลอดภัย", pipelinePlan: "การเปลี่ยน pipeline"
       },
       f: {
         purpose: "วัตถุประสงค์", reproduction: "ทำซ้ำอย่างไร", rootCause: "สาเหตุ", regression: "กันกลับมา", link: "ลิงก์",
@@ -190,7 +192,9 @@ const TEXT = {
         signal: "สัญญาณ", slo: "เป้า", alert: "แจ้งเตือน", data: "ข้อมูล", field: "ฟิลด์", retention: "เก็บนาน", threat: "ภัย", likelihood: "โอกาส",
         impact: "ผลกระทบ", control: "มาตรการ", residual: "ที่เหลือ", intendedUse: "ใช้ทำอะไร", model: "โมเดล", fallback: "ถ้าผิด", evaluation: "ชุดประเมิน",
         primaryMetric: "ตัววัดหลัก", allocation: "สัดส่วน", decisionRule: "กฎตัดสิน", guardrails: "ราวกั้น", stopRules: "เงื่อนไขหยุด",
-        minimumVersion: "เวอร์ชันต่ำสุด", stagedRollout: "ทีละขั้น", crashGate: "เกณฑ์ crash", screen: "หน้าจอ", accessibility: "การเข้าถึง", exports: "สิ่งที่ส่งออก"
+        minimumVersion: "เวอร์ชันต่ำสุด", stagedRollout: "ทีละขั้น", crashGate: "เกณฑ์ crash", screen: "หน้าจอ", accessibility: "การเข้าถึง", exports: "สิ่งที่ส่งออก",
+        scope: "ขอบเขต", snapshot: "สำเนาก่อนแก้", dryRun: "ลองรันแบบไม่เขียนจริง", rerunSafe: "รันซ้ำได้ปลอดภัย", weakness: "จุดอ่อน", verification: "วิธีพิสูจน์",
+        changes: "สิ่งที่เปลี่ยน", permissions: "สิทธิ์และ secret ที่ใช้"
       },
       checkTitle: "ส่วนที่ต้องมี", checkOf: "จาก", missingWord: "ขาด", recommendedWord: "แนะนำ",
       checkLegend: "✓ มีครบ · ✕ ขาดส่วนบังคับ · ! แนะนำ (ยังไม่ใช่กฎ)", checkNone: "งานชนิดนี้ไม่ต้องมีส่วนเพิ่ม",
@@ -202,9 +206,7 @@ const TEXT = {
         jobContract: "สัญญางานเบื้องหลัง", diagrams: "แผนภาพ", integrations: "ระบบภายนอก", configContract: "สัญญา config", nfr: "เป้าคุณภาพ",
         performanceAnalysis: "วิเคราะห์ประสิทธิภาพ", dependencyChange: "การเปลี่ยนแพ็กเกจ", deprecationPlan: "แผนเลิกใช้", infraPlan: "แผนโครงสร้าง",
         observability: "การสังเกตระบบ", privacyAssessment: "ประเมินความเป็นส่วนตัว", threatModel: "threat model", experimentDesign: "ออกแบบการทดลอง",
-        releasePlan: "แผนปล่อย", modelCard: "model card",
-        "modelCard.evaluation": "ประเมินโมเดล", "experimentDesign.guardrails": "ราวกั้นการทดลอง",
-        "experimentDesign.stopRules": "เงื่อนไขหยุดการทดลอง", "infraPlan.costDelta": "ค่าใช้จ่ายที่เปลี่ยน"
+        releasePlan: "แผนปล่อย", modelCard: "model card", dataFix: "แผนแก้ข้อมูล", hardening: "การเสริมความปลอดภัย", pipelinePlan: "แผน pipeline"
       }
     },
     consequence: "อนุมัติ = เริ่ม Build ในพื้นที่แยก โค้ดหลักของคุณยังไม่ถูกแตะ",

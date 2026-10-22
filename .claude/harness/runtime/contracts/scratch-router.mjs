@@ -76,7 +76,7 @@ const DOMAIN_ROWS = [
   [13, "library", "SDK / Shared Library", "application", (s) => has(s, "library", "dependency"), ["compat"], ["tech-lead"]],
   [14, "database", "Database / Schema", "data", (s) => has(s, "data", "persisted-data-change"), ["erd"], ["tech-lead"]],
   // Data that lives only in the browser has no server migration to rehearse.
-  [15, "data-migration", "Data Migration", "data", (s) => has(s, "migration") ||
+  [15, "data-migration", "Data Migration", "data", (s) => has(s, "migration", "data-fix") ||
     (has(s, "persisted-data-change") && has(s, "data") && !has(s, "browser-storage")), ["dryrun"], ["tech-lead", "devops"]],
   [16, "pipeline", "Data Pipeline / ETL", "data", (s) => has(s, "data") && has(s, "async") && !has(s, "feature"), ["lineage"], ["tech-lead"]],
   // A product feature that stores its own records is CRUD, not reporting.
@@ -84,10 +84,10 @@ const DOMAIN_ROWS = [
     (has(s, "data") && has(s, "ui") && !has(s, "api", "feature", "persisted-data-change")), ["sample"], ["product-owner"]],
   [18, "architecture", "System Architecture", "platform", (s) => has(s, "coupled", "cross-repository"), ["c4"], ["tech-lead"]],
   [19, "infrastructure", "DevOps / Infrastructure", "platform", (s) => has(s, "infra"), ["plan"], ["devops"]],
-  [20, "delivery", "CI/CD / Deployment", "platform", (s) => has(s, "infra", "high-operational-risk"), ["pipe"], ["devops"]],
+  [20, "delivery", "CI/CD / Deployment", "platform", (s) => has(s, "infra", "cicd", "high-operational-risk"), ["pipe"], ["devops"]],
   [21, "observability", "Observability / SRE", "platform", (s) => has(s, "observability"), ["alert"], ["devops"]],
   [22, "performance", "Performance / Scalability", "platform", (s) => has(s, "performance", "performance-slo"), ["bench"], ["tech-lead", "devops"]],
-  [23, "security", "Security / Privacy / Compliance", "platform", (s) => has(s, "privacy", "security-triggers", "external-side-effect", "access-control"), ["threat"], ["security"]],
+  [23, "security", "Security / Privacy / Compliance", "platform", (s) => has(s, "privacy", "security", "security-triggers", "external-side-effect", "access-control"), ["threat"], ["security"]],
   [24, "bugfix", "Bug Fix / Incident", "maintenance", (s) => has(s, "bugfix"), ["repro"], ["qa", "tech-lead"]],
   [25, "refactor", "Refactoring / Technical Debt", "maintenance", (s) => has(s, "refactor"), ["equiv"], ["tech-lead", "qa"]],
   [26, "qa", "QA / Test Automation", "maintenance", (s) => has(s, "test"), ["testmap"], ["qa"]],

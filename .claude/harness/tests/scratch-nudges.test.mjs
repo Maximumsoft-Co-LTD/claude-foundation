@@ -50,3 +50,32 @@ test("low impact and complete drafts raise no scratch NOTE", () => {
   assert.equal(scratchNoteLine({ impact: "high", workType: ["bugfix"], examples: [example],
     scratch: { asIs: "412 imports stuck in pending" } }), "");
 });
+
+// A path that points at a risk the draft neither declares nor covers is a note.
+import { pathRiskNoteLine } from "../runtime/workflow/change-lifecycle.mjs";
+
+const migrationTask = { tasks: [{ paths: ["db/migrations/0042_orders.sql"] }] };
+
+test("an undeclared, uncovered path risk is named with the coverage it lacks", () => {
+  const note = pathRiskNoteLine({ ...migrationTask, discovery: { coverage: [] } });
+  assert.match(note, /^path risk \(advisory\): db\/migrations\/0042_orders\.sql suggests persisted-data-change /);
+  assert.match(note, /no coverage for data-migration, rollout-rollback, recoverability/);
+});
+
+test("a declared signal, covered dimensions, or a harmless path give no note", () => {
+  assert.equal(pathRiskNoteLine({ ...migrationTask, riskSignals: ["persisted-data-change"] }), "");
+  const covered = ["data-migration", "rollout-rollback", "recoverability"].map((dimension) =>
+    ({ dimension, status: "covered", covers: ["r"] }));
+  assert.equal(pathRiskNoteLine({ ...migrationTask, discovery: { coverage: covered } }), "");
+  const notApplicable = covered.map((row) => ({ dimension: row.dimension, status: "not-applicable", rationale: "browser only" }));
+  assert.equal(pathRiskNoteLine({ ...migrationTask, discovery: { coverage: notApplicable } }), "");
+  assert.equal(pathRiskNoteLine({ tasks: [{ paths: ["src/util.mjs"] }] }), "");
+  assert.equal(pathRiskNoteLine({}), "");
+});
+
+test("only the uncovered part of a path risk is named", () => {
+  const partial = [{ dimension: "data-migration", status: "covered", covers: ["r"] }];
+  const note = pathRiskNoteLine({ ...migrationTask, discovery: { coverage: partial } });
+  assert.match(note, /no coverage for rollout-rollback, recoverability\b/);
+  assert.doesNotMatch(note, /no coverage for data-migration/);
+});

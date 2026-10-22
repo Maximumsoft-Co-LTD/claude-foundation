@@ -1,5 +1,7 @@
 import { devDocumentChecklist, inferWorkTypes } from "./validation/dev-document.mjs";
 import { esc } from "./scratch-blocks.mjs";
+import { undoPlan } from "./undo-plan.mjs";
+import { absenceKind, absenceReason } from "./validation/explicit-absence.mjs";
 
 // Decision cards for the approval page. A declared or inferred work type maps
 // to one of seven kinds of decision (A-G); each card pulls the typed draft
@@ -14,18 +16,15 @@ export const WORK_TYPE_CARD = Object.freeze({
   bugfix: "B",
   refactor: "C", dependency: "C", config: "C", docs: "C", test: "C", chore: "C",
   api: "D", library: "D", deprecation: "D",
-  data: "E", migration: "E",
-  async: "F", integration: "F", infra: "F", observability: "F", performance: "F",
-  privacy: "G", ml: "G"
+  data: "E", migration: "E", "data-fix": "E",
+  async: "F", integration: "F", infra: "F", observability: "F", performance: "F", cicd: "F",
+  privacy: "G", ml: "G", security: "G"
 });
 
-// Advice, not rules: sections the harness does not require yet but a reader of
-// that kind of work wants. They never change whether a draft is valid.
-export const RECOMMENDED_BY_TYPE = Object.freeze({
-  ml: ["modelCard.evaluation"],
-  experiment: ["experimentDesign.guardrails", "experimentDesign.stopRules"],
-  infra: ["infraPlan.costDelta"]
-});
+// Advice, not rules: sections the harness does not require but a reader of that
+// kind of work wants, shown apart and never changing whether a draft is valid.
+// None are defined today: the ones that used to be advice are now required.
+export const RECOMMENDED_BY_TYPE = Object.freeze({});
 
 const list = (value) => Array.isArray(value) ? value : [];
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -84,7 +83,8 @@ const PANELS = Object.freeze({
   E: [
     { key: "dataModel", kind: "table", source: "dataModel", cols: ["entity", "fields", "migration", "rollback"], need: ["data"] },
     { key: "migrationPlan", kind: "rows", source: "migrationPlan", fields: ["from", "to", "cutover", "rollbackWindow", "parity"], need: ["migration"] },
-    { key: "rollout", kind: "rows", source: "rollout", fields: ["strategy", "rollback", "deployOrder", "rollbackProof"], need: ["migration"] }
+    { key: "rollout", kind: "rows", source: "rollout", fields: ["strategy", "rollback", "deployOrder", "rollbackProof"], need: ["migration"] },
+    { key: "dataFix", kind: "rows", source: "dataFix", fields: ["scope", "snapshot", "dryRun", "rerunSafe", "rollback"], need: ["data-fix"] }
   ],
   F: [
     { key: "infraPlan", kind: "rows", source: "infraPlan", fields: ["planDiff", "environments", "blastRadius", "costDelta"], need: ["infra"] },
@@ -92,12 +92,14 @@ const PANELS = Object.freeze({
     { key: "performanceAnalysis", kind: "rows", source: "performanceAnalysis", fields: ["baseline", "target", "hypothesis"], need: ["performance"] },
     { key: "jobContract", kind: "table", source: "jobContract", cols: ["key", "states", "retry", "timeout", "idempotency"], need: ["async"] },
     { key: "integrations", kind: "table", source: "integrations", cols: ["key", "kind"], need: ["integration"] },
-    { key: "observability", kind: "table", source: "observability.rows", cols: ["failure", "signal", "slo", "alert", "owner"], need: ["observability"] }
+    { key: "observability", kind: "table", source: "observability.rows", cols: ["failure", "signal", "slo", "alert", "owner"], need: ["observability"] },
+    { key: "pipelinePlan", kind: "rows", source: "pipelinePlan", fields: ["changes", "permissions", "blastRadius", "rollback"], need: ["cicd"] }
   ],
   G: [
     { key: "privacyAssessment", kind: "rows", source: "privacyAssessment", fields: ["purpose", "retention"], need: ["privacy"] },
     { key: "privacyData", kind: "table", source: "privacyAssessment.data", cols: ["field", "class"], need: ["privacy"], title: "privacyAssessment" },
-    { key: "threatModel", kind: "table", source: "threatModel.threats", cols: ["threat", "likelihood", "impact", "control", "residual"], need: ["privacy"] },
+    { key: "threatModel", kind: "table", source: "threatModel.threats", cols: ["threat", "likelihood", "impact", "control", "residual"], need: ["privacy", "security"] },
+    { key: "hardening", kind: "rows", source: "hardening", fields: ["weakness", "control", "verification"], need: ["security"] },
     { key: "modelCard", kind: "rows", source: "modelCard", fields: ["intendedUse", "model", "fallback", "evaluation"], need: ["ml"] }
   ]
 });
@@ -113,6 +115,15 @@ function cellText(value, col) {
   if (col === "errors" && Array.isArray(value))
     return value.map((row) => isObject(row) ? [row.status, row.when].filter(Boolean).join(": ") : show(row)).filter(Boolean).join("; ") || null;
   return show(value);
+}
+
+// A "none: why" or "unknown: why" answer reads as that word, marked, and the
+// reason; any other answer is shown as written. Everything is escaped.
+export function answerHtml(text, t) {
+  if (absenceKind(text) !== "reasoned") return esc(text);
+  const first = text.trim().split(/[:\s]/)[0].toLowerCase();
+  const word = first === "none" || first === "ไม่มี" ? t.cards.noneWord : t.unknown;
+  return `<span class="unknown">${esc(word)}</span> ${esc(absenceReason(text))}`;
 }
 
 function renderPanel(panel, draft, types, t) {
@@ -133,7 +144,7 @@ function renderPanel(panel, draft, types, t) {
     if (!object && !owed) return "";
     const lines = panel.fields.map((field) => {
       const text = object ? cellText(at(object, field), field) : null;
-      return `<div class="line"><dt>${esc(c.f[field] || field)}</dt><dd>${text ? esc(text) : unknown}</dd></div>`;
+      return `<div class="line"><dt>${esc(c.f[field] || field)}</dt><dd>${text ? answerHtml(text, t) : unknown}</dd></div>`;
     }).join("");
     return `<div class="card"><h3>${esc(title)}</h3><dl>${lines}</dl></div>`;
   }
@@ -143,7 +154,7 @@ function renderPanel(panel, draft, types, t) {
     panel.cols.map((col) => `<th scope="col">${esc(c.f[col] || col)}</th>`).join("")}</tr></thead><tbody>${
     rows.map((row) => `<tr>${panel.cols.map((col) => {
       const text = cellText(row[col], col);
-      return `<td>${text ? esc(text) : unknown}</td>`;
+      return `<td>${text ? answerHtml(text, t) : unknown}</td>`;
     }).join("")}</tr>`).join("")}</tbody></table></div></div>`;
 }
 
@@ -159,12 +170,7 @@ export function undoWho(draft) {
     }
     return null;
   };
-  const undo = own("undo") ? { value: own("undo"), source: "scratch.undo" } : derive([
-    ["rollout", (rollout) => show(rollout?.rollback)],
-    ["dataModel", (model) => show(rowsOf(model).map((row) => row?.rollback))],
-    ["migrationPlan", (plan) => show(plan?.rollbackWindow)],
-    ["dependencyChange", (rows) => show(list(rows).map((row) => row?.rollbackPin))]
-  ]);
+  const undo = undoPlan(draft);
   const who = own("who") ? { value: own("who"), source: "scratch.who" } : derive([
     ["deprecationPlan", (plan) => show(plan?.consumers)],
     ["userStories", (stories) => show(list(stories).map((story) => story?.asA))]
@@ -174,7 +180,7 @@ export function undoWho(draft) {
 
 function fact(label, found, t) {
   return `<div class="fact"><b>${esc(label)}</b>${found
-    ? `${esc(found.value)}<span class="src">${esc(found.source)}</span>`
+    ? `${answerHtml(found.value, t)}<span class="src">${esc(found.source)}</span>`
     : `<span class="unknown">${esc(t.unknown)}</span>`}</div>`;
 }
 

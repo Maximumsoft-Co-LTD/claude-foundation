@@ -3470,3 +3470,45 @@ test("no literal semantic-version check remains outside the helper", () => {
       .filter(Boolean));
   assert.deepEqual(offenders, []);
 });
+
+// High and Critical drafts owe a way to undo them; every answer stays possible.
+test("a High or Critical draft being started or revised must say how to undo it", () => {
+  const { scratch: _drop, ...base } = semanticDraft({ scratch: APPROVER_SCRATCH });
+  const issuesFor = (extra) => normalizeSemanticDraft({ ...base, scratch: APPROVER_SCRATCH, ...extra }, slugify,
+    { requireUndo: true }).issues.filter((issue) => issue.includes("undo"));
+  const high = issuesFor({ impact: "high" });
+  assert.equal(high.length, 1);
+  assert.match(high[0], /scratch\.undo is required for risk level High: say how to undo it, or 'none: <reason>'/);
+  // A medium draft with a heavy signal is High; with impact high and money it is Critical.
+  assert.match(issuesFor({ impact: "medium", riskSignals: ["financial"] })[0], /risk level High/);
+  assert.match(issuesFor({ impact: "high", riskSignals: ["financial"] })[0], /risk level Critical/);
+  assert.deepEqual(issuesFor({ impact: "medium" }), []);
+  assert.deepEqual(issuesFor({ impact: "low" }), []);
+});
+
+test("every way of answering undo satisfies the rule, including a plain none with a reason", () => {
+  const issuesFor = (extra, scratch = APPROVER_SCRATCH) => normalizeSemanticDraft(
+    { ...semanticDraft({ impact: "high", scratch }), ...extra }, slugify, { requireUndo: true })
+    .issues.filter((issue) => issue.includes("undo") || issue.includes("rollback"));
+  assert.deepEqual(issuesFor({}, { ...APPROVER_SCRATCH, undo: "Turn the flag off" }), []);
+  assert.deepEqual(issuesFor({}, { ...APPROVER_SCRATCH, undo: "none: the emails were already sent" }), []);
+  assert.deepEqual(issuesFor({ rollout: { strategy: "flag at 10%", rollback: "turn the flag off", rollbackProof: "toggle test" } }), []);
+  assert.deepEqual(issuesFor({ dataFix: { scope: "s", snapshot: "s", dryRun: "d", rerunSafe: "y", rollback: "restore" } }), []);
+  assert.deepEqual(issuesFor({ pipelinePlan: { changes: "c", permissions: "p", blastRadius: "b", rollback: "revert" } }), []);
+  assert.deepEqual(issuesFor({ dependencyChange: [{ package: "p", from: "1", to: "2", rollbackPin: "1", provenance: "x", sbom: "y" }] }), []);
+});
+
+test("an undo of bare none or unknown is a repair that asks for the reason, at any impact", () => {
+  for (const impact of ["low", "medium", "high"]) {
+    const issues = normalizeSemanticDraft(semanticDraft({ impact, scratch: { ...APPROVER_SCRATCH, undo: "none" } }),
+      slugify, { requireUndo: true }).issues.filter((issue) => issue.includes("undo"));
+    assert.equal(issues.length, 1, impact);
+    assert.match(issues[0], /scratch\.undo says none or unknown without a reason/);
+  }
+});
+
+test("the undo rule is off for callers that do not ask for it, such as an amendment", () => {
+  const issues = normalizeSemanticDraft(semanticDraft({ impact: "high", scratch: APPROVER_SCRATCH }), slugify)
+    .issues.filter((issue) => issue.includes("undo"));
+  assert.deepEqual(issues, []);
+});

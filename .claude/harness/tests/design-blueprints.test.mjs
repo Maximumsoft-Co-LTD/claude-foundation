@@ -462,11 +462,12 @@ test("design.md reads flow, components, contracts, failures, file map (with its 
     design.indexOf("```text") < design.indexOf("## Test map"), design);
 });
 
-test("the work-type catalog accepts all 23 types and rejects unknown ones with the list", () => {
+test("the work-type catalog accepts all 26 types and rejects unknown ones with the list", () => {
   assert.deepEqual([...WORK_TYPES], [
     "feature", "bugfix", "refactor", "api", "library", "ui", "data", "migration", "async",
     "integration", "config", "performance", "dependency", "deprecation", "infra",
-    "observability", "privacy", "experiment", "client-release", "ml", "docs", "test", "chore"]);
+    "observability", "privacy", "experiment", "client-release", "ml", "data-fix", "security", "cicd",
+    "docs", "test", "chore"]);
   for (const type of WORK_TYPES)
     assert.deepEqual(designBlueprintIssues({ version: 4, workType: [type] }), [], type);
   const [issue] = designBlueprintIssues({ version: 4, workType: ["infrastructure"] });
@@ -495,6 +496,15 @@ test("infra, observability, and ml paths infer their work types", () => {
   for (const path of ["prompts/summarize.md", "evals/summary.test.py"])
     assert.deepEqual(inferWorkTypes(paths(path)), ["ml"], path);
   assert.deepEqual(inferWorkTypes(paths("src/components/charts/Bar.tsx")), ["ui"]);
+});
+
+test("pipeline files infer cicd, and ordinary source does not", () => {
+  const paths = (...list) => ({ version: 4, tasks: [{ id: "T001", key: "t", paths: list }] });
+  for (const path of [".github/workflows/ci.yml", ".gitlab-ci.yml", "Jenkinsfile", "azure-pipelines.yml",
+    ".circleci/config.yml", "services/api/.github/workflows/release.yaml"])
+    assert.deepEqual(inferWorkTypes(paths(path)), ["cicd"], path);
+  assert.deepEqual(inferWorkTypes(paths("src/ci-helpers.mjs")), ["code"]);
+  assert.deepEqual(inferWorkTypes(paths(".github/CODEOWNERS")), ["chore"]);
 });
 
 test("light and behavior-neutral work are one shared set each", () => {

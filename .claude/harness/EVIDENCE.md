@@ -210,6 +210,8 @@ paths cannot reveal. They join the path-derived obligations with a
 | infra | `plan-check`, `deployment` |
 | observability | `observability` |
 | privacy | `security-static` |
+| security | `security-static` |
+| data-fix | `data-migration` |
 | ml | `evaluation` |
 | client-release | `release-health` (post-release) |
 | experiment | `experiment-guardrail` (post-release) |

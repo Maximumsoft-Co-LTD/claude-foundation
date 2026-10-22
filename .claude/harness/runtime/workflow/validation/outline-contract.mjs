@@ -100,7 +100,10 @@ const WORK_TYPE_DETAIL = [
   ["privacyAssessment", "privacy", "Privacy assessment", "การประเมินความเป็นส่วนตัว"],
   ["experimentDesign", "experiment", "Experiment design", "การออกแบบการทดลอง"],
   ["releasePlan", "client-release", "Client release plan", "แผนปล่อยแอปฝั่งผู้ใช้"],
-  ["modelCard", "ml", "Model card and evaluation plan", "Model card และแผนประเมินผล"]
+  ["modelCard", "ml", "Model card and evaluation plan", "Model card และแผนประเมินผล"],
+  ["dataFix", "data-fix", "Data fix plan", "แผนแก้ข้อมูล"],
+  ["hardening", "security", "Security hardening", "การเสริมความปลอดภัย"],
+  ["pipelinePlan", "cicd", "Pipeline plan", "แผน pipeline"]
 ];
 
 const P = "proposal";

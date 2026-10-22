@@ -67,7 +67,11 @@ export const WORK_TYPE_CAPABILITIES = Object.freeze({
   experiment: Object.freeze(["experiment-guardrail"]),
   observability: Object.freeze(["observability"]),
   data: Object.freeze(["data-migration"]),
-  privacy: Object.freeze(["security-static"])
+  privacy: Object.freeze(["security-static"]),
+  // Reuse existing capabilities so no project must wire a new provider; a
+  // pipeline change adds none beyond the default test.
+  "data-fix": Object.freeze(["data-migration"]),
+  security: Object.freeze(["security-static"])
 });
 
 function normalizedWorkTypes(workTypes) {

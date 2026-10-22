@@ -28,6 +28,12 @@ import {
   validateMigrationPlan,
   validatePerformanceAnalysis,
   validateRefactor,
+  validateDataFix,
+  validateHardening,
+  validatePipelinePlan,
+  renderDataFix,
+  renderHardening,
+  renderPipelinePlan,
 } from "../runtime/workflow/validation/work-type-fields.mjs";
 import { workTypeSignalIssues } from "../runtime/workflow/validation/dev-document.mjs";
 
@@ -80,7 +86,7 @@ test("WORK_TYPE_FIELDS exposes validate and render for each field", () => {
   assert.deepEqual(Object.keys(WORK_TYPE_FIELDS),
     ["bugfix", "refactor", "libraryContract", "migrationPlan", "integrations", "performanceAnalysis",
       "dependencyChange", "deprecationPlan", "infraPlan", "privacyAssessment", "experimentDesign", "releasePlan",
-      "modelCard"]);
+      "modelCard", "dataFix", "hardening", "pipelinePlan"]);
   for (const field of Object.values(WORK_TYPE_FIELDS)) {
     assert.equal(typeof field.validate, "function");
     assert.equal(typeof field.render, "function");
@@ -280,7 +286,7 @@ test("deprecation and infra plans validate and render lists as bullets", () => {
     provisioningOrder: ["queue", "IAM policy"], drift: "nightly plan", externalOperations: "DNS by ops" };
   assert.deepEqual(validateInfraPlan(infra), []);
   assert.deepEqual(validateInfraPlan({ planDiff: "x" }), [
-    "infraPlan.blastRadius is required", "infraPlan.environments is required",
+    "infraPlan.blastRadius is required", "infraPlan.costDelta is required", "infraPlan.environments is required",
   ]);
   const infraBody = renderInfraPlan(infra, { language: "en" });
   assert.match(infraBody, /\| Plan diff \| \+1 aws_sqs_queue \|/);
@@ -309,7 +315,8 @@ test("experiment design renders stop rules and guardrails", () => {
   assert.deepEqual(validateExperimentDesign(experiment), []);
   assert.deepEqual(validateExperimentDesign({ hypothesis: "h", stopRules: "never" }), [
     "experimentDesign.primaryMetric is required", "experimentDesign.allocation is required",
-    "experimentDesign.decisionRule is required", "experimentDesign.stopRules must be a list of strings",
+    "experimentDesign.decisionRule is required", "experimentDesign.guardrails is required",
+    "experimentDesign.stopRules must be a list of strings, or 'unknown: <reason>'",
   ]);
   const body = renderExperimentDesign(experiment, { language: "en" });
   assert.match(body, /\*\*Stop rules:\*\*\n\n- error rate > 2%\n- guardrail drop > 5%/);
@@ -341,6 +348,7 @@ test("model card renders evaluation thresholds", () => {
   ]);
   assert.deepEqual(validateModelCard({ intendedUse: "x" }), [
     "modelCard.model is required", "modelCard.fallback is required", "modelCard.versionPin is required",
+    "modelCard.evaluation is required",
   ]);
   const body = renderModelCard(modelCard, { language: "en" });
   assert.match(body, /### Evaluation/);
@@ -368,4 +376,44 @@ test("operational work-type fields are registered and render Thai labels", () =>
   assert.match(renderExperimentDesign(experiment, { language: "th" }), /\*\*เงื่อนไขหยุดการทดลอง:\*\*/);
   assert.match(renderReleasePlan(release, { language: "th" }), /\*\*การปล่อยแบบเป็นขั้น:\*\*/);
   assert.doesNotMatch(model, /Intended use|Evaluation|Threshold/);
+});
+
+test("data fix, hardening, and pipeline plan validate every field and render in both languages", () => {
+  const fix = { scope: "1,204 rows in refunds", snapshot: "table copy", dryRun: "diff on staging",
+    rerunSafe: true, rollback: "restore the copy" };
+  assert.deepEqual(validateDataFix(fix), []);
+  assert.deepEqual(validateDataFix({ scope: "x" }), [
+    "dataFix.snapshot is required", "dataFix.dryRun is required", "dataFix.rerunSafe is required", "dataFix.rollback is required",
+  ]);
+  assert.match(renderDataFix(fix, { language: "en" }), /\| Safe to rerun \| yes \|/);
+  assert.match(renderDataFix(fix, { language: "th" }), /\| รันซ้ำได้ปลอดภัย \| ใช่ \|/);
+  const hardening = { weakness: "sessions never expire", control: "8 hour expiry", verification: "expired token test" };
+  assert.deepEqual(validateHardening(hardening), []);
+  assert.deepEqual(validateHardening({}), [
+    "hardening.weakness is required", "hardening.control is required", "hardening.verification is required",
+  ]);
+  assert.match(renderHardening(hardening, { language: "en" }), /\| How it is verified \| expired token test \|/);
+  const pipeline = { changes: "add a deploy job", permissions: "id-token write", blastRadius: "staging only", rollback: "revert" };
+  assert.deepEqual(validatePipelinePlan(pipeline), []);
+  assert.deepEqual(validatePipelinePlan({ changes: "x" }), [
+    "pipelinePlan.permissions is required", "pipelinePlan.blastRadius is required", "pipelinePlan.rollback is required",
+  ]);
+  assert.match(renderPipelinePlan(pipeline, { language: "th" }), /\| สิทธิ์และ secret ที่ใช้ \| id-token write \|/);
+});
+
+test("an unknown answer with a reason is valid and rendered as written; one without is a repair", () => {
+  const answered = { scope: "unknown: not countable before a dry run", snapshot: "none: nothing to copy",
+    dryRun: "x", rerunSafe: "x", rollback: "x" };
+  assert.deepEqual(validateDataFix(answered), []);
+  assert.match(renderDataFix(answered, { language: "en" }), /\| Scope \| unknown: not countable before a dry run \|/);
+  assert.deepEqual(validateDataFix({ ...answered, scope: "unknown" }), [
+    "dataFix.scope says none or unknown without a reason; write 'unknown: <reason>' or 'none: <reason>'",
+  ]);
+  assert.deepEqual(validateModelCard({ intendedUse: "u", model: "m", fallback: "f", versionPin: "1",
+    evaluation: "unknown: no labelled set yet" }), []);
+  assert.match(renderModelCard({ intendedUse: "u", model: "m", fallback: "f", versionPin: "1",
+    evaluation: "unknown: no labelled set yet" }, { language: "en" }), /\| Evaluation \| unknown: no labelled set yet \|/);
+  assert.deepEqual(validateModelCard({ intendedUse: "u", model: "m", fallback: "f", versionPin: "1", evaluation: "unknown" }), [
+    "modelCard.evaluation says none or unknown without a reason; write 'unknown: <reason>' or 'none: <reason>'",
+  ]);
 });

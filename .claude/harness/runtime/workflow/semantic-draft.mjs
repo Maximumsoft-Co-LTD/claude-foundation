@@ -5,6 +5,7 @@ import {
 } from "./validation/semantic-intake.mjs";
 import { designBlueprintIssues } from "./validation/design-blueprints.mjs";
 import { EXAMPLE_TYPES, scratchFieldIssues, scratchRequiredIssues } from "./scratch-fields.mjs";
+import { undoIssues } from "./undo-plan.mjs";
 import { readerGuideIssues } from "./validation/reader-guide.mjs";
 import {
   devDocumentIssues, devDocumentShapeIssues, inferWorkTypes
@@ -353,7 +354,7 @@ function benchmarkProviderIssues(execution) {
   return issues;
 }
 
-function semanticDraftIssues(source, { defaultTestEvidence = false, requireScratch = false } = {}) {
+function semanticDraftIssues(source, { defaultTestEvidence = false, requireScratch = false, requireUndo = false } = {}) {
   const issues = [];
   if (!isSemanticVersion(source?.version))
     issues.push("semantic draft version must be 3, 4, or 5");
@@ -376,6 +377,8 @@ function semanticDraftIssues(source, { defaultTestEvidence = false, requireScrat
   // Only a draft being started or revised owes the approval summary; an
   // amendment synthesizes a draft and a started change keeps the one it had.
   if (requireScratch) issues.push(...scratchRequiredIssues(source));
+  // The same drafts owe a way to undo a High or Critical change (or a plain "none: why").
+  if (requireUndo) issues.push(...undoIssues(source));
   if (source?.successMeasure !== undefined &&
       (typeof source.successMeasure !== "string" || !text(source.successMeasure) ||
         text(source.successMeasure).length > 240 || /\r?\n/.test(text(source.successMeasure))))
@@ -1541,7 +1544,7 @@ export function normalizeSemanticDraft(input, slugify, options = {}) {
   const defaultTestEvidence = Boolean(options.defaultRapidEvidence) &&
     semanticEvidenceDefaultable(source);
   const defaultedEvidence = [];
-  const issues = [...semanticDraftIssues(source, { defaultTestEvidence, requireScratch: Boolean(options.requireScratch) }),
+  const issues = [...semanticDraftIssues(source, { defaultTestEvidence, requireScratch: Boolean(options.requireScratch), requireUndo: Boolean(options.requireUndo) }),
     ...investigationCoverageIssues(source)];
   const { requirements, requirementKeys } = normalizeRequirements(
     source, slugify, issues, { ...options, defaultTestEvidence, defaultedEvidence });
@@ -1973,7 +1976,8 @@ function workTypeExamples() {
     experiment: {
       experimentDesign: {
         hypothesis: "One-step checkout lifts conversion", primaryMetric: "Checkout conversion",
-        allocation: "50/50 by user", decisionRule: "Ship if +1% at 95%"
+        allocation: "50/50 by user", decisionRule: "Ship if +1% at 95%",
+        guardrails: ["Error rate"], stopRules: ["Stop if errors double"]
       },
       rollout: {
         strategy: "Experiment flag at 50%", rollback: "Stop the experiment; control stays live",
@@ -1990,7 +1994,32 @@ function workTypeExamples() {
     ml: {
       modelCard: {
         intendedUse: "Summarize tickets", model: { provider: "anthropic", version: "pinned id" },
-        fallback: "Show the raw ticket"
+        fallback: "Show the raw ticket",
+        evaluation: { set: "200 labelled tickets", thresholds: [{ metric: "accuracy", threshold: ">= 0.9" }] }
+      }
+    },
+    "data-fix": {
+      dataFix: {
+        scope: "1,204 rows in refunds", snapshot: "Table copy refunds_bak",
+        dryRun: "Count and diff on staging", rerunSafe: "Yes, keyed by id",
+        rollback: "Restore from refunds_bak"
+      }
+    },
+    security: {
+      threatModel: {
+        assets: ["User sessions"], trustBoundaries: ["Browser to API"],
+        threats: [{ key: "t1", stride: "spoofing", threat: "Stolen token reused", likelihood: "medium",
+          impact: "high", control: "8 hour expiry", residual: "low" }]
+      },
+      hardening: {
+        weakness: "Sessions never expire", control: "8 hour expiry",
+        verification: "Test with an expired token"
+      }
+    },
+    cicd: {
+      pipelinePlan: {
+        changes: "Add a deploy job", permissions: "id-token write, no secrets",
+        blastRadius: "Staging deploys only", rollback: "Revert the workflow file"
       }
     }
   };

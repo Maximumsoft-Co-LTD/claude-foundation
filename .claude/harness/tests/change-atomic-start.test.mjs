@@ -1649,3 +1649,48 @@ test("an older-layout proposal still resolves and is re-rendered consistently by
   assert.match(revised, /^## Why\n\nCallers need the bounded result$/m);
   assert.doesNotMatch(revised, /## Plan|## What changes|## Folder tree/);
 });
+
+// New work types and gates are always the agent's to repair and never block a start.
+const WITH_FAILURE = [{
+  key: "bounded-result", capability: "single-shot-change", operation: "added",
+  scenarios: [
+    { name: "Bounded input", kind: "success", when: "A bounded input arrives", then: "The result is returned" },
+    { name: "Invalid input", kind: "failure", when: "The input is invalid", then: "An error names the field" }],
+  outcome: "The bounded result is returned"
+}];
+
+test("a data-fix draft missing its section gets an agent EDIT naming it, never a question to the user", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({ impact: "medium", workType: ["data-fix"], requirements: WITH_FAILURE }));
+  const { result } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.equal(result.action, "EDIT");
+  assert.equal(result.owner, "agent");
+  assert.ok(result.intake.issues.some((issue) => /needs 'dataFix'/.test(issue)), result.intake.issues.join("\n"));
+  assert.equal(existsSync(value.changes), false);
+});
+
+test("a data-fix draft whose fields say unknown or none with reasons starts", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, minimalRapidV4({ impact: "medium", workType: ["data-fix"], requirements: WITH_FAILURE, dataFix: {
+    scope: "unknown: the count needs a dry run", snapshot: "none: table too large to copy",
+    dryRun: "unknown: staging has no data", rerunSafe: "unknown: not yet analysed", rollback: "none: the old values are not kept"
+  } }));
+  const { result, output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.notEqual(result?.action, "EDIT", output);
+  assert.match(output, /^AGREED single-shot-change/m);
+});
+
+test("a risky path the draft does not cover prints a note and still starts", (t) => {
+  const value = fixture(t);
+  const base = minimalRapidV4();
+  writeJson(value.draftPath, minimalRapidV4({
+    impact: "medium", workType: ["chore"], requirements: WITH_FAILURE,
+    tasks: [{ ...base.tasks[0], paths: ["db/migrations/0042_orders.sql"] }]
+  }));
+  const { result, output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.notEqual(result?.action, "EDIT", output);
+  assert.match(output, /^AGREED single-shot-change/m);
+  const notes = output.split("\n").filter((line) => line.startsWith("NOTE: path risk"));
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /db\/migrations\/0042_orders\.sql suggests persisted-data-change/);
+});

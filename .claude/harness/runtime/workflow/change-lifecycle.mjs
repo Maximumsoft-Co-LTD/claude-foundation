@@ -27,6 +27,7 @@ import { reviewModelClass } from "../evidence/review-diff.mjs";
 import {
   FIXES_DIMENSIONS, riskSignalDimensions, semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
+import { inferPathSignals } from "../contracts/scratch-router.mjs";
 import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
 import {
   inspectRepositoryIntelligence, repositoryIntelligenceRequired, skippedRepositoryIntelligence
@@ -1159,6 +1160,30 @@ export function scratchNoteLine(draft) {
   return gaps.length ? `scratch (advisory, approval page): ${gaps.join("; ")}` : "";
 }
 
+// Advisory only, never a repair or a gate: a touched path that points at a risk
+// the draft neither declares nor covers in discovery (a migration file with no
+// persisted-data-change coverage, say). A declared signal is already held to its
+// coverage by intake, so only undeclared ones are named here.
+export function pathRiskNoteLine(draft) {
+  const paths = [
+    ...(Array.isArray(draft?.tasks) ? draft.tasks.flatMap((task) => Array.isArray(task?.paths) ? task.paths : []) : []),
+    ...(Array.isArray(draft?.fileMap) ? draft.fileMap.map((row) => row?.path).filter(Boolean) : [])
+  ];
+  const declared = new Set((Array.isArray(draft?.riskSignals) ? draft.riskSignals : [])
+    .map((signal) => String(signal).trim().toLowerCase()));
+  const covered = new Set((Array.isArray(draft?.discovery?.coverage) ? draft.discovery.coverage : [])
+    .filter((row) => ["covered", "not-applicable"].includes(String(row?.status || "").toLowerCase()))
+    .map((row) => row.dimension));
+  const dimensions = riskSignalDimensions();
+  const gaps = inferPathSignals(paths).filter((row) => !declared.has(row.signal)).flatMap((row) => {
+    const missing = (dimensions[row.signal] || []).filter((dimension) => !covered.has(dimension));
+    return missing.length ? [`${row.path} suggests ${row.signal} (no coverage for ${missing.join(", ")})`] : [];
+  });
+  return gaps.length
+    ? `path risk (advisory): ${gaps.join("; ")}; declare the riskSignal or add discovery coverage rows when it applies`
+    : "";
+}
+
 export function createChangeLifecycle({
   root,
   policy,
@@ -1515,6 +1540,7 @@ export function createChangeLifecycle({
       const normalized = normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
         requireScratch: true,
+        requireUndo: true,
         repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
@@ -1912,6 +1938,7 @@ export function createChangeLifecycle({
       ? normalizeSemanticDraft(source, slugify, {
         defaultRapidEvidence: true,
         requireScratch: true,
+        requireUndo: true,
         repositories: declaredRepositories(),
         loadCanonicalSpec: (capability) => {
           const path = join(root, "openspec", "specs", slugify(capability), "spec.md");
@@ -2613,6 +2640,8 @@ export function createChangeLifecycle({
     if (coverage) console.log(`NOTE: ${coverage}`);
     const scratch = scratchNoteLine(draft);
     if (scratch) console.log(`NOTE: ${scratch}`);
+    const pathRisk = pathRiskNoteLine(draft);
+    if (pathRisk) console.log(`NOTE: ${pathRisk}`);
     const filled = derivedByHarness(draft, { standard: !rapid });
     if (filled.length)
       console.log(`NOTE: derived by harness (listed in proposal.md): ${

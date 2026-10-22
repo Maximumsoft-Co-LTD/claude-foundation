@@ -1,6 +1,7 @@
 import { leasePathIsAllowed } from "../lease-runtime.mjs";
 import { BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, OBJECT_FIELDS, draftWorkTypes } from "./design-blueprints.mjs";
 import { isSemanticV4Plus } from "./draft-version.mjs";
+import { REQUIRED_ANSWERS } from "./work-type-fields.mjs";
 import { hasAuthoredProposalProse } from "../draft-folder.mjs";
 
 // The dev document: what a Change hands to Build and to the person approving
@@ -45,6 +46,9 @@ function draftPaths(draft) {
 const UI_FILE = /\.(?:tsx|jsx|vue|svelte|css|scss|sass|less|html)$/i;
 // Prompts and evals are model behavior even when written as markdown or tests.
 const ML_PATH = /(?:^|\/)(?:prompts|evals)\//i;
+// A pipeline definition is pipeline work only: a `config.yml` inside .circleci
+// is not application configuration.
+const CICD_PATH = /(?:^|\/)\.github\/workflows\/|(?:^|\/)\.gitlab-ci\.ya?ml$|(?:^|\/)Jenkinsfile$|(?:^|\/)azure-pipelines\.ya?ml$|(?:^|\/)\.circleci\//;
 const PATH_TYPES = [
   ["ui", /(?:^|\/)(?:components?|pages|views|screens|ui|layouts?)\//i],
   ["api", /\.(?:proto|graphql|gql)$|openapi|swagger|(?:^|\/)(?:api|routes?|controllers?|handlers?|endpoints?|resolvers?)\//i],
@@ -53,6 +57,7 @@ const PATH_TYPES = [
   ["config", /(?:^|\/)config\/|(?:^|\/|\.)config\.[\w.]+$|\.env\.example$/i],
   ["infra", /\.tf(?:vars)?$|(?:^|\/)(?:terraform|helm|k8s|kubernetes)\/|^charts\/|(?:^|\/)Chart\.ya?ml$|(?:^|\/)Dockerfile(?:\.[\w.-]+)?$/],
   ["observability", /(?:^|\/)(?:dashboards|alerts)\/|(?:^|\/)monitoring\/(?:[^/]+\/)*[^/]+\.rules\.ya?ml$/i],
+  ["cicd", CICD_PATH],
   ["ml", ML_PATH]
 ];
 // Paths that carry no product code of their own: package manifests and
@@ -73,6 +78,7 @@ export function lightKind(path) {
 
 // A UI file under routes/ or api/ (a page component) is UI, not an endpoint.
 function pathTypes(path) {
+  if (CICD_PATH.test(path)) return ["cicd"];
   if (UI_FILE.test(path)) return ["ui"];
   return PATH_TYPES.filter(([, pattern]) => pattern.test(path)).map(([type]) => type);
 }
@@ -152,7 +158,10 @@ const REQUIRED_BY_TYPE = {
   privacy: ["privacyAssessment", "threatModel"],
   experiment: ["experimentDesign", "rollout"],
   "client-release": ["releasePlan"],
-  ml: ["modelCard"]
+  ml: ["modelCard"],
+  "data-fix": ["dataFix"],
+  security: ["threatModel", "hardening"],
+  cicd: ["pipelinePlan"]
 };
 // A bugfix variant adds the detail its kind of fix owes.
 const BUGFIX_VARIANT_SECTIONS = {
@@ -247,14 +256,28 @@ const SECTION_HELP = {
   experimentDesign: "'experimentDesign': { hypothesis, primaryMetric, guardrails, unit, allocation, " +
     "sampleSize, stopRules, exposureLogging, decisionRule, cleanup } (e.g. { \"hypothesis\": " +
     "\"one-step checkout lifts conversion\", \"primaryMetric\": \"checkout conversion\", " +
-    "\"allocation\": \"50/50 by user\", \"decisionRule\": \"ship if +1% at 95%\" })",
+    "\"allocation\": \"50/50 by user\", \"decisionRule\": \"ship if +1% at 95%\", " +
+    "\"guardrails\": [\"error rate\"], \"stopRules\": [\"stop if errors double\"] }); guardrails and " +
+    "stopRules are required: a list, or 'unknown: <reason>' when they are not yet known",
   releasePlan: "'releasePlan': { minimumVersion, coexistence, serverWindow, storeReview, stagedRollout, " +
     "forcedUpgrade, crashGate } (e.g. { \"minimumVersion\": \"5.2\", \"stagedRollout\": " +
     "[\"1%\", \"10%\", \"100%\"], \"crashGate\": \"crash-free >= 99.5%\" })",
   modelCard: "'modelCard': { intendedUse, outOfScope, model: { provider, version }, dataSource, " +
     "evaluation: { set, thresholds }, limitations, oversight, cost, monitoring, fallback } " +
     "(e.g. { \"intendedUse\": \"summarize tickets\", \"model\": { \"provider\": \"anthropic\", " +
-    "\"version\": \"pinned id\" }, \"fallback\": \"show the raw ticket\" })",
+    "\"version\": \"pinned id\" }, \"fallback\": \"show the raw ticket\", \"evaluation\": { \"set\": " +
+    "\"200 labelled tickets\", \"thresholds\": [{ \"metric\": \"accuracy\", \"threshold\": \">= 0.9\" }] } }); " +
+    "evaluation is required: the object, or 'unknown: <reason>' when there is no evaluation yet",
+  dataFix: "'dataFix': { scope, snapshot, dryRun, rerunSafe, rollback } for a one-off change to production " +
+    "data (e.g. { \"scope\": \"1,204 rows in refunds\", \"snapshot\": \"table copy refunds_bak\", " +
+    "\"dryRun\": \"count and diff on staging\", \"rerunSafe\": \"yes, keyed by id\", " +
+    "\"rollback\": \"restore from refunds_bak\" }); any field may be 'unknown: <reason>' or 'none: <reason>'",
+  hardening: "'hardening': { weakness, control, verification } for a security improvement with no single bug " +
+    "(e.g. { \"weakness\": \"sessions never expire\", \"control\": \"8 hour expiry\", " +
+    "\"verification\": \"test with an expired token\" }); pair it with 'threatModel'",
+  pipelinePlan: "'pipelinePlan': { changes, permissions, blastRadius, rollback } for a CI/CD or build change " +
+    "(e.g. { \"changes\": \"add a deploy job\", \"permissions\": \"id-token write, no secrets\", " +
+    "\"blastRadius\": \"staging deploys only\", \"rollback\": \"revert the workflow file\" })",
   releaseNote: "'releaseNote': 1-3 sentences a user or consumer reads in the changelog " +
     "(e.g. \"Search now filters by tag.\")",
   bugfix: "'bugfix': { reproduction, rootCause, regression }",
@@ -392,13 +415,15 @@ export function devDocumentIssues(draft, { standard = true, lane = "" } = {}) {
 // The same required sections as devDocumentIssues, one row each, for a reader
 // who needs to see what is present and what is missing. A draft whose work
 // type cannot be inferred owes no sections, so nothing is listed.
-// A section made of named fields (bugfix, refactor) is present only when each
-// of those fields is, and the row lists the ones that are not.
+// A section made of named fields (bugfix, refactor, and the sections that must
+// answer fixed fields) is present only when each of those fields is, and the
+// row lists the ones that are not.
 export function devDocumentChecklist(draft) {
   if (!inferWorkTypes(draft).length) return [];
   return requiredDevSections(draft).map((key) => {
     const missingFields = present(sectionValue(draft, key))
-      ? (OBJECT_FIELDS[key] || []).filter((field) => !present(sectionValue(draft, key)?.[field]))
+      ? [...(OBJECT_FIELDS[key] || []), ...(REQUIRED_ANSWERS[key] || [])]
+        .filter((field) => !present(sectionValue(draft, key)?.[field]))
       : [];
     return { key, present: present(sectionValue(draft, key)) && missingFields.length === 0, missingFields };
   });

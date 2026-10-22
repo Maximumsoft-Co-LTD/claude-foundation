@@ -5,6 +5,7 @@ export const WORK_TYPES = Object.freeze([
   "feature", "bugfix", "refactor", "api", "library", "ui", "data", "migration",
   "async", "integration", "config", "performance", "dependency", "deprecation",
   "infra", "observability", "privacy", "experiment", "client-release", "ml",
+  "data-fix", "security", "cicd",
   "docs", "test", "chore"
 ]);
 

@@ -424,3 +424,11 @@ test("work type lookup failures fall back to path-only capabilities", () => {
   assert.deepEqual(policy.policyCapabilities("c"), []);
   assert.deepEqual(policy.policyRolloutCapabilities("c"), []);
 });
+
+test("data-fix and security reuse existing capabilities and cicd adds none", () => {
+  assert.deepEqual(capabilitiesForWorkTypes(["data-fix"]).capabilities, ["data-migration"]);
+  assert.deepEqual(capabilitiesForWorkTypes(["security"]).capabilities, ["security-static"]);
+  assert.deepEqual(capabilitiesForWorkTypes(["cicd"]).capabilities, []);
+  assert.deepEqual(capabilitiesForWorkTypes(["cicd"]).postRelease, []);
+  assert.deepEqual(capabilitiesForWorkTypes(["data-fix", "security"]).triggers["data-migration"], ["work-type:data-fix"]);
+});

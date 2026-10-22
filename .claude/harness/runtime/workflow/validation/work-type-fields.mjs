@@ -9,6 +9,8 @@
 // stay valid; only the new optional subfields are checked. Shapes follow the
 // SECTION_HELP entries in dev-document.mjs, so a help example always passes.
 
+import { absenceKind, bareAbsenceIssue } from "./explicit-absence.mjs";
+
 const LABELS = Object.freeze({
   en: {
     part: "Part", detail: "Detail",
@@ -56,6 +58,9 @@ const LABELS = Object.freeze({
     dataSource: "Data source", evaluation: "Evaluation", evaluationSet: "Evaluation set", metric: "Metric",
     threshold: "Threshold", limitations: "Limitations", oversight: "Human oversight", costLatency: "Cost and latency",
     monitoring: "Monitoring", fallback: "Fallback",
+    scope: "Scope", snapshot: "Snapshot before the fix", dryRun: "Dry run", rerunSafe: "Safe to rerun",
+    rollback: "Rollback", weakness: "Weakness", verification: "How it is verified",
+    changes: "What changes", permissions: "Permissions and secrets",
   },
   th: {
     part: "ส่วน", detail: "รายละเอียด",
@@ -103,6 +108,9 @@ const LABELS = Object.freeze({
     dataSource: "แหล่งข้อมูล", evaluation: "การประเมิน", evaluationSet: "ชุดประเมิน", metric: "ตัวชี้วัด",
     threshold: "เกณฑ์", limitations: "ข้อจำกัด", oversight: "การกำกับโดยมนุษย์", costLatency: "ค่าใช้จ่ายและ latency",
     monitoring: "การเฝ้าระวัง", fallback: "ทางสำรองเมื่อโมเดลล้มเหลว",
+    scope: "ขอบเขต", snapshot: "สำเนาก่อนแก้", dryRun: "การลองรันแบบไม่เขียนจริง", rerunSafe: "รันซ้ำได้ปลอดภัย",
+    rollback: "การย้อนกลับ", weakness: "จุดอ่อน", verification: "วิธีพิสูจน์",
+    changes: "สิ่งที่เปลี่ยน", permissions: "สิทธิ์และ secret ที่ใช้",
   },
 });
 
@@ -482,6 +490,89 @@ function startValidation(value, path, issues) {
   return requireObject(value, path, issues);
 }
 
+// The fields each of these sections must answer (with a reason when the answer
+// is none or unknown). The validators and the approval page's checklist both
+// read this table, so what is checked and what is shown cannot drift.
+export const REQUIRED_ANSWERS = Object.freeze({
+  dataFix: Object.freeze(["scope", "snapshot", "dryRun", "rerunSafe", "rollback"]),
+  hardening: Object.freeze(["weakness", "control", "verification"]),
+  pipelinePlan: Object.freeze(["changes", "permissions", "blastRadius", "rollback"]),
+  infraPlan: Object.freeze(["costDelta"]),
+  experimentDesign: Object.freeze(["guardrails", "stopRules"]),
+  modelCard: Object.freeze(["evaluation"])
+});
+
+// A newer required field: present, and "none" or "unknown" only with a reason,
+// so the answer is always one the author can truthfully give.
+function requireAnswer(row, path, field, issues) {
+  if (!present(row[field])) issues.push(`${path}.${field} is required`);
+  else {
+    const bare = bareAbsenceIssue(row[field], `${path}.${field}`);
+    if (bare) issues.push(bare);
+  }
+}
+
+// The same for a list: entries, or one string saying none or unknown and why.
+function requireAnswerList(row, path, field, issues) {
+  const value = row[field];
+  if (typeof value === "string") {
+    if (absenceKind(value) === "reasoned") return;
+    issues.push(bareAbsenceIssue(value, `${path}.${field}`) ||
+      `${path}.${field} must be a list of strings, or 'unknown: <reason>'`);
+    return;
+  }
+  stringList(value, `${path}.${field}`, issues, { required: true });
+}
+
+// --- dataFix, hardening, pipelinePlan -------------------------------------
+
+export function validateDataFix(value, path = "dataFix") {
+  const issues = [];
+  if (!startValidation(value, path, issues)) return issues;
+  for (const field of REQUIRED_ANSWERS.dataFix) requireAnswer(value, path, field, issues);
+  return issues;
+}
+
+export function renderDataFix(value, { language } = {}) {
+  if (!isObject(value) || !present(value)) return "";
+  const l = labels(language);
+  return partTable([
+    [l.scope, value.scope], [l.snapshot, value.snapshot], [l.dryRun, value.dryRun],
+    [l.rerunSafe, value.rerunSafe], [l.rollback, value.rollback],
+  ], l);
+}
+
+export function validateHardening(value, path = "hardening") {
+  const issues = [];
+  if (!startValidation(value, path, issues)) return issues;
+  for (const field of REQUIRED_ANSWERS.hardening) requireAnswer(value, path, field, issues);
+  return issues;
+}
+
+export function renderHardening(value, { language } = {}) {
+  if (!isObject(value) || !present(value)) return "";
+  const l = labels(language);
+  return partTable([
+    [l.weakness, value.weakness], [l.control, value.control], [l.verification, value.verification],
+  ], l);
+}
+
+export function validatePipelinePlan(value, path = "pipelinePlan") {
+  const issues = [];
+  if (!startValidation(value, path, issues)) return issues;
+  for (const field of REQUIRED_ANSWERS.pipelinePlan) requireAnswer(value, path, field, issues);
+  return issues;
+}
+
+export function renderPipelinePlan(value, { language } = {}) {
+  if (!isObject(value) || !present(value)) return "";
+  const l = labels(language);
+  return partTable([
+    [l.changes, value.changes], [l.permissions, value.permissions],
+    [l.blastRadius, value.blastRadius], [l.rollback, value.rollback],
+  ], l);
+}
+
 // --- dependencyChange -----------------------------------------------------
 
 function validateDependencyRow(row, path, issues) {
@@ -553,6 +644,7 @@ export function validateInfraPlan(value, path = "infraPlan") {
   const issues = [];
   if (!startValidation(value, path, issues)) return issues;
   requireFields(value, path, ["planDiff", "blastRadius"], issues);
+  for (const field of REQUIRED_ANSWERS.infraPlan) requireAnswer(value, path, field, issues);
   stringList(value.environments, `${path}.environments`, issues, { required: true });
   if (value.provisioningOrder !== undefined) stringList(value.provisioningOrder, `${path}.provisioningOrder`, issues);
   return issues;
@@ -625,8 +717,7 @@ export function validateExperimentDesign(value, path = "experimentDesign") {
   const issues = [];
   if (!startValidation(value, path, issues)) return issues;
   requireFields(value, path, ["hypothesis", "primaryMetric", "allocation", "decisionRule"], issues);
-  if (value.guardrails !== undefined) stringList(value.guardrails, `${path}.guardrails`, issues);
-  if (value.stopRules !== undefined) stringList(value.stopRules, `${path}.stopRules`, issues);
+  for (const field of REQUIRED_ANSWERS.experimentDesign) requireAnswerList(value, path, field, issues);
   return issues;
 }
 
@@ -683,7 +774,15 @@ export function validateModelCard(value, path = "modelCard") {
   const pin = modelPin(value);
   if (!present(pin)) issues.push(`${path}.versionPin is required`);
   else if (FLOATING_VERSION.test(String(pin).trim())) issues.push(`${path}.versionPin must identify a fixed version`);
-  if (value.evaluation !== undefined && requireObject(value.evaluation, `${path}.evaluation`, issues)) {
+  // The evaluation is an object with thresholds, or one string saying none or
+  // unknown and why; absent is not an answer.
+  if (typeof value.evaluation === "string") {
+    if (absenceKind(value.evaluation) !== "reasoned")
+      issues.push(bareAbsenceIssue(value.evaluation, `${path}.evaluation`) ||
+        `${path}.evaluation must be an object with a set and thresholds, or 'unknown: <reason>'`);
+  } else if (value.evaluation === undefined || value.evaluation === null) {
+    issues.push(`${path}.evaluation is required`);
+  } else if (requireObject(value.evaluation, `${path}.evaluation`, issues)) {
     requireFields(value.evaluation, `${path}.evaluation`, ["set"], issues);
     const thresholds = value.evaluation.thresholds;
     if (!Array.isArray(thresholds) || !thresholds.length)
@@ -706,6 +805,7 @@ export function renderModelCard(value, { language } = {}) {
     [l.versionPin, modelPin(value)], [l.dataSource, pick(value, ["data", "dataSource"])], [l.license, value.license],
     [l.oversight, value.oversight], [l.costLatency, pick(value, ["costLatency", "cost"])],
     [l.monitoring, value.monitoring], [l.fallback, value.fallback],
+    [l.evaluation, typeof value.evaluation === "string" ? value.evaluation : undefined],
   ], l)];
   const evaluation = isObject(value.evaluation) ? value.evaluation : null;
   if (evaluation && present(evaluation)) {
@@ -732,4 +832,7 @@ export const WORK_TYPE_FIELDS = Object.freeze({
   experimentDesign: Object.freeze({ validate: validateExperimentDesign, render: renderExperimentDesign }),
   releasePlan: Object.freeze({ validate: validateReleasePlan, render: renderReleasePlan }),
   modelCard: Object.freeze({ validate: validateModelCard, render: renderModelCard }),
+  dataFix: Object.freeze({ validate: validateDataFix, render: renderDataFix }),
+  hardening: Object.freeze({ validate: validateHardening, render: renderHardening }),
+  pipelinePlan: Object.freeze({ validate: validatePipelinePlan, render: renderPipelinePlan }),
 });

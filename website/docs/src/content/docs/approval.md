@@ -107,18 +107,36 @@ appears once, hardest-to-undo first (E, G, F, D, A, B, C).
 | B | bugfix | What is the problem, and how will we know it is fixed? |
 | C | refactor, dependency, config, docs, test, chore | Is it safe, and what must stay the same? |
 | D | api, library, deprecation | Who uses this contract, and what happens to them? |
-| E | data, migration | Can data be damaged, and can it be undone? |
-| F | async, integration, infra, observability, performance | What happens when it breaks, and what does it cost? |
-| G | privacy, ml | Whose data is used, for how long, and what if it goes wrong? |
+| E | data, migration, data-fix | Can data be damaged, and can it be undone? |
+| F | async, integration, infra, observability, performance, cicd | What happens when it breaks, and what does it cost? |
+| G | privacy, ml, security | Whose data is used, for how long, and what if it goes wrong? |
 
 Under the cards, two lines say how to undo the change and who it affects. They
 come from the author's `scratch.undo` and `scratch.who` when written, otherwise
 from fields the draft already has (named beside the answer), otherwise
 **unknown**. The checklist shows each required section as present or missing
 using the compiler's own rule; since a standard change cannot start without
-them, a missing section shows up mainly on rapid-lane or older drafts. Sections
-marked **recommended** are advice, not requirements. If a card or the checklist
-cannot be built, the page shows a warning for it and the rest still renders.
+them, a missing section shows up mainly on rapid-lane or older drafts. A section
+that must answer fixed fields reads missing and names each field not yet
+answered. If a card or the checklist cannot be built, the page shows a warning
+for it and the rest still renders.
+
+**Three newer kinds of work, and answers that are always possible.** A one-off
+fix to production data (`data-fix`) shows its scope, snapshot, dry run, whether
+it is safe to rerun, and how to roll it back. Security hardening with no single
+bug (`security`) shows the threat model, the weakness, the control, and how it is
+verified. A change to a pipeline or build (`cicd`) shows what changes, the
+permissions and secrets it uses, its blast radius, and its rollback. Machine
+learning work must say how the model is evaluated, an experiment must name
+guardrails and stop rules, and an infrastructure change must say what it costs.
+Nothing here ever blocks you or the agent: any of these answers can be
+**`none: <reason>`** or **`unknown: <reason>`** when the fact does not exist or is
+not yet known, and the page shows that word and the reason for you to weigh. A
+High or Critical change must also say how to undo it, or say plainly that it
+cannot be and why. These rules apply to a draft that is being started or
+revised; a change already underway is never held up by them. If a file the
+change touches points at a risk the draft did not cover, `change start` prints one
+advisory note and carries on.
 
 **What to read first.** The summary at the top of the page answers
 three plain questions: what you get, what changes (before and after, with a

@@ -493,9 +493,10 @@ test("the checklist marks present and missing required sections and keeps recomm
   const complete = pageOf(t, pageDraft({ workType: ["bugfix"], bugfix: { reproduction: "r", rootCause: "c", regression: "g" } }));
   assert.doesNotMatch(complete.slice(complete.indexOf('id="checklist"'), complete.indexOf("</section>", complete.indexOf('id="checklist"'))), /<li class="n">Bug/);
   assert.match(complete, /<li class="y"><span class="mk" aria-hidden="true">✓<\/span><span>Bug analysis<\/span>/);
+  // A field that used to be advice (ml evaluation) is now required, so it reads as missing.
   const ml = pageOf(t, pageDraft({ workType: ["ml"], modelCard: { intendedUse: "u", model: { provider: "p" }, fallback: "f", versionPin: "1" } }));
-  assert.match(ml, /<li class="skip"><span class="mk" aria-hidden="true">!<\/span><span>Model evaluation <span class="tag rec">recommended<\/span>/);
-  assert.doesNotMatch(ml, /<li class="n"><span class="mk" aria-hidden="true">✕<\/span><span>Model evaluation/);
+  assert.match(ml, /<li class="n"><span class="mk" aria-hidden="true">✕<\/span><span>Model card <span class="why">missing: Evaluation set<\/span>/);
+  assert.doesNotMatch(ml, /class="tag rec"/);
   const none = pageOf(t, pageDraft({ workType: undefined, tasks: undefined }));
   assert.doesNotMatch(none, /id="checklist"/);
 });
@@ -585,4 +586,47 @@ test("optional undo and who never make a draft fail, at any impact", () => {
     for (const scratch of [{ ...four }, { ...four, undo: "u", who: "w" }, ...(impact === "low" ? [{ undo: "u", who: "w" }, {}] : [])])
       assert.deepEqual(scratchFieldIssues({ impact, scratch }), [], `${impact} ${Object.keys(scratch)}`);
   }
+});
+
+// Cards and checklist for data-fix, security, and cicd; none and unknown answers are shown with their reason.
+test("a data fix shows the data card, takes undo from its rollback, and says unknown with the reason given", (t) => {
+  const html = pageOf(t, pageDraft({ workType: ["data-fix"], dataFix: { scope: "unknown: needs a dry run to count",
+    snapshot: "table copy refunds_bak", dryRun: "diff on staging", rerunSafe: "yes, keyed by id", rollback: "restore from refunds_bak" } }));
+  assert.match(html, /data-card="E"/);
+  assert.match(html, /<h3>Data fix<\/h3>/);
+  assert.match(html, /<dt>Scope<\/dt><dd><span class="unknown">unknown<\/span> needs a dry run to count<\/dd>/);
+  assert.match(html, /<dt>Snapshot before<\/dt><dd>table copy refunds_bak<\/dd>/);
+  assert.match(html, /<b>How to undo<\/b>restore from refunds_bak<span class="src">dataFix<\/span>/);
+  assert.match(html, /<li class="y"><span class="mk" aria-hidden="true">✓<\/span><span>Data fix plan<\/span>/);
+});
+
+test("a pipeline change shows the back-end card and security work shows the compliance card with its threat model", (t) => {
+  const pipeline = pageOf(t, pageDraft({ workType: ["cicd"], pipelinePlan: { changes: "add a deploy job",
+    permissions: "id-token write", blastRadius: "staging only", rollback: "revert the workflow" } }));
+  assert.match(pipeline, /data-card="F"/);
+  assert.match(pipeline, /<dt>Permissions and secrets<\/dt><dd>id-token write<\/dd>/);
+  assert.match(pipeline, /<b>How to undo<\/b>revert the workflow<span class="src">pipelinePlan<\/span>/);
+  const security = pageOf(t, pageDraft({ workType: ["security"],
+    threatModel: { threats: [{ threat: "stolen token", likelihood: "low", impact: "high", control: "expiry", residual: "low" }] },
+    hardening: { weakness: "sessions never expire", control: "8 hour expiry", verification: "none: no test harness yet" } }));
+  assert.match(security, /data-card="G"/);
+  assert.match(security, /<h3>Threats<\/h3>/);
+  assert.match(security, /<dt>How it is verified<\/dt><dd><span class="unknown">none<\/span> no test harness yet<\/dd>/);
+});
+
+test("a section that must answer fixed fields reads missing, naming each field, until they are answered", (t) => {
+  const half = pageOf(t, pageDraft({ workType: ["cicd"], pipelinePlan: { changes: "c", permissions: "p" } }));
+  assert.match(half, /<li class="n">[^]*?Pipeline plan <span class="why">missing: [^<]*What changes[^<]*<\/span>|Pipeline plan <span class="why">missing: Blast radius, Rollback<\/span>/);
+  const infra = pageOf(t, pageDraft({ workType: ["infra"], infraPlan: { planDiff: "+1", blastRadius: "b", environments: ["staging"] },
+    rollout: { strategy: "s", rollback: "r" } }));
+  assert.match(infra, /Infrastructure plan <span class="why">missing: Cost<\/span>/);
+  const answered = pageOf(t, pageDraft({ workType: ["infra"], infraPlan: { planDiff: "+1", blastRadius: "b", environments: ["staging"],
+    costDelta: "unknown: pricing not published" }, rollout: { strategy: "s", rollback: "r" } }));
+  assert.doesNotMatch(answered, /Infrastructure plan <span class="why">/);
+});
+
+test("the checklist has no recommended entries while no section is only advised", (t) => {
+  const html = pageOf(t, pageDraft({ workType: ["ml"], modelCard: { intendedUse: "u", model: "m", fallback: "f", versionPin: "1", evaluation: "unknown: no set yet" } }));
+  assert.doesNotMatch(html, /class="skip"/);
+  assert.match(html, /<dt>Evaluation set<\/dt><dd><span class="unknown">unknown<\/span> no set yet<\/dd>|Evaluation[^<]*<\/dt><dd><span class="unknown">unknown<\/span> no set yet/);
 });

@@ -1,0 +1,321 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "new-work-types-change-start",
+      "requirementKey": "new-work-types",
+      "scenario": "ประกาศชนิดใหม่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-work-types-change-start-2",
+      "requirementKey": "new-work-types",
+      "scenario": "ชนิดไม่รู้จัก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-work-types-change-start-3",
+      "requirementKey": "new-work-types",
+      "scenario": "ชนิดเดิมไม่เปลี่ยน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "data-fix-sections-change-start",
+      "requirementKey": "data-fix-sections",
+      "scenario": "ครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "data-fix-sections-change-start-2",
+      "requirementKey": "data-fix-sections",
+      "scenario": "ขาด snapshot",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "data-fix-sections-change-start-3",
+      "requirementKey": "data-fix-sections",
+      "scenario": "ไม่มี dataFix",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "data-fix-sections-change-start-4",
+      "requirementKey": "data-fix-sections",
+      "scenario": "ระบุไม่ทราบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "security-sections-change-start",
+      "requirementKey": "security-sections",
+      "scenario": "ครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "security-sections-change-start-2",
+      "requirementKey": "security-sections",
+      "scenario": "ขาด verification",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "cicd-sections-compile",
+      "requirementKey": "cicd-sections",
+      "scenario": "อนุมานจาก path",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "cicd-sections-change-start",
+      "requirementKey": "cicd-sections",
+      "scenario": "ขาดสิทธิ์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "cicd-sections-prove",
+      "requirementKey": "cicd-sections",
+      "scenario": "ไม่เพิ่ม provider",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "per-type-required-fields-change-start",
+      "requirementKey": "per-type-required-fields",
+      "scenario": "ml ขาด evaluation",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "per-type-required-fields-change-start-2",
+      "requirementKey": "per-type-required-fields",
+      "scenario": "experiment ขาด stopRules",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "per-type-required-fields-change-start-3",
+      "requirementKey": "per-type-required-fields",
+      "scenario": "infra ขาด costDelta",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "per-type-required-fields-advance-change-amend",
+      "requirementKey": "per-type-required-fields",
+      "scenario": "change ที่เริ่มแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "per-type-required-fields-change-start-4",
+      "requirementKey": "per-type-required-fields",
+      "scenario": "ระบุไม่ทราบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "undo-required-high-change-start",
+      "requirementKey": "undo-required-high",
+      "scenario": "high ไม่มี undo",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "undo-required-high-change-start-2",
+      "requirementKey": "undo-required-high",
+      "scenario": "มี rollback เดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "undo-required-high-change-start-3",
+      "requirementKey": "undo-required-high",
+      "scenario": "ระดับ medium",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "undo-required-high-change-amend",
+      "requirementKey": "undo-required-high",
+      "scenario": "amend ไม่ถูกบล็อก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "undo-required-high-change-start-4",
+      "requirementKey": "undo-required-high",
+      "scenario": "ระบุว่าย้อนกลับไม่ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "path-risk-note-change-start",
+      "requirementKey": "path-risk-note",
+      "scenario": "path เสี่ยงไม่มี coverage",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "path-risk-note-change-start-2",
+      "requirementKey": "path-risk-note",
+      "scenario": "มี coverage แล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "path-risk-note-change-start-3",
+      "requirementKey": "path-risk-note",
+      "scenario": "ไม่มี path เสี่ยง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "cards-new-types-package",
+      "requirementKey": "cards-new-types",
+      "scenario": "การ์ดข้อมูล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "cards-new-types-package-2",
+      "requirementKey": "cards-new-types",
+      "scenario": "การ์ด pipeline",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "cards-new-types-3",
+      "requirementKey": "cards-new-types",
+      "scenario": "ไม่มีป้ายแนะนำแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "never-blocks-land-change-start",
+      "requirementKey": "never-blocks-land",
+      "scenario": "ระบุไม่ทราบพร้อมเหตุผล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "never-blocks-land-change-start-2",
+      "requirementKey": "never-blocks-land",
+      "scenario": "ระบุไม่มีวิธีย้อนกลับ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "never-blocks-land-change-start-3",
+      "requirementKey": "never-blocks-land",
+      "scenario": "ไม่มีเหตุผล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "never-blocks-land-change-start-4",
+      "requirementKey": "never-blocks-land",
+      "scenario": "ไม่ถามผู้ใช้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "never-blocks-land-advance-archived",
+      "requirementKey": "never-blocks-land",
+      "scenario": "หลัง start ไม่ขวาง Land",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/required-sections.test.mjs .claude/harness/tests/design-blueprints.test.mjs .claude/harness/tests/outline-contract.test.mjs .claude/harness/tests/design-render.test.mjs .claude/harness/tests/change-policy-surface.test.mjs .claude/harness/tests/required-providers.test.mjs) && (node --test .claude/harness/tests/semantic-draft.test.mjs .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/change-revise.test.mjs .claude/harness/tests/scratch-nudges.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/required-sections.test.mjs .claude/harness/tests/design-blueprints.test.mjs .claude/harness/tests/outline-contract.test.mjs .claude/harness/tests/design-render.test.mjs .claude/harness/tests/change-policy-surface.test.mjs .claude/harness/tests/required-providers.test.mjs",
+        "node --test .claude/harness/tests/semantic-draft.test.mjs .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/change-revise.test.mjs .claude/harness/tests/scratch-nudges.test.mjs",
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/scratch-blocks.test.mjs .claude/harness/tests/approval-lanes.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

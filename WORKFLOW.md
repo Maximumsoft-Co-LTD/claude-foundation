@@ -270,8 +270,8 @@ work type are in `change start --template` (`workTypeExamples`,
 
 `workType` takes any of: feature, bugfix, refactor, api, library, ui, data,
 migration, async, integration, config, performance, dependency, deprecation,
-infra, observability, privacy, experiment, client-release, ml, docs, test,
-chore. Undeclared, it is inferred from task paths. A declared `workType` must
+infra, observability, privacy, experiment, client-release, ml, data-fix,
+security, cicd, docs, test, chore. Undeclared, it is inferred from task paths. A declared `workType` must
 include the type its typed signals require: `integrations` or `riskSignals`
 `external-integration` require `integration`, and `performance-slo` requires
 `performance`; otherwise intake returns an `EDIT` naming the missing type.
@@ -302,10 +302,41 @@ tells its failure story in its own section. Each type adds:
 | experiment | experimentDesign, rollout |
 | client-release | releasePlan |
 | ml | modelCard |
+| data-fix | dataFix |
+| security | threatModel, hardening |
+| cicd | pipelinePlan |
 
 User-visible work (feature, api, library, ui, deprecation, client-release) also
 owes a `releaseNote`. A missing section is one agent EDIT naming the field's
-shape and an example, never a user question. Work types also select Build
+shape and an example, never a user question.
+
+`data-fix` is a one-off change to production data (`dataFix`: scope, snapshot,
+dryRun, rerunSafe, rollback); `security` is hardening with no single bug to
+reproduce (`threatModel` plus `hardening`: weakness, control, verification);
+`cicd` is a change to a pipeline or build definition (`pipelinePlan`: changes,
+permissions, blastRadius, rollback), and is inferred from `.github/workflows/`,
+`.gitlab-ci.yml`, `Jenkinsfile`, `azure-pipelines.yml`, and `.circleci/`. A
+pipeline file is `cicd` only, never also `config`. `ml`, `experiment`, and `infra` also
+require `modelCard.evaluation`, `experimentDesign.guardrails` and `stopRules`, and
+`infraPlan.costDelta`, the fields that used to be advice.
+
+**Every required answer can be given truthfully.** Each field of `dataFix`,
+`hardening`, and `pipelinePlan`, and the added `modelCard.evaluation`,
+`experimentDesign` `guardrails` and `stopRules`, and `infraPlan.costDelta`, may
+be answered `none: <reason>` or `unknown: <reason>` (Thai `ไม่มี:` or `ไม่ทราบ:`)
+when the fact does not exist or is not yet known, and that counts as present;
+the approval page shows the word and the reason. A bare
+`none` or `unknown` with no reason is one agent EDIT asking for the reason.
+These rules apply to a draft being started or revised only: a change already
+started or approved, `advance`, and `change amend` are never blocked by them, and
+none of them asks the user a question or stops Prove or Land. A change at risk
+level High or Critical must also say how to undo it: `scratch.undo`, an
+existing rollback field (`rollout.rollback`, `dataModel` rollback rows,
+`migrationPlan.rollbackWindow`, `dependencyChange` pins, `dataFix.rollback`,
+`pipelinePlan.rollback`), or `none: <reason>` when it cannot be undone. At
+`change start`, a touched path that points at a risk the draft neither declares
+nor covers in discovery (a migration file with no `persisted-data-change`
+coverage, for example) prints one advisory `NOTE: path risk` and never blocks. Work types also select Build
 skills and evidence capabilities (below and in
 [EVIDENCE.md](.claude/harness/EVIDENCE.md)).
 
@@ -590,24 +621,24 @@ guessed.
 | B | bugfix | What is the problem, how will we know it is fixed? | `bugfix`, `bugfix.incident`, `bugfix.disclosure` |
 | C | refactor, dependency, config, docs, test, chore | Is it safe, what must stay the same? | `refactor`, `dependencyChange`, `configContract` |
 | D | api, library, deprecation | Who uses this contract and what happens to them? | `apiContracts`, `boundaries`, `libraryContract`, `deprecationPlan` |
-| E | data, migration | Can data be damaged, can it be undone? | `dataModel`, `migrationPlan`, `rollout` |
-| F | async, integration, infra, observability, performance | What happens when it breaks, what does it cost? | `infraPlan`, `nfr`, `performanceAnalysis`, `jobContract`, `integrations`, `observability` |
-| G | privacy, ml | Whose data, for how long, and if it goes wrong? | `privacyAssessment`, `threatModel`, `modelCard` |
+| E | data, migration, data-fix | Can data be damaged, can it be undone? | `dataModel`, `migrationPlan`, `rollout`, `dataFix` |
+| F | async, integration, infra, observability, performance, cicd | What happens when it breaks, what does it cost? | `infraPlan`, `nfr`, `performanceAnalysis`, `jobContract`, `integrations`, `observability`, `pipelinePlan` |
+| G | privacy, ml, security | Whose data, for how long, and if it goes wrong? | `privacyAssessment`, `threatModel`, `hardening`, `modelCard` |
 
 Below the cards, two lines answer how to undo the change and who it affects:
 the author's `scratch.undo` and `scratch.who` when present, otherwise a value
-read from fields the draft already has (`rollout.rollback`, `dataModel` rollback
-rows, `migrationPlan.rollbackWindow`, `dependencyChange` pins, `deprecationPlan`
-consumers, `userStories` actors) with its source named, otherwise `unknown`.
+read from fields the draft already has (the rollback fields listed above, `deprecationPlan`
+consumers, `userStories` actors) with its source named, otherwise `unknown`. A `none:` or
+`unknown:` answer shows the word and its reason.
 
 **Required-section checklist.** The checklist lists each section
 `requiredDevSections` names for the change's work types as present or missing,
 using the same rule the compiler enforces, so it defines no rule of its own.
 Because `change start` already refuses a standard-lane draft that lacks a
 required section, a missing section appears mainly for rapid-lane and older
-drafts. Recommended sections (`modelCard.evaluation`, `experimentDesign.guardrails`
-and `stopRules`, `infraPlan.costDelta`) are shown apart with a recommended
-label when absent; they are advice, never a validation rule. A card or the
+drafts. A section that must answer fixed fields reads missing, naming each field that is
+not answered. Sections that are only advised would be shown apart with a
+recommended label and never validated; none are defined today. A card or the
 checklist that cannot be built becomes a warning on the page and the rest still
 renders.
 
