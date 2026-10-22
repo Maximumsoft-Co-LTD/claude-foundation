@@ -18,6 +18,17 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+### Candidate `497ab55fb` smoke — 2026-10-22 (no release decision)
+
+Evidence is the five-scenario, n=1, per-task
+[2026-10-22 smoke](scenario-smoke-candidate-497ab55fb-2026-10-22.md)
+([ภาษาไทย](scenario-smoke-candidate-497ab55fb-2026-10-22.th.md)): 15/15 oracle
+passes and strict delivery on every cell, no clear regression versus v3.6.7 at n=1
+(+5.2% cost, +6.2% time, within noise), Claude Code only, US$5.6888 of a US$40
+cap. It does not exercise the new work types or the newly required fields, and it
+is not the all-scenario checkpoint in [RELEASING.md](../../RELEASING.md). No release
+decision is recorded here.
+
 ### v3.6.7 publication decision — 2026-10-21
 
 Evidence is the five-scenario, n=1
