@@ -2541,6 +2541,15 @@ test("the start template states reader-sized writing limits", () => {
   assert.ok(semanticDraftTemplate().intent.length <= 70);
 });
 
+test("the start template tells the agent to write a scenario per rule without a quota or skill name", () => {
+  const guidance = MINIMAL_DRAFT_WRITING.scenarios;
+  assert.match(guidance, /one scenario per rule, limit, endpoint, or error/i);
+  assert.match(guidance, /failure and boundary cases/);
+  assert.match(guidance, /thin spec yields thin tests/);
+  assert.doesNotMatch(guidance, /\d/, "no numeric minimum");
+  assert.doesNotMatch(guidance, /skill|fundamentals/i, "no skill name");
+});
+
 test("the template describes the v5 draft folder with an example that splits cleanly", () => {
   const folder = semanticDraftTemplate().draftFolderV5;
   assert.match(folder.layout, /change\.json/);

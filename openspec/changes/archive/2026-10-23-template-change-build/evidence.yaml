@@ -1,0 +1,76 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "template-scenario-coverage-minimaldraftwriting",
+      "requirementKey": "template-scenario-coverage",
+      "scenario": "template มีแนวทาง scenario",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "template-scenario-coverage-2",
+      "requirementKey": "template-scenario-coverage",
+      "scenario": "ไม่มีโควตาและไม่มีชื่อ skill",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "build-edit-test-adequacy-advance-build-edit",
+      "requirementKey": "build-edit-test-adequacy",
+      "scenario": "task เปลี่ยนพฤติกรรมและมี claim",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "build-edit-test-adequacy-advance-build-edit-2",
+      "requirementKey": "build-edit-test-adequacy",
+      "scenario": "งานไม่เปลี่ยนพฤติกรรม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "build-edit-test-adequacy-advance-build-edit-3",
+      "requirementKey": "build-edit-test-adequacy",
+      "scenario": "task ไม่มี claim",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "build-edit-test-adequacy-field-instructions",
+      "requirementKey": "build-edit-test-adequacy",
+      "scenario": "ไม่ระบุชื่อ skill",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/advance-runtime.test.mjs)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/semantic-draft.test.mjs",
+        "node --test .claude/harness/tests/advance-runtime.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}
