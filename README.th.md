@@ -13,7 +13,7 @@ Investigate? → Change → Build → Prove → Land
 Coding agent เขียนโค้ด ส่วน harness ดูแลสถานะ พื้นที่ทำงาน หลักฐาน และการกู้คืน
 คุณยังใช้ test framework, Git และ CI เดิมได้
 
-**Version 3.6.7** · ชื่อ package และ CLI ที่ติดตั้ง: `claude-foundation`
+**Version 3.6.8** · ชื่อ package และ CLI ที่ติดตั้ง: `claude-foundation`
 
 ## เริ่มอ่านตรงไหน
 

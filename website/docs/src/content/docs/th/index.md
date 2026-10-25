@@ -75,5 +75,5 @@ Change Loop ไม่รับคำพูดของ agent เป็นหล�
 ใช้หน้า lifecycle และ [คำสั่ง CLI](/docs/th/cli/)
 
 :::note[เวอร์ชัน]
-เอกสารชุดนี้อ้างอิง Change Loop **v3.6.7** — runtime API 42, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
+เอกสารชุดนี้อ้างอิง Change Loop **v3.6.8** — runtime API 42, provider protocol 13 receipt ที่บันทึกด้วยเวอร์ชันก่อนหน้าจะอ่านได้เป็น `provider-version-stale` และต้องพิสูจน์ใหม่
 :::
