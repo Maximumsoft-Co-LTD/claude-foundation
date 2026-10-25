@@ -533,24 +533,43 @@ function changeMark(change) {
   return CHANGE_MARK.find(([pattern]) => pattern.test(text(change)))?.[1] || "~";
 }
 
+const ROOT_REPOSITORY = "root";
+
+function repositoryOf(owner) {
+  return text(owner?.repository) || ROOT_REPOSITORY;
+}
+
+// A root path keys as itself and another repository's as `repo::path`, so the
+// same path in two repositories never collides.
+function pathKey(repository, path) {
+  return repository === ROOT_REPOSITORY ? path : `${repository}::${path}`;
+}
+
 // Paths the change's base does not have yet (recorded by withNewPaths), so a
 // task path that creates a file reads as an addition without a file map.
 function newPaths(draft) {
-  return new Set(strings(draft?._newPaths).map(scopePath));
+  return new Set(strings(draft?._newPaths).map((entry) => {
+    const split = entry.indexOf("::");
+    return split < 0 ? scopePath(entry) : `${entry.slice(0, split)}::${scopePath(entry.slice(split + 2))}`;
+  }));
 }
 
-// Record which task paths do not exist at the base. `exists` answers for a
-// project-relative path; a path in another repository stays a change.
+// Record which task paths do not exist at their repository's base. `exists`
+// answers for a path relative to that repository's root (the repository id is
+// the second argument for a non-root task); a throw means the root is unknown.
 export function withNewPaths(draft, exists) {
   if (typeof exists !== "function") return draft;
   const fresh = new Set();
   for (const task of draft?.tasks || []) {
-    if (text(task?.repository)) continue;
+    const repository = repositoryOf(task);
     for (const scope of strings(task?.paths)) {
       const path = scopePath(scope);
       if (!path || /[*?[]/.test(path) || path.startsWith("../") || path.startsWith("/")) continue;
-      try { if (!exists(path.replace(/\/$/, ""))) fresh.add(path); }
-      catch { /* unknown is never reported as an addition */ }
+      try {
+        const bare = path.replace(/\/$/, "");
+        const present = repository === ROOT_REPOSITORY ? exists(bare) : exists(bare, repository);
+        if (!present) fresh.add(pathKey(repository, path));
+      } catch { /* unknown is never reported as an addition */ }
     }
   }
   return fresh.size ? { ...draft, _newPaths: [...fresh] } : draft;
@@ -559,19 +578,39 @@ export function withNewPaths(draft, exists) {
 // A tree of every path the change touches, marked + add, ~ change, - remove.
 // Directory scopes end in `/`; the reader sees the shape of the change at once.
 // Rendered inside design.md's file map, which already lists the paths.
+// A change that names a repository gets one titled tree per repository.
 export function renderFileTree(draft) {
-  const marks = new Map();
   const fresh = newPaths(draft);
+  const repositories = new Map();
+  const marksOf = (repository) => {
+    if (!repositories.has(repository)) repositories.set(repository, new Map());
+    return repositories.get(repository);
+  };
   for (const row of Array.isArray(draft?.fileMap) ? draft.fileMap : []) {
     const path = scopePath(row?.path);
-    if (path) marks.set(path, text(row?.change) ? changeMark(row.change) : fresh.has(path) ? "+" : "~");
+    const repository = repositoryOf(row);
+    if (path) marksOf(repository).set(path,
+      text(row?.change) ? changeMark(row.change) : fresh.has(pathKey(repository, path)) ? "+" : "~");
   }
   for (const task of draft?.tasks || [])
     for (const scope of strings(task?.paths)) {
       const path = scopePath(scope);
-      if (path && !marks.has(path)) marks.set(path, fresh.has(path) ? "+" : "~");
+      const repository = repositoryOf(task);
+      if (path && !marksOf(repository).has(path))
+        marksOf(repository).set(path, fresh.has(pathKey(repository, path)) ? "+" : "~");
     }
-  if (!marks.size) return "";
+  const named = [...repositories.keys()].some((repository) => repository !== ROOT_REPOSITORY);
+  const blocks = [...repositories.entries()]
+    .sort(([left], [right]) => (left === ROOT_REPOSITORY ? -1 : right === ROOT_REPOSITORY ? 1
+      : left.localeCompare(right)))
+    .map(([repository, marks]) => {
+      const block = "```text\n" + treeLines(marks) + "\n```";
+      return named ? `**${repository}**\n\n${block}` : block;
+    });
+  return blocks.length ? "`+` add · `~` change · `-` remove\n\n" + blocks.join("\n\n") : "";
+}
+
+function treeLines(marks) {
   const root = new Map();
   for (const [path, mark] of [...marks.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     const parts = path.replace(/\/$/, "").split("/");
@@ -594,7 +633,7 @@ export function renderFileTree(draft) {
     });
   };
   walk(root, "");
-  return "`+` add · `~` change · `-` remove\n\n```text\n" + lines.join("\n") + "\n```";
+  return lines.join("\n");
 }
 
 function requirementsByTask(draft) {
@@ -614,10 +653,13 @@ export function derivedFileMap(draft) {
     for (const scope of strings(task?.paths)) {
       const path = scopePath(scope);
       if (!path) continue;
-      const row = rows.get(path) ||
-        { path, change: fresh.has(path) ? "add" : "change", responsibility: "", tasks: [] };
+      const repository = repositoryOf(task);
+      const key = pathKey(repository, path);
+      const row = rows.get(key) ||
+        { path, ...(repository === ROOT_REPOSITORY ? {} : { repository }),
+          change: fresh.has(key) ? "add" : "change", responsibility: "", tasks: [] };
       row.tasks = [...new Set([...row.tasks, task.id].filter(Boolean))];
-      rows.set(path, row);
+      rows.set(key, row);
     }
   return [...rows.values()];
 }

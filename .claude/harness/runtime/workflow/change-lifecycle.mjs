@@ -1707,8 +1707,14 @@ export function createChangeLifecycle({
   function materializeDraft(id, draft) {
     const state = loadRuntime(id);
     const basePath = changePath(id);
-    // Task paths the main checkout does not have yet read as additions.
-    const documented = withNewPaths(draft, (path) => existsSync(join(root, path)));
+    // Task paths their repository's checkout does not have yet read as
+    // additions; a repository whose root is unknown throws and stays a change.
+    const documented = withNewPaths(draft, (path, repository) => {
+      if (!repository) return existsSync(join(root, path));
+      const relativePath = declaredRepositories().find((row) => row.id === repository)?.relativePath;
+      if (!relativePath) throw new Error(`repository ${repository} has no known root`);
+      return existsSync(join(root, relativePath, path));
+    });
     writeFileSync(join(basePath, "proposal.md"),
       renderDraftProposal(documented, state, proposalContext(draft, state)));
     // A standard v4 change is built from its dev document, so design.md is

@@ -423,7 +423,11 @@ open questions, the user flow, a component map, and the derived file and test
 maps. The folder tree lives inside the File map; task outcomes, verify commands,
 and dependencies live only in `tasks.md`. It fills the
 file map's task column from task `[paths:]` and omits sections the change
-leaves empty. While any open question remains, an approval request returns those
+leaves empty. When a task names a `repository`, the folder tree is one titled
+tree per repository and the file map gains a Repo column; a path is marked
+`+` when it is missing at that repository's own base, and stays `~` when the
+repository's root cannot be resolved. A change with no named repository renders
+unchanged. While any open question remains, an approval request returns those
 questions as one `ASK_USER` decision instead of recording consent; the agent
 asks them, records the answers, and asks for approval again.
 

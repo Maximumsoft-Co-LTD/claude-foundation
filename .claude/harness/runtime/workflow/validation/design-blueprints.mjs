@@ -401,7 +401,8 @@ export function renderDesignBlueprints(draft, { inferredWorkTypes = [], fileTree
     ["Failure", "failure"], ["User sees", "userSees"], ["Recovery", "recovery"], ["Covers", "covers", true]
   ], draft.failureMatrix));
   if (present(draft.fileMap)) sections.push(`## File map\n\n` + table([
-    ["Path", "path"], ["Change", "change"], ["Responsibility", "responsibility"], ["Tasks", "tasks", true]
+    ["Repo", "repository", true], ["Path", "path"], ["Change", "change"],
+    ["Responsibility", "responsibility"], ["Tasks", "tasks", true]
   ], draft.fileMap) + (fileTree ? `\n\n${fileTree}` : ""));
   // A derived row names the check command that proves it; an authored row
   // may name a test file. Either column shows only when used.
@@ -447,18 +448,20 @@ export function renderFileMapBody(rows, { derived = false, fileTree = "" } = {})
   let body;
   if (!derived) {
     body = table([
-      ["Path", "path"], ["Change", "change"], ["Responsibility", "responsibility"], ["Tasks", "tasks", true]
+      ["Repo", "repository", true], ["Path", "path"], ["Change", "change"],
+      ["Responsibility", "responsibility"], ["Tasks", "tasks", true]
     ], rows);
   } else {
     const groups = new Map();
     for (const row of rows) {
       const tasks = taskList(row?.tasks);
-      const key = tasks.join(",");
-      const group = groups.get(key) || { tasks, paths: [] };
+      const repository = String(row?.repository || "").trim();
+      const key = `${repository}|${tasks.join(",")}`;
+      const group = groups.get(key) || { repository, tasks, paths: [] };
       group.paths.push(String(row?.change || "").toLowerCase() === "add" ? `\`${row.path}\` (add)` : `\`${row.path}\``);
       groups.set(key, group);
     }
-    body = table([["Tasks", "tasks", true], ["Paths", "paths"]],
+    body = table([["Repo", "repository", true], ["Tasks", "tasks", true], ["Paths", "paths"]],
       [...groups.values()].map((group) => ({ ...group, paths: group.paths.join(", ") })));
   }
   return body + (fileTree ? `\n\n${fileTree}` : "");

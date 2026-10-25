@@ -1,0 +1,85 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "file-tree-per-repository-the-file-tree-and-derived-file-map-rend",
+      "requirementKey": "file-tree-per-repository",
+      "scenario": "Two repositories",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "file-tree-per-repository-the-file-tree-renders",
+      "requirementKey": "file-tree-per-repository",
+      "scenario": "Same path in two repositories",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "file-tree-per-repository-the-file-tree-and-file-map-render",
+      "requirementKey": "file-tree-per-repository",
+      "scenario": "Single repository unchanged",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-files-in-other-repositories-a-task-bound-to-api-lists-that-p",
+      "requirementKey": "new-files-in-other-repositories",
+      "scenario": "New file in repository api",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-files-in-other-repositories-a-task-bound-to-api-lists-that-2",
+      "requirementKey": "new-files-in-other-repositories",
+      "scenario": "Existing file in repository api",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "new-files-in-other-repositories-the-paths-are-checked-for-existe",
+      "requirementKey": "new-files-in-other-repositories",
+      "scenario": "Unresolvable repository root",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "file-map-docs",
+      "requirementKey": "file-map-docs",
+      "scenario": "Contract text",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/design-blueprints.test.mjs .claude/harness/tests/change-draft-materialization.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/design-blueprints.test.mjs .claude/harness/tests/change-draft-materialization.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

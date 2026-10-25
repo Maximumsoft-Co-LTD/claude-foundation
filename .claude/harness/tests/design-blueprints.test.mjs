@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BEHAVIOR_NEUTRAL_WORK, LIGHT_WORK, WORK_TYPES, designBlueprintIssues, designBlueprintWarnings,
-  draftHasBlueprints, lightweightDraft, renderDesignBlueprints, requiredBlueprints
+  draftHasBlueprints, lightweightDraft, renderDesignBlueprints, renderFileMapBody, requiredBlueprints
 } from "../runtime/workflow/validation/design-blueprints.mjs";
 import {
   draftNeedsDesign, renderDraftDesign, renderDraftProposal, semanticDraftKeepsDesign
@@ -326,11 +326,47 @@ test("task paths missing at the base read as additions in the tree and file map"
     /```text\n\.\n├── \+ lib\/\n└── src\/\n {4}├── ~ index\.js\n {4}└── \+ sum\.js/);
   assert.deepEqual(derivedFileMap(documented).map((row) => [row.path, row.change]),
     [["src/sum.js", "add"], ["src/index.js", "change"], ["lib/", "add"]]);
-  // An authored delete keeps `-`; another repository's path stays a change.
+  // An authored delete keeps `-`.
   assert.match(renderFileTree({ ...documented, fileMap: [{ path: "src/sum.js", change: "delete" }] }),
     /- sum\.js/);
-  assert.equal(withNewPaths({ tasks: [{ repository: "api", paths: ["x.js"] }] }, () => false)._newPaths,
-    undefined);
+  // One repository: no repository heading and no Repo column.
+  assert.doesNotMatch(renderFileTree(documented), /\*\*/);
+  assert.ok(derivedFileMap(documented).every((row) => !("repository" in row)));
+  assert.doesNotMatch(renderFileMapBody(derivedFileMap(documented), { derived: true }), /Repo/);
+});
+
+const twoRepositories = () => ({
+  tasks: [
+    { id: "T001", outcome: "Service", repository: "api", paths: ["service/new_test.go", "service/old.go"] },
+    { id: "T002", outcome: "Docs", paths: ["docs/08.md", "service/old.go"] }
+  ]
+});
+
+test("a two-repository change gets one tree per repository and marks new files in each", () => {
+  const has = { api: ["service/old.go"], root: ["docs/08.md", "service/old.go"] };
+  const documented = withNewPaths(twoRepositories(), (path, repository) => has[repository || "root"].includes(path));
+  const tree = renderFileTree(documented);
+  assert.match(tree, /\*\*root\*\*\n\n```text\n\.\n├── docs\/\n│ {3}└── ~ 08\.md\n└── service\/\n {4}└── ~ old\.go\n```/);
+  assert.match(tree, /\*\*api\*\*\n\n```text\n\.\n└── service\/\n {4}├── \+ new_test\.go\n {4}└── ~ old\.go\n```/);
+  assert.ok(tree.indexOf("**root**") < tree.indexOf("**api**"));
+  // The same path in two repositories stays two rows.
+  const rows = derivedFileMap(documented);
+  assert.deepEqual(rows.map((row) => [row.repository, row.path, row.change]), [
+    ["api", "service/new_test.go", "add"], ["api", "service/old.go", "change"],
+    [undefined, "docs/08.md", "change"], [undefined, "service/old.go", "change"]
+  ]);
+  const body = renderFileMapBody(rows, { derived: true });
+  assert.match(body, /\| Repo \| Tasks \| Paths \|/);
+  assert.match(body, /\| api \| T001 \| `service\/new_test\.go` \(add\), `service\/old\.go` \|/);
+});
+
+test("a repository whose root cannot be resolved never reads as an addition", () => {
+  const documented = withNewPaths(twoRepositories(), (path, repository) => {
+    if (repository) throw new Error("no root");
+    return true;
+  });
+  assert.equal(documented._newPaths, undefined);
+  assert.match(renderFileTree(documented), /\*\*api\*\*\n\n```text\n\.\n└── service\/\n {4}├── ~ new_test\.go/);
 });
 
 test("descriptive dev-document sections keep a small low-risk draft rapid", () => {
