@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Work types `data-fix` (`dataFix`), `security` (`threatModel` + `hardening`) and
+  `cicd` (`pipelinePlan`, inferred from workflow and pipeline paths), each with
+  required sections. `ml` evaluation, experiment guardrails/stop rules and infra
+  `costDelta` are now required instead of advised.
+- High and Critical drafts must say how to undo them (`scratch.undo` or an
+  existing rollback field). Every new required field accepts `none: <reason>` or
+  `unknown: <reason>`, so no gate is a dead end; rules apply only to drafts
+  being started or revised.
+- Decision-first approval page: type cards with the checklist, diagrams and the
+  prototype placed on the card they explain, a quiet status line in place of the
+  decision section, and a risk meter coloured by level.
+- `change start --template` carries test-adequacy guidance (one scenario per
+  stated rule, with its failure and boundary cases).
+- Benchmark aggregate reports `skillToolCalls`, `skillRuns` and `skillsLoaded`
+  per scenario.
+
+### Fixed
+
+- The design document's file tree and derived file map group paths by
+  repository and mark a file missing at its own repository's base as an addition
+  (`+`); a repository whose root is unknown stays `~`. Single-repository output
+  is unchanged.
+- Context budgets: `change.md` returns to its 250-word limit by moving `scratch`
+  and approval-question detail into the Change workflow reference, and the
+  large-change fixture declares the required `scratch` block.
+
 ## [3.6.7] - 2026-10-21
 
 ### Added
