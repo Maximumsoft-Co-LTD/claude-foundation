@@ -10,9 +10,7 @@ notes for unavailable sessions; never claim to have read missing history.
 For a v2 binding or detailed-document request, read [investigation-handoff.md](investigation-handoff.md)
 before compile or amend.
 
-Read the smallest canonical sources that settle the behavior (specs,
-code/tests, decisions, prototypes, integration docs). Reuse settled answers without asking them again.
-Read [semantic-intake.md](semantic-intake.md) when the draft declares
+Reuse settled answers without asking them again. Read [semantic-intake.md](semantic-intake.md) when the draft declares
 `impact: high`, `riskSignals`, integrations, or external operations, or inspect
 returns discovery rows or `ASK_USER`.
 
@@ -45,21 +43,19 @@ Make the agreement readable without chat history:
   or an implementation step; mark `kind` `success`, `failure`, or `boundary`.
 - Tasks name outcomes and affected paths, link requirement coverage, and name
   verification that can detect a violation; a command run alone is not acceptance.
-- Optional `userStories` (P1-P3, `covers`), `successCriteria`, and
-  `assumptions` help reviewers; `openQuestions` block approval until answered.
-  Record each settled answer as a resolved `discovery.decisions` row with
-  `decidedBy`. Resolve discoverable facts yourself; never invent facts.
+- `openQuestions` block approval until answered. Record each settled answer as
+  a resolved `discovery.decisions` row with `decidedBy`. Resolve discoverable
+  facts yourself; never invent facts.
 
 Cross-component changes need a boundary/dependency diagram; changed state,
 async, or workflow behavior needs transitions or sequence, including
 failure/recovery paths.
-Declare `workType`; the harness infers it
-from `paths` only when omitted, and derives folder tree, plan, file and test maps, the failure
-matrix (from `failure` scenarios, else scenarios stating a rejection or error),
-`why` from `intent`, and `test` evidence unless security triggers apply, noting
-each under "Derived by harness". A standard draft authors failure scenarios
-(not for behavior-neutral or light work) plus each work type's block from the
-template's `workTypeExamples`, within `minimalDraftWriting`. Keep `fileMap` paths and task tests inside task `paths`.
+Declare `workType` (omitted, it is inferred from `paths`). The harness derives
+the folder tree, plan, file and test maps, failure matrix, `why` from `intent`,
+and `test` evidence unless security triggers apply, noting each under "Derived
+by harness". A standard draft authors failure scenarios (not for
+behavior-neutral or light work) plus each work type's `workTypeExamples` block.
+Keep `fileMap` paths and task tests inside task `paths`.
 
 ## Compile and inspect
 
@@ -83,12 +79,9 @@ heading, empty section, `TODO`, or `TBD`. v4 JSON stays valid. Its discovery con
   external operations only for permission-bound work; Grounding v3 only for
   non-derived material decisions.
 
-Local references are project files; remote sources need HTTPS and a fixed
-version.
-
 Create no decision-tree or interview ledger. Never create `CONTEXT.md`, a glossary artifact, or an ADR store;
 durable terms and choices belong in the compiled packet. Always hash grounding reads in the draft `grounding` field
-when a material decision needs one; the compiler writes `grounding.yaml`.
+when a material decision needs one.
 
 Compare canonical requirements before choosing `ADDED`, `MODIFIED`, or
 `REMOVED`. Do not default to `ADDED`. For `MODIFIED`, copy the complete
@@ -140,3 +133,11 @@ At a real decision, authority, resource, contradiction, or repeated no-progress
 boundary, preserve the draft and present supported alternatives. The agent
 must never retire one unasked or infer acceptance from silence.
 Optional audit warnings are advisory and do not invent missing grounding.
+
+## Scratch lines and the approval question
+
+`impact` medium/high drafts need `scratch{get, asIs, toBe, ifFail}`: one plain
+line each (max 240 characters) for an approver who does not read code;
+`undo`, `who` optional. At the approval gate, put them in the structured
+question with options approve, approve with edits (ask what to change), show
+details (package path), reject.

@@ -20,6 +20,13 @@
     }
   ],
   "impact": "high",
+  "scratch": {
+    "get": "Integrators get long-lived, revocable, scoped, rate-limited API keys for server-to-server calls.",
+    "asIs": "Only short-lived bearer session tokens exist; 0 API keys can be issued.",
+    "toBe": "Users issues hashed keys, the gateway authenticates ApiKey with scopes and a rate limit, the SDK sends them.",
+    "ifFail": "A bad or revoked key gets 401 and bearer sessions keep working; the client rotates or reissues the key.",
+    "undo": "Disable the ApiKey scheme in the gateway and drop the apiKeys table; bearer sessions are untouched."
+  },
   "coupling": "coupled",
   "workType": [
     "feature",
