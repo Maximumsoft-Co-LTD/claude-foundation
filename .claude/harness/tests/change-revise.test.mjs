@@ -69,7 +69,7 @@ function snapshot(root) {
   return files;
 }
 
-function fixture(t, { approvalLanes = undefined } = {}) {
+function fixture(t, { approvalLanes = undefined, decisionGateNotice = undefined } = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundation-change-revise-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const changes = join(root, "openspec", "changes");
@@ -93,6 +93,7 @@ function fixture(t, { approvalLanes = undefined } = {}) {
   const lifecycle = createChangeLifecycle({
     root,
     ...(approvalLanes ? { approvalLanes } : {}),
+    ...(decisionGateNotice ? { decisionGateNotice } : {}),
     policy: () => ({ workflow: { grounding: "optional" }, land: {} }),
     securityTerms: ["authentication"],
     fail: (message) => { throw new Error(message); },
@@ -670,6 +671,36 @@ test(`an approved ${initialStatus} change keeps its approval across an additive 
   assert.doesNotThrow(() => assertSpecApproval(value.root, "revisable-change", amended));
   assert.match(value.control.output.join("\n"),
     /AMENDED revisable-change[\s\S]*requirement delta \(covered by the current approval\):\n  added: retry/);
+});
+}
+
+for (const [label, notice, expected] of [
+  ["a failed final review", () => ({ command: "claude-foundation advance revisable-change --approve-spec --decision-ref <ref>" }), true],
+  ["no failed final review", () => null, false]
+]) {
+test(`change amend ${expected ? "names" : "omits"} the decision revision route with ${label}`, (t) => {
+  const value = fixture(t, { decisionGateNotice: notice });
+  value.start();
+  approve(value, "fixture://user/spec");
+  const amendmentPath = join(value.root, "amendment.json");
+  writeJson(amendmentPath, {
+    version: 1,
+    reason: "User asked for retries",
+    addRequirements: [requirement("retry", "The webhook retries a failed delivery")],
+    addTasks: [{ key: "retry-task", outcome: "Implement retries", covers: ["retry"],
+      dependsOn: ["implement"], verify: "npm test -- retries" }],
+    evidence: { retry: { capabilities: ["test"] } }
+  });
+  const log = console.log;
+  value.control.output.length = 0;
+  console.log = (line) => value.control.output.push(String(line));
+  try { value.lifecycle.amendChange("revisable-change", amendmentPath); }
+  finally { console.log = log; }
+  const output = value.control.output.join("\n");
+  assert.match(output, /AMENDED revisable-change/);
+  if (expected)
+    assert.match(output, /decision required:.*--approve-spec --decision-ref <ref>/);
+  else assert.doesNotMatch(output, /decision required/);
 });
 }
 

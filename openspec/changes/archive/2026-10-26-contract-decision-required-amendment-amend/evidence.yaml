@@ -1,0 +1,76 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "decision-route-command-agent-advance",
+      "requirementKey": "decision-route-command",
+      "scenario": "change แบบ grounding",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-route-command-agent-advance-2",
+      "requirementKey": "decision-route-command",
+      "scenario": "change แบบ non-grounding",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "decision-route-command-agent-advance-3",
+      "requirementKey": "decision-route-command",
+      "scenario": "gate ไม่ถูกผ่อน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-decision-notice-agent-change-amend",
+      "requirementKey": "amend-decision-notice",
+      "scenario": "amend หลัง delta ที่ล้ม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-decision-notice-agent-change-amend-2",
+      "requirementKey": "amend-decision-notice",
+      "scenario": "amend ที่ไม่มี review ล้ม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amend-decision-notice-agent-change-amend-3",
+      "requirementKey": "amend-decision-notice",
+      "scenario": "amend ที่ไม่เปลี่ยน contract",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/review-closure-helpers.test.mjs .claude/harness/tests/review-repair-closure.test.mjs .claude/harness/tests/advance-runtime.test.mjs) && (node --test .claude/harness/tests/amendment-invalidation.test.mjs)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/review-closure-helpers.test.mjs .claude/harness/tests/review-repair-closure.test.mjs .claude/harness/tests/advance-runtime.test.mjs",
+        "node --test .claude/harness/tests/amendment-invalidation.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

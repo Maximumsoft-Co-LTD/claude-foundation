@@ -963,7 +963,8 @@ const {
   rebindReusableReceipt,
   rebindDiffBoundReceipt,
   recordReceipt,
-  recordDeterministicReviewClosure
+  recordDeterministicReviewClosure,
+  decisionGateNotice
 } = receiptRuntime;
 const { measure: measureBenchmark } = createBenchmarkRuntime({
   prepareBaseTree,
@@ -1617,7 +1618,8 @@ const {
   stableHash,
   trapFailures,
   rollbackStart: rollbackAtomicStart,
-  repositoryCatalog
+  repositoryCatalog,
+  decisionGateNotice
 });
 const amendTaskVerify = amendTaskVerifyOperation.bind(null, { root: ROOT, amendChange });
 const { inspectInvestigation, investigationRecordTemplate } = createInvestigationRuntime({

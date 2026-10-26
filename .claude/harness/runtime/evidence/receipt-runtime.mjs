@@ -209,6 +209,31 @@ export function approvedDecisionRevision(state, currentContractFingerprint) {
   };
 }
 
+// The existing way to get an approved decision revision for the current
+// contract: a grounding reopen for grounding changes, a spec approval otherwise.
+export function decisionRevisionCommand(id, state) {
+  return state?.groundingRequired === true
+    ? `claude-foundation change resolve ${id} --reopen-grounding --decision-ref <ref> --reopen-reason <why>`
+    : `claude-foundation advance ${id} --approve-spec --decision-ref <ref>`;
+}
+
+// Whether the contract now differs from the one a failed final AI delta judged,
+// with no approved decision revision: the same condition the closure blocks on.
+export function decisionGateNoticeOperation(context, id) {
+  if (!deterministicReviewClosureSource(context.deliveredAiAttempts(id))) return null;
+  const currentFingerprint = context.contractFingerprint(id);
+  const state = context.loadRuntime(id);
+  if (approvedDecisionRevision(state, currentFingerprint)) return null;
+  const stale = context.requiredProviders(id).some((provider) => {
+    if (context.providerCapability(provider, context.providerConfig(id, provider)) !== "review")
+      return false;
+    const path = context.receiptPath(id, provider);
+    const prior = context.exists(path) ? context.readJson(path, {}) : null;
+    return Boolean(prior) && prior.contractFingerprint !== currentFingerprint;
+  });
+  return stale ? { command: decisionRevisionCommand(id, state) } : null;
+}
+
 export function deterministicReviewClosureSource(delivered) {
   const source = delivered.at(-1);
   return delivered.length >= 2 && source?.resultStatus === "fail" &&
@@ -348,13 +373,15 @@ export function recordDeterministicReviewClosureOperation(
     };
   const currentContractFingerprint = context.contractFingerprint(id);
   const contractChanged = prior.contractFingerprint !== currentContractFingerprint;
+  const state = context.loadRuntime(id);
   const approvedRevision = approvedDecisionRevision(
-    context.loadRuntime(id), currentContractFingerprint);
+    state, currentContractFingerprint);
   if (contractChanged && !approvedRevision)
     return {
       closed: false,
       route: "CONTRACT_DECISION_REQUIRED",
-      reason: "The agreement changed after the final AI delta without a completed locked Decision Sheet revision."
+      reason: "The agreement changed after the final AI delta without a completed locked Decision Sheet revision.",
+      command: decisionRevisionCommand(id, state)
     };
   if (source.workspaceHash === workspaceHash)
     return {
@@ -1095,11 +1122,17 @@ export function createReceiptRuntime({
       recordRepairClosureAttempt, recordReceipt
     });
 
+  const decisionGateNotice = decisionGateNoticeOperation.bind(null, {
+    providerConfig, providerCapability, deliveredAiAttempts, receiptPath,
+    exists: existsSync, readJson, contractFingerprint, loadRuntime, requiredProviders
+  });
+
   return {
     proofPlan,
     rebindReusableReceipt,
     rebindDiffBoundReceipt,
     recordReceipt,
-    recordDeterministicReviewClosure
+    recordDeterministicReviewClosure,
+    decisionGateNotice
   };
 }

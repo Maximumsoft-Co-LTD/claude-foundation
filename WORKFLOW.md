@@ -791,6 +791,14 @@ claims in the change's execution providers, then amend again. The `AMENDED`
 output lists waivers bound to the earlier contract revision, which no longer
 apply; record each again only with a new user decision.
 
+When the final AI review delta failed and the amendment changes the contract,
+deterministic review closure needs an approved decision revision for the new
+contract. `AMENDED` then prints `decision required:` with the route, and
+`advance` returns the same command in its `ASK_USER` result: `change resolve
+<change> --reopen-grounding --decision-ref <ref> --reopen-reason <why>` for a
+grounding change, or `advance <change> --approve-spec --decision-ref <ref>`
+otherwise. A waiver does not satisfy this gate.
+
 An unfinished task (unchecked, with no valid passing command receipt for its
 claims) may change its verify command, and optionally `paths`, through an
 amendment with only `updateTasks: [{key, verify, paths?}]` rows. It needs no

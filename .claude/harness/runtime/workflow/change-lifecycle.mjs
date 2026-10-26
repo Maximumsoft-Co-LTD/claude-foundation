@@ -1223,7 +1223,8 @@ export function createChangeLifecycle({
   stableHash = null,
   trapFailures = (operation) => operation(),
   rollbackStart = () => [],
-  repositoryCatalog = null
+  repositoryCatalog = null,
+  decisionGateNotice = () => null
 }) {
   // Declared repositories other than the control root (submodules and
   // registered siblings). An unreadable catalog is reported by the commands
@@ -3440,6 +3441,7 @@ export function createChangeLifecycle({
         error.message}`);
     }
     const amended = loadRuntime(id);
+    const gate = decisionGateNotice(id);
     console.log(`AMENDED ${id}\n  revision: ${amended.contractRevision}\n` +
       `  invalidated claims: ${[...compiled.invalidatedClaims, ...compiled.removedClaimIds.map((claim) =>
         `${claim} (removed)`)].join(", ") || "none"}\n` +
@@ -3456,6 +3458,7 @@ export function createChangeLifecycle({
         : `  requirement delta (covered by the current approval):\n${formatApprovalDelta({
           added: compiled.addedRequirementKeys, revised: compiled.revisedRequirementKeys,
           removed: compiled.removedRequirementKeys })}\n`) +
+      (gate ? `  decision required: the final AI review failed before this amendment, so Land needs a locked Decision Sheet revision first: ${gate.command}\n` : "") +
       `  proof command: ${compiled.invalidation.proofRecovery?.recovery?.command ||
         `claude-foundation advance ${id} --through proven`}\n` +
       `  next: claude-foundation advance ${id}`);

@@ -286,6 +286,20 @@ test("advance returns configured review and user authority boundaries", () => {
   assert.equal(decision.boundary, "user-authority");
 });
 
+test("a contract decision boundary names the command that opens the decision revision", () => {
+  const command = "claude-foundation advance change-a --approve-spec --decision-ref <ref>";
+  const value = coordinatorAction({
+    ...base,
+    proofCursor: {
+      status: "ACTION_REQUIRED", route: "CONTRACT_DECISION_REQUIRED",
+      next: [{ kind: "contract-decision", reason: "agreement changed", command }]
+    }
+  });
+  assert.equal(value.action, "ASK_USER");
+  assert.equal(value.command, command);
+  assert.equal(value.reason, "agreement changed");
+});
+
 test("Land readiness forbids implicit delivery authority", () => {
   const value = coordinatorAction({
     ...base, state: { status: "proven" },

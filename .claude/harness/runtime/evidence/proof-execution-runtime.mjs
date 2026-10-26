@@ -1279,6 +1279,8 @@ export function createProofExecutionRuntime({
         return { outcome: stopProofAdvance(
           writeReviewExhaustedStop(id, readiness, exhausted, executedProviders)) };
       }
+      const decisionClosure = blockedClosures.find((row) =>
+        row.route === "CONTRACT_DECISION_REQUIRED" && row.command);
       const outcome = writeAdvance(id, {
         version: 1,
         changeId: id,
@@ -1293,10 +1295,14 @@ export function createProofExecutionRuntime({
         closures: blockedClosures,
         requests: [],
         executedProviders,
-        next: [{
+        next: [decisionClosure ? {
+          kind: "contract-decision",
+          reason: decisionClosure.reason,
+          command: decisionClosure.command
+        } : {
           kind: "repair-final-review-findings",
           // The closure's own reason names what is still unmet (unchanged
-          // workspace, failing proof, or a contract decision).
+          // workspace or failing proof).
           reason: ["Repair the final finding batch inside the locked contract; do not dispatch another AI or open a generic choice interview",
             ...new Set(blockedClosures.map((row) => row.reason).filter(Boolean))]
             .join(": "),

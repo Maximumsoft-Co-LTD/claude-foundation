@@ -582,6 +582,9 @@ export function proofOperationAction(id, result) {
         options: []
       },
       next: result.next || [],
+      ...(result.next?.find((row) => row.kind === "contract-decision")?.command
+        ? { command: result.next.find((row) => row.kind === "contract-decision").command }
+        : {}),
       recoveryType: "ASK_USER",
       alternatives: result.decision?.options?.map((option) => option.outcome) || []
     });
@@ -930,8 +933,12 @@ export function coordinatorAction({
       proofCursor.route === "NO_PROGRESS_DECISION")) return envelope(id, "ASK_USER", {
     legacyAction: "REQUEST_DECISION", actor: "user",
     boundary: "user-authority",
-    reason: "proof reached a material decision boundary",
+    reason: proofCursor.next?.find((row) => row.kind === "contract-decision")?.reason ||
+      "proof reached a material decision boundary",
     decision: proofCursor.decision || null,
+    ...(proofCursor.next?.find((row) => row.kind === "contract-decision")?.command
+      ? { command: proofCursor.next.find((row) => row.kind === "contract-decision").command }
+      : {}),
     recoveryType: "ASK_USER",
     alternatives: proofCursor.decision?.alternatives || []
   });
