@@ -53,6 +53,17 @@ export function matrixIssues(matrix, root = resolve(HERE, "../../../..")) {
             (repository.dependsOn || []).some((id) => !known.has(id)))
           issues.push(`${scenario.id}: repository_catalog dependency does not exist`);
     }
+    if (scenario.lifecycle !== undefined) {
+      const lifecycle = scenario.lifecycle;
+      const phases = typeof lifecycle?.phases_dir === "string" ? resolve(root, lifecycle.phases_dir) : null;
+      if (lifecycle?.protocol !== "foundation-openspec-native-lifecycle-v1" || !phases ||
+          !existsSync(phases) || !lifecycle.amendment?.file || !lifecycle.stacked?.file ||
+          !existsSync(resolve(phases, String(lifecycle.amendment?.file))) ||
+          !existsSync(resolve(phases, String(lifecycle.stacked?.file))))
+        issues.push(`${scenario.id}: lifecycle needs its protocol, phases_dir and existing amendment and stacked files`);
+      if (scenario.execution !== "paid" || !scenario.repository_catalog)
+        issues.push(`${scenario.id}: a lifecycle lane needs paid execution and a repository_catalog`);
+    }
     if (!["ready", "planned"].includes(scenario?.status))
       issues.push(`${scenario?.id}: status must be ready or planned`);
     if (!["paid", "deterministic"].includes(scenario?.execution))

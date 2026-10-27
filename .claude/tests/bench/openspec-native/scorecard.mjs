@@ -334,6 +334,25 @@ function packetCount(value) {
 
 // Packet quality: the collector's document metrics plus the intake rounds and
 // compile time from the run's operation rows. Unknown stays null.
+// Lifecycle checks keep their own pass/fail/unavailable status: an
+// unavailable check is a gap, never a pass.
+export function lifecycleSummary(lifecycle) {
+  const input = object(lifecycle);
+  const checks = Object.fromEntries(Object.entries(object(input.checks)).map(([id, row]) => [id, {
+    status: ["pass", "fail", "unavailable"].includes(row?.status) ? row.status : "unavailable",
+    detail: row?.detail ?? null
+  }]));
+  return {
+    protocol: text(input.protocol) || null,
+    strict: input.strict === true,
+    phases: Array.isArray(input.phases) ? input.phases : [],
+    interruptions: Array.isArray(input.interruptions) ? input.interruptions : [],
+    landOrder: Array.isArray(input.landOrder) ? input.landOrder : [],
+    repairs: object(input.repairs),
+    checks
+  };
+}
+
 export function packetSummary(packet, operationRows) {
   const input = object(packet);
   const words = object(input.words);
@@ -499,6 +518,9 @@ export function buildScorecard(input) {
     // Present when the runner collected the packet (see quality.mjs
     // collectPacketMetrics); a run without a packet reports `unavailable`.
     ...(input.packet === undefined ? {} : { packet: packetSummary(input.packet, input.operationRows) }),
+    // Present only for a scripted lifecycle lane (amendment, stacked Land,
+    // injected interruptions); see lifecycle.mjs.
+    ...(input.lifecycle === undefined ? {} : { lifecycle: lifecycleSummary(input.lifecycle) }),
     evidenceReuse: {
       count: count(metrics.evidenceReuse?.count),
       byReason: object(metrics.evidenceReuse?.byReason),

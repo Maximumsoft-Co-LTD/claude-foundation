@@ -457,6 +457,55 @@
       "baseline": null
     },
     {
+      "id": "order-inventory-lifecycle",
+      "status": "ready",
+      "execution": "paid",
+      "workload": "amendment-interruption-stacked-land",
+      "stack": "node-sqlite-multi-repository",
+      "size": "xlarge",
+      "fixture": ".claude/tests/bench/tasks/25-order-inventory-lifecycle/seed",
+      "fixture_digest": "sha256:16d697f6b2fda062bdfc8a07bb6a8084cbb36d9f7276b3fee22c2f0d63a8f1a9",
+      "prompt": "/dev implement ORDER-INVENTORY.md across backend, sdk and web, preserving the existing catalogue and adding meaningful tests for SQLite transactions, tenant isolation, concurrency and event ordering",
+      "host": "claude-code",
+      "risk": "high",
+      "project_command": "npm test",
+      "clean_install_command": "npm install --ignore-scripts --offline",
+      "repository_catalog": {
+        "version": 1,
+        "repositories": [
+          { "id": "backend", "path": "backend", "type": "external", "mode": "write", "dependsOn": [] },
+          { "id": "sdk", "path": "sdk", "type": "external", "mode": "write", "dependsOn": ["backend"] },
+          { "id": "web", "path": "web", "type": "external", "mode": "write", "dependsOn": ["sdk"] }
+        ]
+      },
+      "lifecycle": {
+        "protocol": "foundation-openspec-native-lifecycle-v1",
+        "phases_dir": ".claude/tests/bench/tasks/25-order-inventory-lifecycle/phases",
+        "amendment": { "file": "AMENDMENT-1.md" },
+        "stacked": { "file": "CATALOGUE-PAGING.md" },
+        "interruptions": ["mid-build", "mid-land"],
+        "interrupted_session_budget_usd": 8,
+        "max_oracle_repairs": 3,
+        "max_merge_sessions": 3
+      },
+      "critical_case_ids": [
+        "CASE_LEGACY_MIGRATION", "CASE_AUTH_ROLES", "CASE_TENANT_ISOLATION",
+        "CASE_VALIDATION_ATOMIC", "CASE_RESERVATION_CONTRACT", "CASE_IDEMPOTENCY_RESTART",
+        "CASE_CONCURRENT_STOCK", "CASE_CONCURRENT_KEY", "CASE_EXPIRY_BOUNDARY",
+        "CASE_EXPIRY_TENANT", "CASE_CANCEL_ONCE", "CASE_EVENT_DUPLICATE_RESTART",
+        "CASE_EVENT_ORDERING_TERMINAL", "CASE_SDK_ROUNDTRIP", "CASE_WEB_STATE",
+        "CASE_RELEASE_PARTIAL", "CASE_RELEASE_IDEMPOTENT", "CASE_RELEASE_REJECTS",
+        "CASE_RELEASE_CONCURRENT", "CASE_SDK_RELEASE",
+        "CASE_B_PAGING_BACKEND", "CASE_B_PAGING_SDK", "CASE_B_STATE",
+        "CASE_DELIVERED_TESTS", "CASE_TESTS_BACKEND", "CASE_TESTS_SDK", "CASE_TESTS_WEB"
+      ],
+      "oracle": { "required": true, "path": ".claude/tests/bench/tasks/25-order-inventory-lifecycle/oracle/run.sh" },
+      "quality_required": true,
+      "budget": { "wall_ms": 7200000, "cost_usd": 60, "model_requests": 900, "tool_calls": 1400 },
+      "expected_terminal": "completed",
+      "baseline": null
+    },
+    {
       "id": "owner-only-delete",
       "status": "ready",
       "execution": "paid",

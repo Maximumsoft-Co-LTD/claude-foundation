@@ -60,9 +60,26 @@ test("the versioned cross-domain matrix is valid and every workload is executabl
   const matrix = loadMatrix();
   assert.equal(matrix.protocol, "foundation-openspec-native-matrix-v2");
   assert.deepEqual(matrixIssues(matrix), []);
-  assert.equal(matrix.scenarios.length, 29);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 29);
+  assert.equal(matrix.scenarios.length, 30);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 30);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
+});
+
+test("a lifecycle lane must declare its protocol, phase files and repositories", () => {
+  const matrix = loadMatrix();
+  const lane = matrix.scenarios.find(({ id }) => id === "order-inventory-lifecycle");
+  assert.equal(lane.lifecycle.protocol, "foundation-openspec-native-lifecycle-v1");
+  assert.ok(lane.critical_case_ids.some((id) => id.startsWith("CASE_RELEASE_")));
+  assert.ok(lane.critical_case_ids.some((id) => id.startsWith("CASE_B_")));
+  for (const [mutate, expected] of [
+    [(row) => { row.lifecycle.amendment.file = "MISSING.md"; }, /lifecycle needs/],
+    [(row) => { row.lifecycle.protocol = "other"; }, /lifecycle needs/],
+    [(row) => { delete row.repository_catalog; }, /lifecycle lane needs/]
+  ]) {
+    const broken = structuredClone(matrix);
+    mutate(broken.scenarios.find(({ id }) => id === "order-inventory-lifecycle"));
+    assert.ok(matrixIssues(broken).some((issue) => expected.test(issue)), String(expected));
+  }
 });
 
 test("the measured brownfield baseline preserves its real r21 truth", () => {

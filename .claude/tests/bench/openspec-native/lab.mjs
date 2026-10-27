@@ -333,7 +333,7 @@ export function installedAllowedTools(project) {
 export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RESULTS,
   installer = join(ROOT, "install.sh"), runner = join(HERE, "run.mjs"),
   tempParent = tmpdir(), keepProject = false, runId = null, resumeProject = null,
-  arm = "change-loop", dryRun = false }) {
+  arm = "change-loop", dryRun = false, lifecycleInterruptions = null }) {
   const selectedArm = benchArm(arm);
   const baseline = selectedArm === "baseline";
   const matrix = loadMatrix(matrixPath);
@@ -371,6 +371,14 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
     "--prompt", scenario.prompt, "--run-id", id, "--repeat", "1",
     "--timeout-ms", String(plan.budget.wall_ms), "--output", scorecards];
   if (plan.oracle) args.push("--oracle", resolve(ROOT, plan.oracle));
+  if (scenario.lifecycle) {
+    if (baseline) throw new Error(`${scenarioId} is a lifecycle lane; the baseline arm has no lifecycle`);
+    // A control run injects only the named crashes, e.g. `mid-build` alone.
+    const interruptions = lifecycleInterruptions === null ? scenario.lifecycle.interruptions
+      : lifecycleInterruptions.split(",").map((item) => item.trim()).filter(Boolean);
+    args.push("--lifecycle", JSON.stringify({ ...scenario.lifecycle, interruptions,
+      phases_dir: resolve(ROOT, scenario.lifecycle.phases_dir) }));
+  }
   if (plan.budget.cost_usd !== undefined)
     args.push("--max-cost-usd", String(plan.budget.cost_usd));
   if (plan.budget.model_requests !== undefined)
@@ -502,7 +510,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       resumeProject: flags["resume-project"],
       runId: flags["run-id"],
       arm: flags.arm,
-      dryRun: flags.dryRun
+      dryRun: flags.dryRun,
+      lifecycleInterruptions: flags["lifecycle-interruptions"] ?? null
     });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     process.exitCode = result.status || 0;

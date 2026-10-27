@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { runBenchmarkOracle } from "../openspec-native/run.mjs";
 import { repairOrderInventory } from "./fixtures/order-inventory-repair.mjs";
+import { repairOrderInventoryLifecycle } from "./fixtures/order-inventory-lifecycle-repair.mjs";
 import {
   IDEMPOTENT_REFUND_MUTANTS, OWNER_ONLY_DELETE_MUTANTS, REGRESSION_FIX_MUTANTS,
   SPEED_UP_SEARCH_MUTANTS, repairIdempotentRefund, repairOwnerOnlyDelete,
@@ -88,6 +89,70 @@ test('order/inventory oracle rejects tenant leakage, late expiry and stale UI mu
       } finally {write(path, original);}
     }
   } finally {rmSync(project, {recursive:true,force:true});}
+});
+
+test("lifecycle fixture: the seed fails every scope and the calibration answer passes each", () => {
+  const task = join(TASKS, "25-order-inventory-lifecycle");
+  const project = mkdtempSync(join(tmpdir(), "order-lifecycle-"));
+  const scoped = (scope) => {
+    const previous = process.env.ORDER_ORACLE_SCOPE;
+    process.env.ORDER_ORACLE_SCOPE = scope;
+    try { return runBenchmarkOracle({ project, oraclePath: join(task, "oracle/run.sh") }); }
+    finally { if (previous === undefined) delete process.env.ORDER_ORACLE_SCOPE; else process.env.ORDER_ORACLE_SCOPE = previous; }
+  };
+  try {
+    cpSync(join(task, "seed"), project, { recursive: true });
+    for (const scope of ["a", "b", "full"])
+      assert.equal(scoped(scope).verdict, "fail", `the frozen seed must fail scope ${scope}`);
+    repairOrderInventoryLifecycle(project);
+    const full = scoped("full");
+    assert.equal(full.verdict, "pass", JSON.stringify(full));
+    const a = scoped("a");
+    const b = scoped("b");
+    assert.equal(a.verdict, "pass", JSON.stringify(a));
+    assert.equal(b.verdict, "pass", JSON.stringify(b));
+    assert.ok(Object.keys(a.results).every((id) => !id.startsWith("CASE_B_")));
+    assert.deepEqual(Object.keys(b.results).filter((id) => !id.startsWith("CASE_B_")).sort(),
+      ["CASE_DELIVERED_TESTS", "CASE_TESTS_BACKEND", "CASE_TESTS_SDK", "CASE_TESTS_WEB"]);
+    assert.equal(full.max, a.max + Object.keys(b.results).filter((id) => id.startsWith("CASE_B_")).length);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("lifecycle oracle rejects amendment and paging mutants", () => {
+  const task = join(TASKS, "25-order-inventory-lifecycle");
+  const project = mkdtempSync(join(tmpdir(), "order-lifecycle-mutants-"));
+  const mutants = [
+    ["CASE_VALIDATION_ATOMIC", "backend/server.mjs", "integer(value.ttlMs, 1, 3600000)", "integer(value.ttlMs, 1, 86400000)"],
+    ["CASE_RELEASE_IDEMPOTENT", "backend/server.mjs", "previous.origQuantity !== value.quantity", "previous.quantity !== value.quantity"],
+    ["CASE_RELEASE_PARTIAL", "backend/server.mjs", "[value.quantity, tenant, order.sku]", "[0, tenant, order.sku]"],
+    ["CASE_RELEASE_CONCURRENT", "backend/server.mjs", "AND quantity>?\"", "AND ?>0\""],
+    ["CASE_RELEASE_REJECTS", "backend/server.mjs", "if (order.status !== 'reserved') fail(409, 'NOT_RESERVED');", ""],
+    ["CASE_B_PAGING_BACKEND", "backend/server.mjs", "(? IS NULL OR sku > ?)", "(? IS NULL OR sku >= ?)"],
+    ["CASE_B_PAGING_BACKEND", "backend/server.mjs", "substr(sku, 1, ?) = ?", "sku LIKE ? || '%' AND ? IS NOT NULL"],
+    ["CASE_B_STATE", "web/state.mjs", "!known.has(item.sku) && known.add(item.sku)", "true"]
+  ];
+  try {
+    cpSync(join(task, "seed"), project, { recursive: true });
+    repairOrderInventoryLifecycle(project);
+    for (const [id, file, before, after] of mutants) {
+      const path = join(project, file);
+      const original = readFileSync(path, "utf8");
+      assert.ok(original.includes(before), `mutation anchor missing: ${id} ${before}`);
+      write(path, original.replaceAll(before, after));
+      try {
+        const env = { ...process.env };
+        delete env.NODE_TEST_CONTEXT;
+        const run = spawnSync(process.execPath, [join(task, "oracle/check.mjs"), project, id],
+          { encoding: "utf8", env, timeout: 60000 });
+        assert.equal(run.status, 0, run.stderr);
+        const result = JSON.parse(run.stdout);
+        assert.equal(result.results[id], "fail", `${id}: mutant escaped the oracle (${before})`);
+        assert.equal(result.max, 1);
+      } finally { write(path, original); }
+    }
+  } finally { rmSync(project, { recursive: true, force: true }); }
 });
 
 test("TypeScript/React state fixture has a mutation-killing acceptance oracle", () => {

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { benchArm, buildScorecard, costMeasurement, digest } from "./scorecard.mjs";
 import { shellCheck } from "./lab.mjs";
+import { runLifecycle } from "./lifecycle.mjs";
 import {
   benchmarkEvaluationWorkspace, collectBenchmarkQuality, collectPacketMetrics
 } from "./quality.mjs";
@@ -270,6 +271,28 @@ export function observedOutcome({
   };
 }
 
+// A lifecycle lane is complete only when every lifecycle check passed; the
+// first change reaching `archived` is necessary, not sufficient.
+export function lifecycleOutcome(base, run) {
+  if (base.status === "completed" && run.summary?.strict !== true)
+    return { ...base, status: "failed", failureClass: "lifecycle-check-failed" };
+  if (run.stop && base.status !== "completed")
+    return { ...base, status: "needs-user-decision",
+      failureClass: `budget-exhausted-${run.stop.kind}` };
+  return base;
+}
+
+// Both changes' operation logs belong to the one lane.
+export function lifecycleOperationRows(project, run) {
+  return ["a", "b"].flatMap((key) => {
+    const id = run.changeIds?.[key];
+    return id ? [
+      ...readJsonLines(join(project, ".foundation/logs", id, "operations.jsonl")),
+      ...readJsonLines(join(project, ".foundation/logs", id, "inspections.jsonl"))
+    ] : [];
+  });
+}
+
 function boundaryFromReadiness(readiness, detectionSource = "readiness-json") {
   if (readiness?.status !== "NEEDS_USER_DECISION") return null;
   const next = Array.isArray(readiness.next) ? readiness.next : [];
@@ -487,7 +510,7 @@ export function collectNativeScorecard({
   quality = null, operationRows = null, syntheticOperationRows = [], stopwatch = {}, exitCode = 0,
   timedOut = false, budgetExhausted = null, changeId = null, provenance = {},
   hostTelemetry = {}, hostUsage = {}, oracle = null, decisionBoundary = null,
-  arm = "change-loop", outcome = null, packet = undefined
+  arm = "change-loop", outcome = null, packet = undefined, lifecycle = undefined
 }) {
   const baseline = benchArm(arm) === "baseline";
   const discovered = baseline ? null
@@ -512,6 +535,7 @@ export function collectNativeScorecard({
     // Change packet metrics (collectPacketMetrics) belong to change-loop runs
     // only; the caller collects them asynchronously.
     ...(baseline || packet === undefined ? {} : { packet }),
+    ...(baseline || lifecycle === undefined ? {} : { lifecycle }),
     outcome: outcome ?? (baseline
       ? baselineOutcome({ envelope, exitCode, timedOut, budgetExhausted, oracle })
       : observedOutcome({
@@ -601,9 +625,12 @@ export function budgetClaudeArgs(args) {
 export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
   maxModelRequests = null, maxToolCalls = null, selfReviewAuthorized = false,
   stopOnArchived = false, stopOnProven = false, detectExternalAuthority = true,
-  terminalGraceMs = 120000, settleTimeoutMs = 60000, finalEnvelopeGraceMs = 0 }) {
+  terminalGraceMs = 120000, settleTimeoutMs = 60000, finalEnvelopeGraceMs = 0,
+  killWhen = null, killPollMs = 250, changeId: explicitChangeId = null }) {
   return new Promise((resolveRun) => {
-    const initialChangeId = discoverChangeId(project);
+    // With two changes in one project, discovery by recency is ambiguous: a
+    // session that resumes a known change names it.
+    const initialChangeId = discoverChangeId(project, explicitChangeId);
     const initialStatus = initialChangeId
       ? readJson(join(project, ".foundation/runtime", `${initialChangeId}.json`), {}).status
       : null;
@@ -643,7 +670,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     };
     const watchedStatus = stopOnProven ? "proven" : stopOnArchived ? "archived" : null;
     const terminalTimer = watchedStatus ? setInterval(() => {
-      const changeId = discoverChangeId(project, null, startedEpochMs);
+      const changeId = discoverChangeId(project, explicitChangeId, startedEpochMs);
       if (!changeId) return;
       const state = readJson(join(project, ".foundation/runtime", `${changeId}.json`), {});
       if (!watchedStatusReached(watchedStatus, state.status)) {
@@ -670,6 +697,24 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
       clearInterval(terminalTimer);
       terminate();
     }, 250) : null;
+    // Interruption injection: `killWhen` is a pure observation of the project
+    // (for example, the first completed task). The host group is SIGKILLed with
+    // no grace, as a crashed or reclaimed session would be, and the result says
+    // exactly where it happened so a later session can be held to resume it.
+    let interrupted = null;
+    const killTimer = typeof killWhen === "function" ? setInterval(() => {
+      let hit = false;
+      try { hit = Boolean(killWhen({ project, startedEpochMs })); } catch { hit = false; }
+      if (!hit || interrupted) return;
+      interrupted = { observedAt: new Date().toISOString(),
+        wallMs: performance.now() - started, requests: requestIds.size,
+        toolCalls: toolUseIds.size };
+      clearInterval(killTimer);
+      try {
+        if (process.platform === "win32") child.kill("SIGKILL");
+        else process.kill(-child.pid, "SIGKILL");
+      } catch { child.kill("SIGKILL"); }
+    }, killPollMs) : null;
     child.stdout.on("data", (chunk) => {
       stdout.push(chunk);
       const lines = `${partialLine}${chunk}`.split(/\r?\n/);
@@ -733,10 +778,11 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     child.on("error", (error) => {
       clearTimeout(timer);
       if (terminalTimer) clearInterval(terminalTimer);
+      if (killTimer) clearInterval(killTimer);
       if (forceTimer) clearTimeout(forceTimer);
       resolveRun({
         exitCode: terminalReached ? 0 : 127, timedOut: false, budgetExhausted,
-        decisionBoundary, terminalReached,
+        decisionBoundary, terminalReached, interrupted,
         stdout: "", stderr: error.message,
         observedModelRequests: requestIds.size || null,
         observedToolCalls: toolUseIds.size || null,
@@ -749,6 +795,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
     child.on("close", async (code) => {
       clearTimeout(timer);
       if (terminalTimer) clearInterval(terminalTimer);
+      if (killTimer) clearInterval(killTimer);
       if (forceTimer) clearTimeout(forceTimer);
       const settled = await settleProjectProcesses(project, { timeoutMs: settleTimeoutMs });
       if (settled.observed) stderr.push(Buffer.from(
@@ -762,7 +809,7 @@ export function runClaude({ project, prompt, claudeBin, claudeArgs, timeoutMs,
         timedOut: terminalReached ? false : timedOut,
         budgetExhausted: terminalReached ? null : budgetExhausted,
         decisionBoundary: terminalReached ? null : decisionBoundary,
-        terminalReached,
+        terminalReached, interrupted,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
         ...requestsUntilTerminal(requestIds.size, terminalReached ? requestsAtTerminal : null),
@@ -1107,6 +1154,8 @@ async function main() {
   let execution;
   let decisionBoundary = null;
   let request = null;
+  let lifecycleConfig = null;
+  let lifecycleRun = null;
   if (args["collect-only"]) {
     execution = {
       exitCode: Number(args["exit-code"] || 0), timedOut: args["timed-out"] === "true",
@@ -1136,6 +1185,26 @@ async function main() {
       stopOnArchived: false,
       stopOnProven: false,
       detectExternalAuthority: false
+    };
+  } else if (args.lifecycle) {
+    // A scripted lifecycle lane starts like an ordinary change-loop run; the
+    // driver (lifecycle.mjs) owns every later session, so this request is only
+    // the first session's plan.
+    if (!args.oracle) throw new Error("--lifecycle needs --oracle");
+    lifecycleConfig = JSON.parse(args.lifecycle);
+    request = {
+      project,
+      prompt: [required(args.prompt, "--prompt"), changeLoopAuthority({
+        selfReviewAuthorized: args["test-self-review"] === "true",
+        landAuthorized: args["test-land"] === "true", oracleConfigured: true
+      })].filter(Boolean).join("\n\n"),
+      claudeBin: args["claude-bin"] || "claude",
+      claudeArgs: budgetClaudeArgs(args),
+      timeoutMs: Number(args["timeout-ms"] || 1800000),
+      maxModelRequests: args["max-model-requests"] ? Number(args["max-model-requests"]) : null,
+      maxToolCalls: args["max-tool-calls"] ? Number(args["max-tool-calls"]) : null,
+      selfReviewAuthorized: args["test-self-review"] === "true",
+      stopOnArchived: false, stopOnProven: false
     };
   } else {
     const preflightChangeId = args["change-id"] || discoverChangeId(project);
@@ -1210,18 +1279,37 @@ async function main() {
     }
   }
   if (args["dry-run"] && !args["collect-only"]) {
-    process.stdout.write(`${JSON.stringify(hostPlan({ arm, scenario, request,
-      execution, decisionBoundary, oracle: args.oracle || null }), null, 2)}\n`);
+    const plan = hostPlan({ arm, scenario, request,
+      execution, decisionBoundary, oracle: args.oracle || null });
+    if (lifecycleConfig) plan.lifecycle = {
+      sessions: ["a-build (SIGKILL mid-Build)", "a-amend-resume", "b-build (stacked)",
+        "oracle repairs and b-merge sessions as needed"],
+      land: ["a-land (SIGKILL once a repository is applied, then resume)", "b-land"],
+      phasesDir: resolve(lifecycleConfig.phases_dir),
+      amendment: lifecycleConfig.amendment.file, stacked: lifecycleConfig.stacked.file,
+      interruptedSessionBudgetUsd: lifecycleConfig.interrupted_session_budget_usd ?? 8
+    };
+    process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
     return;
   }
-  if (request) {
+  if (lifecycleConfig) {
+    lifecycleRun = await runLifecycle({
+      project, args, config: lifecycleConfig,
+      deps: { runClaude, runBenchmarkOracle, mergeHostExecutions, remainingTimeoutMs,
+        oracleRepairPrompt, changeLoopAuthority, backendLandArgs, hostSessionRecords }
+    });
+    execution = lifecycleRun.execution;
+    if (!execution) throw new Error("lifecycle ran no host session");
+    execution.exitCode = lifecycleRun.summary.strict ? 0 : 1;
+  } else if (request) {
     execution = await runClaude(request);
     decisionBoundary = execution.decisionBoundary || null;
   }
   execution.hostSessions = hostSessionRecords(execution);
-  const discoveredChangeId = baseline ? null : terminalChangeId(execution, discoverChangeId(
-    project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null));
-  let oracle = null;
+  const discoveredChangeId = lifecycleRun ? lifecycleRun.changeIds.a
+    : baseline ? null : terminalChangeId(execution, discoverChangeId(
+      project, args["change-id"] || null, execution.stopwatch.startedEpochMs ?? null));
+  let oracle = lifecycleRun ? lifecycleRun.oracle : null;
   let backendLandRan = false;
   const runBackendLand = () => {
     const harness = join(project, ".claude/harness/foundation.mjs");
@@ -1239,7 +1327,7 @@ async function main() {
   // `applied` means Land already started (the host's lifecycle command passed
   // `proven`); the sandbox is still present until archive, so the pre-Land
   // oracle still applies and the backend Land resumes it.
-  if (["proven", "applied"].includes(execution.terminalReached?.status) && args.oracle) {
+  if (!lifecycleRun && ["proven", "applied"].includes(execution.terminalReached?.status) && args.oracle) {
     const totalTimeoutMs = Number(args["timeout-ms"] || 1800000);
     const totalRequestCap = args["max-model-requests"]
       ? Number(args["max-model-requests"]) : null;
@@ -1295,7 +1383,7 @@ async function main() {
   // A Land interrupted between code apply and archive resumes through the same
   // advance route (the documented crash recovery), never a user command. The
   // benchmark already authorized Land, so it carries that route once itself.
-  if (!args["collect-only"] && args["test-land"] === "true" && !backendLandRan &&
+  if (!lifecycleRun && !args["collect-only"] && args["test-land"] === "true" && !backendLandRan &&
       (!oracle || oracle.verdict === "pass") &&
       runtimeStatus(project, discoveredChangeId) === "applied") runBackendLand();
   const archived = !baseline && runtimeStatus(project, discoveredChangeId) === 'archived';
@@ -1320,11 +1408,14 @@ async function main() {
       budgetExhausted: execution.budgetExhausted, oracle, projectCheck
     });
   }
-  const preliminaryOutcome = baselineResult ?? observedOutcome({
+  let preliminaryOutcome = baselineResult ?? observedOutcome({
     project, changeId: discoveredChangeId, envelope,
     exitCode: execution.exitCode, timedOut: execution.timedOut,
     budgetExhausted: execution.budgetExhausted, decisionBoundary, oracle
   });
+  // The first change's archive and the final oracle can pass while the
+  // lifecycle itself failed (a missed interruption, a wrong Land order).
+  if (lifecycleRun) preliminaryOutcome = lifecycleOutcome(preliminaryOutcome, lifecycleRun);
   oracle = oracle || (args.oracle && preliminaryOutcome.status !== "completed"
     ? {
       configured: true, measurement: "unavailable", verdict: null,
@@ -1341,7 +1432,10 @@ async function main() {
   const packet = baseline ? undefined
     : await collectPacketMetrics({ project, changeId: discoveredChangeId });
   const scorecard = collectNativeScorecard({
-    scenario, arm, repeat, runId, project, outcome: baselineResult, packet,
+    scenario, arm, repeat, runId, project, packet,
+    outcome: baselineResult ?? (lifecycleRun ? preliminaryOutcome : null),
+    ...(lifecycleRun ? { lifecycle: lifecycleRun.summary,
+      operationRows: lifecycleOperationRows(project, lifecycleRun) } : {}),
     config: {
       // Only a baseline adds fields, so a change-loop config digest is unchanged.
       ...(baseline ? { arm, projectCommand, hostPrompt: request?.prompt ?? null } : {}),

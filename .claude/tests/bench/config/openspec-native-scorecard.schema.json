@@ -195,6 +195,31 @@
         "source": { "$ref": "#/$defs/nullableString" }
       }
     },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "strict", "phases", "interruptions", "landOrder", "repairs", "checks"],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/nullableString" },
+        "strict": { "type": "boolean" },
+        "phases": { "type": "array", "items": { "type": "object" } },
+        "interruptions": { "type": "array", "items": { "type": "object" } },
+        "landOrder": { "type": "array", "items": { "type": "string" } },
+        "repairs": { "type": "object" },
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "detail"],
+            "properties": {
+              "status": { "enum": ["pass", "fail", "unavailable"] },
+              "detail": {}
+            }
+          }
+        }
+      }
+    },
     "packet": {
       "type": "object",
       "additionalProperties": false,
