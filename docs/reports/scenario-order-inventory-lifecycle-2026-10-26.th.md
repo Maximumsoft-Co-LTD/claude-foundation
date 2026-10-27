@@ -1,8 +1,9 @@
 # Lane lifecycle ของ order-inventory: การรันจริงชุดแรก — 2026-10-26
 
-**สถานะ:** หลักฐานจากการสังเกต การรันจริง 10 ครั้งแรกของ lane ใหม่ ไม่มีครั้งไหนผ่านแบบ strict
-ยังไม่ใช่ smoke-green และไม่ใช่ repeated assurance ข้อค้นพบที่ 1 พิสูจน์สาเหตุได้ การแก้บางส่วนผ่านเทสต์แบบ
-deterministic แต่ไม่ปลดล็อก lane และสาเหตุที่เหลือระบุได้แล้ว (ด้านล่าง)
+**สถานะ:** หลักฐานจากการสังเกต การรันจริง 11 ครั้งแรกของ lane ใหม่ ไม่มีครั้งไหนผ่านแบบ strict
+ยังไม่ใช่ smoke-green และไม่ใช่ repeated assurance ข้อค้นพบที่ 1 พิสูจน์สาเหตุได้ การแก้ carried-edit
+และการแก้ replay/resolution ของ repository ภายหลัง (`281caac1b`) ผ่านเทสต์แบบ deterministic
+และรันล่าสุดย้ายตัวบล็อกไปที่ข้อค้นพบที่ 6 (การระบุที่มาของ diff ใน review) ก่อนถึง Land
 [English](scenario-order-inventory-lifecycle-2026-10-26.md)
 
 ## ขอบเขตและเงื่อนไข
@@ -13,7 +14,7 @@ deterministic แต่ไม่ปลดล็อก lane และสาเห
 | Lane | `order-inventory-lifecycle` (ดู [test plan](user-scenario-test-plan.md)) Claude Code เท่านั้น |
 | การรัน | ก่อนแก้: รันเต็ม 4 ครั้ง (crash ทั้งใน Build และ Land) และ control 3 ครั้ง (crash เฉพาะ Build) หลังแก้: รันเต็ม 3 ครั้ง และอีก 1 ครั้งที่ถูกฆ่าตอนรีสตาร์ทเครื่องมือ |
 | สิทธิ์ใช้งบ | เพดานผู้ใช้ US$300 เพดานต่อรัน US$60 |
-| ต้นทุน | วัดได้ US$23.7 จาก 10 รันที่จบ session ที่ถูก SIGKILL ไม่มี envelope จึงไม่รู้ยอดรวมจริง มีแค่เพดานต่อ session และรันที่ถูกรีสตาร์ทฆ่าไม่ได้วัด |
+| ต้นทุน | วัดได้ US$26.2 จาก 11 รันที่จบ session ที่ถูก SIGKILL ไม่มี envelope จึงไม่รู้ยอดรวมจริง มีแค่เพดานต่อ session และรันที่ถูกรีสตาร์ทฆ่าไม่ได้วัด |
 
 ## สิ่งที่ harness ทำได้
 
@@ -56,6 +57,15 @@ deterministic แต่ไม่ปลดล็อก lane และสาเห
 4. **session ซ่อมจาก oracle อาจไม่มีอะไรให้ทำ** เมื่อ target ของ Build ถึงแล้ว `advance --through build`
    ไม่คืน task และใน 3 session agent ไปค้นใน checkout หลักแทน sandbox เส้นทางนี้ใช้ร่วมกับ lane เดี่ยว
 5. **B ถึง `proven` โดยไม่ต่อ route** หนึ่งครั้ง (oracle 0/7) ทั้งที่ test ที่ส่งมาผ่าน oracle จับได้
+
+6. **หลังแก้ repository แล้ว B ไปถึง Prove แต่ review บล็อก (รัน 11, harness ที่ push `281caac1b`)**
+   `sandbox sync` replay และ agent merge โค้ด SDK ของ A ที่ Land แล้วเข้า sandbox ของ B
+   แต่ AI review ของ B ชี้ว่า v2 methods ที่ Land แล้วเหล่านั้นเป็นส่วนที่ B เพิ่มโดยไม่ได้ขอ และให้ลบออก
+   ซึ่ง Land จะปฏิเสธ agent 3 session หยุดที่ทางตันนี้ B ค้างที่ `building` diff ที่ใช้ review
+   เทียบกับ base ดังนั้น edit ที่ Land แล้วซึ่ง merge เข้าไฟล์ที่ทั้งสอง change แก้จึงถูกนับเป็นของ B
+   ฝั่ง root ตัดไฟล์ที่ Land แล้วและ sandbox คัดลอกมาโดยไม่ถูกแก้ (`carriedLandedExcludes`)
+   แต่ไม่มีของเทียบเท่าสำหรับไฟล์ที่ merge และ suite ฝั่ง root ไม่มี reviewer จึงไม่เคยเจอ ยังเปิดอยู่
+   stacked Land เองก็ยังไม่เคยถูกทดสอบจนจบแบบ end-to-end
 
 ## บั๊กของ bench ที่พบและแก้แล้ว
 

@@ -1,9 +1,10 @@
 # Order-inventory lifecycle lane: first paid runs — 2026-10-26
 
-**Status:** observed evidence from a new lane's first ten paid runs, none
+**Status:** observed evidence from a new lane's first eleven paid runs, none
 strict green. Not smoke-green and not repeated assurance. Finding 1 has a
-demonstrated cause; a partial fix is proven by a deterministic test but did not
-unblock the lane, and the remaining cause is identified (below).
+demonstrated cause; the carried-edit fix and the later repository replay and
+resolution change (`281caac1b`) are proven by deterministic tests, and the
+latest run moved the blocker to finding 6 (review attribution) before Land.
 [ภาษาไทย](scenario-order-inventory-lifecycle-2026-10-26.th.md)
 
 ## Scope and conditions
@@ -14,7 +15,7 @@ unblock the lane, and the remaining cause is identified (below).
 | Lane | `order-inventory-lifecycle` (see [the test plan](user-scenario-test-plan.md)); Claude Code only |
 | Runs | Four full runs (crash in Build and in Land) and three controls (crash in Build only) before the fix, three full runs after it, plus one run killed by a tooling restart |
 | Authority | User cap US$300; per-run ceiling US$60 |
-| Cost | Measured US$23.7 across the ten completed runs; a SIGKILLed session writes no envelope, so total spend is not known and is bounded only by per-session allowances. The restart-killed run is unmeasured |
+| Cost | Measured US$26.2 across the eleven completed runs; a SIGKILLed session writes no envelope, so total spend is not known and is bounded only by per-session allowances. The restart-killed run is unmeasured |
 
 ## What the harness did
 
@@ -75,6 +76,18 @@ unblock the lane, and the remaining cause is identified (below).
    sandbox. This route is shared with the single-change lanes.
 5. **B reached `proven` without wiring its route** once (oracle 0/7); the
    delivered tests passed. The oracle caught it.
+
+6. **After the repository fix, B reaches Prove and the review blocks it
+   (run 11, pushed harness `281caac1b`).** `sandbox sync` replayed and the agent
+   merged A's landed SDK code into B's sandbox, but B's AI review then flagged
+   those landed v2 methods as an unrequested surface of B and asked for their
+   removal, which Land would refuse. Three agent sessions stopped on that
+   contradiction; B stayed `building`. The review diff is taken against the
+   base, so landed edits merged into a file both changes edited count as B's.
+   The root path excludes landed files that a sandbox carries unchanged
+   (`carriedLandedExcludes`) but has no equivalent for merged files, and the
+   root suites run no reviewer, so it was not seen there. Open; the stacked Land
+   itself has still not been exercised end to end.
 
 ## Bench defects found and fixed
 
