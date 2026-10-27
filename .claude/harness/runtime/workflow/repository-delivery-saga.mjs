@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 
 import { createLandJournal, landEntryNoOp } from "./land-journal.mjs";
 import { deliveryTreeEntries } from "./delivery-integrity.mjs";
-import { targetEditCarried } from "./target-edits.mjs";
+import { landedTargetPaths, otherLandedOutput, targetEditCarried } from "./target-edits.mjs";
 
 export const REPOSITORY_DELIVERY_SAGA_VERSION = 1;
 
@@ -42,6 +42,13 @@ export function repositoryDeliveryOrder(repositories) {
 
 function safeRepositoryId(value) {
   return String(value).replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+// Where a child repository's Land journals live: one directory per delivering
+// change, one per transaction. Sandbox sync reads the same journals to learn
+// what earlier changes landed there.
+export function repositoryDeliveryTransactions(transactions, repositoryId) {
+  return join(transactions, "repository-delivery", safeRepositoryId(repositoryId));
 }
 
 function repositoryRuntime(state, repository) {
@@ -134,11 +141,39 @@ export function copyBaselineState(files, baseline = {}) {
   };
 }
 
-function overwriteError(repository, overwrite) {
+// `landedBy` (path -> landing change id) is set when an earlier change's Land
+// journal still vouches for the refused target bytes. Such a stop is not a
+// user's edit in the way: the sandbox is replayed onto the landed work by the
+// harness's own sync (`landedSync`) unless that already ran for these bytes.
+function overwriteError(repository, overwrite, landedBy = null, sandboxState = null, files = null) {
+  const landedChange = landedBy?.[overwrite.path] || null;
+  // A sync that already ran against exactly these target and sandbox bytes
+  // (merged, found conflicting, resolved or carried) would change nothing, so
+  // routing the refusal back to it again would never end.
+  const synced = sandboxState?.landedSynced?.[overwrite.path];
+  const exhausted = Boolean(files && sandboxState?.path && (
+    (sandboxState.landedReplay?.[overwrite.path] &&
+      sandboxState.landedReplay[overwrite.path] ===
+        files.pathIdentity(resolve(sandboxState.path, overwrite.path))) ||
+    (synced && synced.target === files.pathIdentity(files.safeRootPath(overwrite.path)) &&
+      synced.sandbox === files.pathIdentity(resolve(sandboxState.path, overwrite.path)))));
   return new RepositoryDeliveryError(
     `Land would overwrite an uncommitted target ${overwrite.untracked ? "path" : "edit"} in '${
       repository.id}': ${overwrite.path}`,
-    { repository: repository.id, path: overwrite.path });
+    { repository: repository.id, path: overwrite.path,
+      ...(landedChange ? { landedBy: { [overwrite.path]: landedChange } } : {}),
+      ...(landedChange && !exhausted ? { landedSync: true } : {}) });
+}
+
+// A conflict the agent resolved in the sandbox copy is recorded by sandbox sync
+// (`landedResolved`), bound to the exact target and sandbox bytes it was made
+// against and only when it kept every landed edit. A change to either file
+// since voids it.
+function resolvedLanded(files, sandboxState, path) {
+  const row = sandboxState?.landedResolved?.[path];
+  return Boolean(row) && Boolean(sandboxState.path) &&
+    row.target === files.pathIdentity(files.safeRootPath(path)) &&
+    row.sandbox === files.pathIdentity(resolve(sandboxState.path, path));
 }
 
 // Whether the sandbox copy of `path` already holds the target's uncommitted
@@ -160,8 +195,8 @@ function childEditCarried(files, repository, runtime, path) {
     baseBytes: shown.stdout });
 }
 
-function assertChildTargetCompatible({ git, journalRuntime }, repository, runtime, entries,
-  prior = new Map()) {
+function assertChildTargetCompatible({ git, journalRuntime, landedBy = () => ({}) }, repository,
+  runtime, entries, prior = new Map()) {
   const targetHead = git(["rev-parse", "HEAD"], repository.path);
   if (targetHead.status !== 0 || String(targetHead.stdout || "").trim() !== runtime.baseHead)
     throw new RepositoryDeliveryError(
@@ -170,10 +205,15 @@ function assertChildTargetCompatible({ git, journalRuntime }, repository, runtim
         expectedHead: runtime.baseHead,
         observedHead: String(targetHead.stdout || "").trim() || null
       });
-  const [overwrite] = targetOverwrites({ git, files: journalRuntime }, repository.path,
+  const refused = targetOverwrites({ git, files: journalRuntime }, repository.path,
     runtime.baseHead, entries, prior)
-    .filter((row) => row.untracked || !childEditCarried(journalRuntime, repository, runtime, row.path));
-  if (overwrite) throw overwriteError(repository, overwrite);
+    // A path the base lacks (both changes created it) has no base bytes to
+    // prove a carry against, but a recorded resolution applies to it as well.
+    .filter((row) => !(resolvedLanded(journalRuntime, runtime, row.path) ||
+      (!row.untracked && childEditCarried(journalRuntime, repository, runtime, row.path))));
+  const [overwrite] = refused;
+  if (overwrite) throw overwriteError(repository, overwrite,
+    landedBy(refused.map((row) => row.path)), runtime, journalRuntime);
 }
 
 export function createRepositoryDeliverySaga({
@@ -185,8 +225,8 @@ export function createRepositoryDeliverySaga({
   const sagaPath = (id) => join(transactions, id, "repository-delivery.json");
   // repositoryId -> path -> entry of a delivery the sandbox has since outgrown.
   const staleDeliveries = new Map();
-  const childTransactions = (repositoryId) => join(
-    transactions, "repository-delivery", safeRepositoryId(repositoryId));
+  const childTransactions = (repositoryId) =>
+    repositoryDeliveryTransactions(transactions, repositoryId);
   const journalFor = (repository) => createLandJournal({
     root: repository.path,
     transactions: childTransactions(repository.id),
@@ -274,8 +314,13 @@ export function createRepositoryDeliverySaga({
         `repository '${repository.id}' has no complete isolated delivery binding`);
     const runtime = journalFor(repository);
     const entries = childProjection(repository, record, runtime);
-    assertChildTargetCompatible({ git, journalRuntime: runtime }, repository, record, entries,
-      prior);
+    // Paths whose target bytes are still an earlier change's landed work.
+    const landedBy = (paths) => paths.length ? landedTargetPaths({
+      root: repository.path, paths, identity: (path) => runtime.pathIdentity(path),
+      landed: otherLandedOutput({ transactions: childTransactions(repository.id), changeId: id, readJson })
+    }) : {};
+    assertChildTargetCompatible({ git, journalRuntime: runtime, landedBy }, repository, record,
+      entries, prior);
     // A path an earlier delivery wrote that the sandbox no longer changes has
     // no owner in a fresh projection; Land never guesses whether to keep it.
     const current = new Set(entries.map((entry) => entry.path));

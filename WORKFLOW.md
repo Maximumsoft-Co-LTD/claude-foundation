@@ -1425,15 +1425,23 @@ asked only when the two changes' intents genuinely contradict. Each change
 archives in Land order, so OpenSpec merges each change's spec delta onto the
 specs the earlier Land already synchronized.
 
-A multi-repository change checks every writable repository the same way: an
-uncommitted target edit that the repository sandbox already holds (merging the
-base-to-target edit into the sandbox file changes nothing, and the file mode
-matches) is not an overwrite, and Land applies the sandbox bytes. Any other
-edit still stops Land with the repository and path. `sandbox sync` does not yet
-replay a landed edit into a repository sandbox, and a repository has no recorded
-conflict resolution, so an agent merge that overlaps a landed edit (merging it
-conflicts although nothing landed is dropped) is not accepted yet: Land keeps
-stopping with the repository and path.
+A multi-repository change follows the same rules in every writable repository,
+against that repository's own target and Land journals. `sandbox sync` replays
+an earlier change's landed, uncommitted edit into the repository sandbox copy of
+each file both changes edited: a clean merge is written and invalidates proof
+like any sync; a conflict names the repository, the path and the landing change
+(`CONFLICT backend:src/a.txt`) and leaves the sandbox file untouched. The agent
+merges the two edits in the sandbox copy, and the next sync records that
+resolution bound to the exact target and sandbox bytes it was made against.
+Repository Land then accepts the sandbox file when it holds the target's edit
+(merging the base-to-target edit into it changes nothing, and the file mode
+matches) or when a recorded resolution still matches both files and keeps every
+landed edit outside the lines both changes rewrote; those conflicting lines are
+the agent's to decide. A stop on a path an earlier change landed routes to the
+harness's own sync first, as for the root. Any other uncommitted target edit,
+including one made after the landing or one whose resolution a later edit voided,
+stops Land naming the repository and path. A landed file the repository sandbox
+did not edit is neither replayed nor copied into it.
 
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a

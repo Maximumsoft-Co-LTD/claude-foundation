@@ -1221,6 +1221,13 @@ export function createApplyRuntime({
           try { repositoryDelivery().preflight(id, { inspect }); }
           catch (error) {
             if (!(error instanceof RepositoryDeliveryError)) throw error;
+            // An earlier change's landed, uncommitted work is part of the
+            // target: the harness syncs this change's repository sandboxes onto
+            // it, proves again, and continues, as it does for the root.
+            if (error.details?.landedSync) {
+              const stop = landedChangeSyncStop({ changeId: id, landedBy: error.details.landedBy });
+              return blockWithDecision(id, stop.code, stop.decision);
+            }
             fail(error.message, 1, { code: error.code, owner: error.owner,
               boundary: error.boundary, ...(error.decision ? { decision: error.decision } : {}) });
           }

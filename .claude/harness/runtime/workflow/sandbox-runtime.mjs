@@ -27,6 +27,7 @@ import {
 import {
   projectNestedRepositories, projectableRepositories, projectionWorkspace
 } from "./repository-projection.mjs";
+import { repositoryDeliveryTransactions } from "./repository-delivery-saga.mjs";
 
 // A commit read, not executed. Inspection must not resolve a program through
 // PATH, so ref files are the authority for both ordinary and linked worktrees.
@@ -2171,12 +2172,44 @@ export function createSandboxRuntime({
       `${row.path} (${row.landedBy})`).join(", ")}` : "";
   }
 
+  // The root sandbox's replay of earlier changes' landed, uncommitted work.
   function replayLandedChanges(id, state) {
     const workspace = state.workspace;
+    if (workspace.mode !== "worktree" || workspace.applied) return { merged: [], conflicts: [] };
+    return replayLandedWithin({
+      id, targetRoot: root, transactions: join(root, ".foundation", "transactions"),
+      bag: workspace, repository: "root"
+    });
+  }
+
+  // The same replay for every writable repository sandbox of a multi-repository
+  // change, against that repository's own target and Land journals. A
+  // repository whose delivery already started is no longer replayed.
+  function replayRepositoryLandedChanges(id, state) {
     const result = { merged: [], conflicts: [] };
-    if (workspace.mode !== "worktree" || workspace.applied) return result;
+    for (const [repositoryId, record] of Object.entries(state.repositories || {})) {
+      if (repositoryId === "root" || record?.access !== "write" || record.mode !== "worktree" ||
+          record.delivery || !record.path || !record.targetPath || !record.baseHead) continue;
+      const replayed = replayLandedWithin({
+        id, targetRoot: record.targetPath, repository: repositoryId, bag: record,
+        transactions: repositoryDeliveryTransactions(
+          join(root, ".foundation", "transactions"), repositoryId)
+      });
+      result.merged.push(...replayed.merged);
+      result.conflicts.push(...replayed.conflicts);
+    }
+    return result;
+  }
+
+  // `bag` is the runtime record that owns the sandbox (`path`, `baseHead`) and
+  // the replay bookkeeping (`landedReplay`, `landedConflicts`, `landedResolved`):
+  // the root workspace, or one repository's record.
+  function replayLandedWithin({ id, targetRoot, transactions, bag, repository }) {
+    const workspace = bag;
+    const root = targetRoot;
+    const result = { merged: [], conflicts: [] };
     const landed = otherLandedOutput({
-      transactions: join(root, ".foundation", "transactions"), changeId: id,
+      transactions, changeId: id,
       readJson: (path, fallback) => {
         try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
       }
@@ -2200,7 +2233,7 @@ export function createSandboxRuntime({
       const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path, baseBytes });
       if (replay.status === "merged") {
         writeFileSync(sandboxFile, replay.bytes);
-        result.merged.push({ path, landedBy: landedBy[path] });
+        result.merged.push({ repository, path, landedBy: landedBy[path] });
       } else if (replay.status === "conflict") {
         // Both changes rewrote the same lines. The agent's edit of the sandbox
         // copy after the conflict was reported is its merge of the two; it is
@@ -2217,7 +2250,7 @@ export function createSandboxRuntime({
         if (answered || kept) resolved[path] = row;
         else {
           pending[path] = row;
-          result.conflicts.push({ repository: "root", path, landedBy: landedBy[path] });
+          result.conflicts.push({ repository, path, landedBy: landedBy[path] });
         }
       }
     }
@@ -2231,6 +2264,14 @@ export function createSandboxRuntime({
       [path, identity(join(workspace.path, path))])));
     record("landedConflicts", pending);
     record("landedResolved", resolved);
+    // Every landed path this replay looked at, with the exact target and
+    // sandbox bytes it left behind, for a repository whose Land hands a refusal
+    // back to this sync: once the sync has run against these bytes, running it
+    // again changes nothing, so Land reports the refusal instead of looping.
+    if (repository !== "root") record("landedSynced", Object.fromEntries(
+      Object.keys(landedBy).sort().map((path) => [path, {
+        target: identity(join(root, path)), sandbox: identity(join(workspace.path, path))
+      }])));
     return result;
   }
 
@@ -2274,12 +2315,16 @@ export function createSandboxRuntime({
     return merged;
   }
 
+  // A repository's path is prefixed with its id; the root's path stands alone.
+  const replayedPath = (row) =>
+    row.repository && row.repository !== "root" ? `${row.repository}:${row.path}` : row.path;
+
   function reportLandedReplay({ merged, conflicts }, log = console.log) {
     for (const row of merged)
-      log(`REPLAYED ${row.path}: merged the landed, uncommitted work of ${row.landedBy} into the ` +
+      log(`REPLAYED ${replayedPath(row)}: merged the landed, uncommitted work of ${row.landedBy} into the ` +
         "sandbox copy; evidence covering it runs again before Land.");
     for (const row of conflicts)
-      log(`CONFLICT ${row.path}: this change and the landed, uncommitted work of ${row.landedBy} ` +
+      log(`CONFLICT ${replayedPath(row)}: this change and the landed, uncommitted work of ${row.landedBy} ` +
         "both changed the same lines. Edit the sandbox copy into the merge of both, keeping all the " +
         "landed content (also its other edits in this file), then resume; a merge that drops landed " +
         "content is not taken. Ask the user only if the " +
@@ -2382,7 +2427,14 @@ export function createSandboxRuntime({
     const { forwarded, conflicts } = reconcileCopyWorkspace(id, state,
       { ...flags, resolve: [...resolves].join(",") });
     const landedReplay = movement?.conflicts?.length
-      ? { merged: [], conflicts: [] } : replayLandedChanges(id, state);
+      ? { merged: [], conflicts: [] } : (() => {
+        const rootReplay = replayLandedChanges(id, state);
+        const repositoryReplay = replayRepositoryLandedChanges(id, state);
+        return {
+          merged: [...rootReplay.merged, ...repositoryReplay.merged],
+          conflicts: [...rootReplay.conflicts, ...repositoryReplay.conflicts]
+        };
+      })();
     const targetCarried = movement?.conflicts?.length ? [] : carryTargetEdits(state);
     const landedCarried = movement?.conflicts?.length ? [] : carryLandedOutput(id, state);
     clearSnapshotCache(id);

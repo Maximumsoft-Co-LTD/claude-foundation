@@ -1,0 +1,123 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "repository-landed-replay-sandbox-sync-runs-for-bravo",
+      "requirementKey": "repository-landed-replay",
+      "scenario": "Edits on different lines merge",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-landed-replay-sandbox-sync-runs-for-bravo-2",
+      "requirementKey": "repository-landed-replay",
+      "scenario": "Edits on the same line conflict",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-landed-replay-sandbox-sync-runs-for-bravo-3",
+      "requirementKey": "repository-landed-replay",
+      "scenario": "A file edited after the landing is not replayed",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-landed-replay-sandbox-sync-runs-for-bravo-4",
+      "requirementKey": "repository-landed-replay",
+      "scenario": "A file the sandbox did not edit is left alone",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-landed-replay-advance-runs-for-bravo-through-archived",
+      "requirementKey": "repository-landed-replay",
+      "scenario": "A replayed change lands",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-user-edit-stops-advance-runs-through-archived",
+      "requirementKey": "repository-user-edit-stops",
+      "scenario": "A user edit on the same lines stops Land",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-user-edit-stops-advance-runs-through-archived-2",
+      "requirementKey": "repository-user-edit-stops",
+      "scenario": "A sandbox that already carries the edit lands",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-resolution-accepted-advance-runs-for-bravo-through-ar",
+      "requirementKey": "repository-resolution-accepted",
+      "scenario": "A resolved merge lands",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-resolution-accepted-advance-runs-for-bravo-through-2",
+      "requirementKey": "repository-resolution-accepted",
+      "scenario": "The agent decides the conflicting lines",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-resolution-accepted-advance-runs-for-bravo-through-3",
+      "requirementKey": "repository-resolution-accepted",
+      "scenario": "A merge that drops other landed edits does not land",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "repository-resolution-accepted-advance-runs-for-bravo-through-4",
+      "requirementKey": "repository-resolution-accepted",
+      "scenario": "A resolution does not survive a changed target",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/concurrent-repositories.test.mjs .claude/harness/tests/target-edits.test.mjs) && (node --test .claude/harness/tests/repository-delivery-saga.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (node --test .claude/harness/tests/concurrent-repositories.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/concurrent-repositories.test.mjs .claude/harness/tests/target-edits.test.mjs",
+        "node --test .claude/harness/tests/repository-delivery-saga.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh",
+        "node --test .claude/harness/tests/concurrent-repositories.test.mjs"
+      ]
+    }
+  }
+}

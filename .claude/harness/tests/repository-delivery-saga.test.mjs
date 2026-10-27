@@ -105,6 +105,7 @@ function fixture(repositoryCount = 1, options = {}) {
   return {
     base, repositories, selected, saga,
     state: () => structuredClone(runtimeState),
+    update: (mutate) => { const next = structuredClone(runtimeState); mutate(next); runtimeState = next; },
     cleanup: () => {
       for (const repository of repositories)
         git(["worktree", "remove", "--force", repository.sandbox], repository.target);
@@ -229,6 +230,129 @@ test("a carried edit does not excuse a different edit to the same path", () => {
     writeFileSync(join(repository.target, "lines.txt"), lines("landed", "l7"));
     writeFileSync(join(repository.sandbox, "lines.txt"), lines("other", "mine"));
     assert.throws(() => value.saga.apply("change-a"), /overwrite an uncommitted target edit/);
+  } finally { value.cleanup(); }
+});
+
+// An earlier change's verified Land journal in this repository, vouching that
+// `path` holds `bytes` as that change landed it.
+function landedJournal(value, repository, path, bytes, owner = "earlier-change") {
+  const dir = join(value.base, "transactions", "repository-delivery", repository.id, owner, "run-1");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "journal.json"), JSON.stringify({
+    changeId: owner, status: "verified", verifiedAt: "2026-09-05T00:00:00.000Z",
+    entries: [{ path, role: "code", after: digest(bytes) }]
+  }));
+}
+
+test("a refused path an earlier change landed routes to the sandbox sync until the replay has run", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    const landed = lines("landed", "l7");
+    writeFileSync(join(repository.target, "lines.txt"), landed);
+    writeFileSync(join(repository.sandbox, "lines.txt"), lines("mine", "mine7"));
+    landedJournal(value, repository, "lines.txt", landed);
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.code === "REPOSITORY_DELIVERY_FAILED" && error.details.landedSync === true &&
+      error.details.landedBy["lines.txt"] === "earlier-change" &&
+      /overwrite an uncommitted target edit in 'repo-1': lines\.txt/.test(error.message));
+    // The replay already wrote exactly these sandbox bytes and Land still does
+    // not find them carried: another sync would change nothing.
+    value.update((state) => {
+      state.repositories[repository.id].landedReplay = { "lines.txt": digest(lines("mine", "mine7")) };
+    });
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.details.landedSync === undefined && error.details.landedBy["lines.txt"] === "earlier-change");
+  } finally { value.cleanup(); }
+});
+
+test("a sync that already ran against the current bytes ends the routing instead of looping", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    const landed = lines("landed", "l7");
+    const sandboxBytes = lines("mine", "mine7");
+    writeFileSync(join(repository.target, "lines.txt"), landed);
+    writeFileSync(join(repository.sandbox, "lines.txt"), sandboxBytes);
+    landedJournal(value, repository, "lines.txt", landed);
+    const synced = (target, sandbox) => value.update((state) => {
+      state.repositories[repository.id].landedSynced = {
+        "lines.txt": { target: digest(target), sandbox: digest(sandbox) }
+      };
+    });
+    // A sync recorded against other bytes does not end it.
+    synced(lines("older", "l7"), sandboxBytes);
+    assert.throws(() => value.saga.preflight("change-a"), (error) => error.details.landedSync === true);
+    synced(landed, lines("older", "mine7"));
+    assert.throws(() => value.saga.preflight("change-a"), (error) => error.details.landedSync === true);
+    // Against the current target and sandbox bytes it is exhausted: a plain
+    // refusal that still names the repository, the path and the landing change.
+    synced(landed, sandboxBytes);
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.details.landedSync === undefined && error.details.landedBy["lines.txt"] === "earlier-change" &&
+      /overwrite an uncommitted target edit in 'repo-1': lines\.txt/.test(error.message));
+  } finally { value.cleanup(); }
+});
+
+test("a recorded resolution also covers a path both changes created", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    const landed = "landed fresh\n";
+    const resolution = "landed fresh and mine\n";
+    writeFileSync(join(repository.target, "fresh.txt"), landed);
+    writeFileSync(join(repository.sandbox, "fresh.txt"), resolution);
+    landedJournal(value, repository, "fresh.txt", landed);
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.details.landedSync === true && /overwrite an uncommitted target path in 'repo-1': fresh\.txt/.test(error.message));
+    value.update((state) => {
+      state.repositories[repository.id].landedResolved = {
+        "fresh.txt": { target: digest(landed), sandbox: digest(resolution), landedBy: "earlier-change" }
+      };
+    });
+    assert.doesNotThrow(() => value.saga.preflight("change-a"));
+    assert.equal(value.saga.apply("change-a").status, "PASS");
+    assert.equal(readFileSync(join(repository.target, "fresh.txt"), "utf8"), resolution);
+  } finally { value.cleanup(); }
+});
+
+test("an edit no Land journal vouches for never routes to the sandbox sync", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    writeFileSync(join(repository.target, "lines.txt"), lines("user", "l7"));
+    writeFileSync(join(repository.sandbox, "lines.txt"), lines("mine", "mine7"));
+    landedJournal(value, repository, "lines.txt", lines("landed", "l7"));
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.details.landedSync === undefined && error.details.landedBy === undefined);
+  } finally { value.cleanup(); }
+});
+
+test("a recorded resolution lands only while both files hold the bytes it was recorded against", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    const landed = lines("landed", "l7");
+    const resolution = lines("landed and mine", "mine7");
+    writeFileSync(join(repository.target, "lines.txt"), landed);
+    writeFileSync(join(repository.sandbox, "lines.txt"), resolution);
+    landedJournal(value, repository, "lines.txt", landed);
+    const record = (target, sandbox) => value.update((state) => {
+      state.repositories[repository.id].landedResolved = {
+        "lines.txt": { target: digest(target), sandbox: digest(sandbox), landedBy: "earlier-change" }
+      };
+    });
+    // Without a recorded resolution this is a refusal (the merge conflicts).
+    assert.throws(() => value.saga.preflight("change-a"), /overwrite an uncommitted target edit/);
+    // A resolution against other bytes does not apply.
+    record(landed, lines("something else", "mine7"));
+    assert.throws(() => value.saga.preflight("change-a"), /overwrite an uncommitted target edit/);
+    record(lines("not landed", "l7"), resolution);
+    assert.throws(() => value.saga.preflight("change-a"), /overwrite an uncommitted target edit/);
+    record(landed, resolution);
+    assert.doesNotThrow(() => value.saga.preflight("change-a"));
+    assert.equal(value.saga.apply("change-a").status, "PASS");
+    assert.equal(readFileSync(join(repository.target, "lines.txt"), "utf8"), resolution);
   } finally { value.cleanup(); }
 });
 
