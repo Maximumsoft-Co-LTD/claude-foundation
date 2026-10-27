@@ -47,8 +47,9 @@ digests are frozen by the deterministic sentinel.
 | `cart-coupons` | Coupon validation and pricing partitions | medium | Oracle 11/11, meaningful tests, clean install, archived |
 | `project-tracker-api` | Auth, permissions, persisted projects/tasks and concurrency | medium | Oracle 33/33 including discriminating tests, clean install, archived |
 | `order-inventory` | Brownfield backend/SDK/web state, multi-tenant SQLite transactions and cross-process concurrency | high | Oracle 19/19, per-surface discriminating tests, clean offline install, archived |
+| `order-inventory-lifecycle` | The order/inventory contract plus a mid-flight requirement update, a stacked second change, SIGKILL in Build and Land | high | Oracle 27/27 across scopes, lifecycle checks, both changes archived in order |
 
-Eleven lanes use paid model execution. The budget/resume lane is
+Twelve lanes use paid model execution. The budget/resume lane is
 deterministic and must not spend model budget.
 
 ### Larger workload: order and inventory (levels 1–2)
@@ -92,8 +93,31 @@ The scenario is executable and deterministically calibrated. The
 [2026-10-12 paid audit](scenario-order-inventory-2026-10-12.md) reaches archived
 and passes product, measured quality and clean-install checks, but its archived
 task ledger remains incomplete. It is not smoke-green or repeated assurance.
-Levels 3–4 (amendment, stacked Land and interruption injection)
-remain future workloads and are not credited by this lane.
+Levels 3–4 (amendment, stacked Land and interruption injection) are not
+credited by this lane; they have their own lane below.
+
+### Lifecycle lane: amendment, interruptions and stacked Land (levels 3–4)
+
+`order-inventory-lifecycle` reuses the frozen order/inventory seed and runs one
+disposable consumer through: Change A (the order/inventory contract) with a
+host SIGKILL once backend work exists in the sandbox; the product owner's
+requirement update 1 (a revised TTL bound and a new partial release) applied to
+the same change through `change amend`; Change B (independent catalogue paging
+over the same files) branched while A is proven and unlanded; A's Land crashed
+with SIGKILL once a repository projection is applied, then resumed; and B's
+Land onto A's uncommitted bytes with Land authority held by the host, as a
+user's `/land` would. Pre-Land oracles gate A (scope `a`) and B (scope `b`);
+the landed tree grades the full scope. The lane passes only when every
+lifecycle check passes: both crashes injected, the same change resumed, the
+amendment recorded, B branched before A landed, A archived before B, no
+repository HEAD moved, tasks complete and the final oracle green.
+
+A crashed session writes no result envelope, so its cost stays unmeasured; the
+driver charges it at a reserve for budgeting only. `--lifecycle-interruptions
+mid-build` runs a control that crashes only in Build. The lane is executable
+and deterministically calibrated (reference answer, scoped oracle, eight
+mutants); it has no strict paid pass.
+See the [2026-10-26 lifecycle findings](scenario-order-inventory-lifecycle-2026-10-26.md).
 
 Prepare either arm without model spend:
 
