@@ -544,7 +544,11 @@ Codex is the alternate. `doctor` and `change validate` expose the normalized
 posture and consequences; risk-tiered routing does not restore either assurance axis.
 AI review packets are diff-scoped: dispatch adds `reviewDiff` (changed code
 hunks against each repository's base, bounded per file and in total; contract
-artifacts excluded) and `agreement` (claims, acceptance, and delta spec
+artifacts excluded; a file that sandbox sync merged with an earlier change's
+landed, uncommitted edit is compared with those landed bytes instead, marked
+`against: "landed"`, so only this change's own lines are shown, and it keeps the
+base diff whenever the target no longer holds the bytes sync recorded) and
+`agreement` (claims, acceptance, and delta spec
 requirements), all bound by the packet digest alongside the unchanged scope,
 workspace hash, and finding binding. A low-tier first round is `diff-only`: the
 reviewer sees a projection without reference-only fields and may open a file

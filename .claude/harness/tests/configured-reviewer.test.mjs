@@ -836,6 +836,47 @@ try {
     { fileBytes: 40, totalBytes: 40, agreementBytes: 10 });
   assert.equal(clipped.files[0].status, "truncated");
   assert.equal(clipped.files[1].status, "omitted");
+  // A file merged with an earlier change's landed edit is compared with the
+  // landed bytes, so only this change's own lines are shown.
+  const landedRepo = join(root, "landed-repo");
+  const landedTarget = join(root, "landed-target");
+  mkdirSync(join(landedRepo, "src"), { recursive: true });
+  mkdirSync(join(landedTarget, "src"), { recursive: true });
+  const seven = (first, last) => `${first}\nl2\nl3\nl4\nl5\nl6\n${last}\n`;
+  writeFileSync(join(landedRepo, "src", "m.mjs"), seven("l1", "l7"));
+  git(["init", "-q"], landedRepo);
+  git(["add", "."], landedRepo);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+    "commit", "-q", "-m", "base"], landedRepo);
+  const landedBaseHead = git(["rev-parse", "HEAD"], landedRepo).stdout.trim();
+  writeFileSync(join(landedTarget, "src", "m.mjs"), seven("landed", "l7"));
+  writeFileSync(join(landedRepo, "src", "m.mjs"), seven("landed", "mine7"));
+  const landedRows = [{ repositoryId: "root", path: "src/m.mjs", kind: "code", identity: "m" }];
+  const landedInspection = (landedBase) => [{ repositoryId: "root", workspacePath: landedRepo,
+    baseHead: landedBaseHead, paths: [], ...(landedBase ? { landedBase } : {}) }];
+  const landedFile = join(landedTarget, "src", "m.mjs");
+  const againstLanded = reviewDiffValue(diffContext, landedRows,
+    landedInspection({ "src/m.mjs": landedFile })).files[0];
+  assert.equal(againstLanded.status, "diff");
+  assert.equal(againstLanded.against, "landed");
+  assert.match(againstLanded.diff, /^-l7\n\+mine7$/m);
+  assert.doesNotMatch(againstLanded.diff, /^[+-].*landed/m, "the earlier change's line is not shown");
+  assert.match(againstLanded.diff, /^--- a\/src\/m\.mjs$/m, "headers name the repository path");
+  assert.match(againstLanded.diff, /^\+\+\+ b\/src\/m\.mjs$/m);
+  const againstBase = reviewDiffValue(diffContext, landedRows, landedInspection(null)).files[0];
+  assert.equal(againstBase.against, undefined);
+  assert.match(againstBase.diff, /^\+landed$/m, "without a landed base every changed line is shown");
+  assert.match(againstBase.diff, /^\+mine7$/m);
+  writeFileSync(join(landedRepo, "src", "m.mjs"), seven("landed", "l7"));
+  const identical = reviewDiffValue(diffContext, landedRows,
+    landedInspection({ "src/m.mjs": landedFile })).files[0];
+  assert.deepEqual([identical.status, identical.against], ["unchanged", "landed"],
+    "a file equal to the landed bytes has no change of its own");
+  const unreadable = reviewDiffValue(diffContext, landedRows,
+    landedInspection({ "src/m.mjs": join(landedTarget, "src", "gone.mjs") })).files[0];
+  assert.equal(unreadable.against, undefined, "a missing landed file falls back to the base diff");
+  assert.equal(unreadable.status, "diff");
+  assert.match(unreadable.diff, /^\+landed$/m, "the fallback hides nothing from the reviewer");
   const agreement = reviewAgreementValue(diffContext, {
     contractWorkspacePath: join(diffRepo, "change"), intent: "make b three",
     claims: [{ id: "C1", scenario: "read b" }], acceptance: { required: false }

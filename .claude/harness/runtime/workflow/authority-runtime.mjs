@@ -12,6 +12,7 @@ import {
   reviewAgreementValue, reviewDepthForTier, reviewDiffValue, reviewModelClass,
   reviewScenarioChecklist
 } from "../evidence/review-diff.mjs";
+import { deltaReviewInspection } from "./packet-runtime.mjs";
 
 export function authorityRequestDisplayValue(request, limit = 8192) {
   const packetBytes = Buffer.byteLength(JSON.stringify(request.packet || null));
@@ -950,28 +951,7 @@ export function createAuthorityRuntime({
     applyHighRiskHumanClosure();
     function applyDeltaPacket() {
     if (scopeMode === "delta") {
-      function deltaInspection() {
-      const fullInspection = new Map((request.packet?.changedSurface?.inspection || [])
-        .map((entry) => [entry.repositoryId, entry]));
-      const inspection = [...scopeRows.reduce((groups, row) => {
-        const key = `${row.repositoryId}\u0000${row.workspacePath || ""}`;
-        if (!groups.has(key)) groups.set(key, {
-          repositoryId: row.repositoryId,
-          workspacePath: row.workspacePath || fullInspection.get(row.repositoryId)?.workspacePath || null,
-          baseHead: fullInspection.get(row.repositoryId)?.baseHead || null,
-          paths: []
-        });
-        groups.get(key).paths.push(row.relativePath || row.path);
-        return groups;
-      }, new Map()).values()];
-      // Contract aliases need the control workspace even when no root product
-      // file changed. Keep its location without granting additional paths.
-      const control = fullInspection.get("root");
-      if (control && !inspection.some((entry) => entry.repositoryId === "root"))
-        inspection.push({ ...control, paths: [], pathCount: 0, truncated: false });
-      return inspection;
-      }
-      const inspection = deltaInspection();
+      const inspection = deltaReviewInspection(scopeRows, request.packet?.changedSurface?.inspection);
       packet.changedSurface = {
         paths: scopePaths,
         digest: stableHash(scopePaths),

@@ -20,10 +20,27 @@ function clip(text, limit) {
 // `git` is the injected runner `(args, cwd) => spawnSync result`. External diff
 // drivers and textconv filters are disabled: repository config must not run
 // programs or rewrite what the reviewer sees.
-export function reviewRowDiff({ git, pathExists }, row, workspacePath, baseHead) {
+//
+// `landedFile` is the target file that still holds the bytes an earlier change
+// landed when sandbox sync merged that edit into this file. The change's own
+// contribution is then the difference from those bytes, not from the base,
+// which would show the earlier change's lines as this change's work. A landed
+// file that cannot be compared falls back to the base diff: nothing is hidden.
+export function reviewRowDiff({ git, pathExists }, row, workspacePath, baseHead, landedFile = null) {
   if (!workspacePath || !baseHead) return { status: "unavailable" };
   const base = ["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff",
     "--no-textconv", "--no-renames", "-U3"];
+  const sandboxFile = join(workspacePath, row.path);
+  if (landedFile && pathExists(landedFile) && pathExists(sandboxFile)) {
+    const compared = git([...base, "--no-index", "--", landedFile, sandboxFile], workspacePath);
+    if ([0, 1].includes(compared.status)) {
+      const text = String(compared.stdout || "")
+        .split(`a/${landedFile.replace(/^\//, "")}`).join(`a/${row.path}`)
+        .split(`b/${sandboxFile.replace(/^\//, "")}`).join(`b/${row.path}`);
+      return text.trim() ? { status: "diff", diff: text, against: "landed" }
+        : { status: "unchanged", against: "landed" };
+    }
+  }
   const tracked = git([...base, baseHead, "--", row.path], workspacePath);
   if (tracked.status !== 0) return { status: "unavailable" };
   if (String(tracked.stdout || "").trim()) return { status: "diff", diff: String(tracked.stdout) };
@@ -48,15 +65,17 @@ export function reviewDiffValue(context, rows, inspection, limits = REVIEW_DIFF_
       let value;
       try {
         value = reviewRowDiff(context, row,
-          row.workspacePath || location.workspacePath || null, location.baseHead || null);
+          row.workspacePath || location.workspacePath || null, location.baseHead || null,
+          location.landedBase?.[row.path] || null);
       } catch { value = { status: "unavailable" }; }
-      if (value.status !== "diff") return { path, status: value.status };
+      const against = value.against ? { against: value.against } : {};
+      if (value.status !== "diff") return { path, status: value.status, ...against };
       const budget = Math.min(limits.fileBytes, remaining);
       const clipped = clip(value.diff, budget);
       // Clipping against the shared budget exhausts it; a per-file clip does not.
       remaining = clipped.truncated && budget === remaining
         ? 0 : remaining - Buffer.byteLength(clipped.text);
-      return { path, status: clipped.truncated ? "truncated" : "diff", diff: clipped.text };
+      return { path, status: clipped.truncated ? "truncated" : "diff", diff: clipped.text, ...against };
     });
   return { version: 1, files };
 }

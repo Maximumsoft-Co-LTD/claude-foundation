@@ -2265,10 +2265,12 @@ export function createSandboxRuntime({
     record("landedConflicts", pending);
     record("landedResolved", resolved);
     // Every landed path this replay looked at, with the exact target and
-    // sandbox bytes it left behind, for a repository whose Land hands a refusal
-    // back to this sync: once the sync has run against these bytes, running it
-    // again changes nothing, so Land reports the refusal instead of looping.
-    if (repository !== "root") record("landedSynced", Object.fromEntries(
+    // sandbox bytes it left behind. Repository Land hands a refusal back to this
+    // sync: once it has run against these bytes, running it again changes
+    // nothing, so Land reports the refusal instead of looping. The review diff
+    // reads the same record to compare a file merged with landed work against
+    // the landed bytes rather than the base.
+    record("landedSynced", Object.fromEntries(
       Object.keys(landedBy).sort().map((path) => [path, {
         target: identity(join(root, path)), sandbox: identity(join(workspace.path, path))
       }])));

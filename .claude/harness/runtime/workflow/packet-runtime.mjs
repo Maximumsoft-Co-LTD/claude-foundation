@@ -78,6 +78,53 @@ export function reviewSurfaceRows(context, id, state) {
   });
 }
 
+// path -> the target file holding the bytes an earlier change landed, for each
+// changed file that sandbox sync merged with that landed edit and whose target
+// bytes still equal the recorded ones. The review diff compares such a file with
+// them, so the earlier change's lines are not shown as this change's. Anything
+// that cannot be matched is left out and the file keeps its base diff.
+function landedBaseFiles(context, state, repositoryId, paths) {
+  const record = repositoryId === "root" ? state.workspace : state.repositories?.[repositoryId];
+  const targetRoot = repositoryId === "root" ? context.root : record?.targetPath;
+  const landed = {};
+  if (!targetRoot || !record?.landedSynced) return landed;
+  for (const path of paths) {
+    const row = record.landedSynced[path];
+    const file = join(targetRoot, path);
+    if (!row || !context.pathExists(file)) continue;
+    try { if (context.fileDigest(file) === row.target) landed[path] = file; } catch { /* unreadable */ }
+  }
+  return landed;
+}
+
+// The inspection of a correction (delta) review round: only the scoped rows,
+// located by the first round's inspection, each keeping that round's landed
+// comparison so both rounds agree on which lines are the change's own. The
+// control workspace stays for contract aliases without granting more paths.
+export function deltaReviewInspection(scopeRows, fullInspectionRows) {
+  const fullInspection = new Map((fullInspectionRows || [])
+    .map((entry) => [entry.repositoryId, entry]));
+  const inspection = [...scopeRows.reduce((groups, row) => {
+    const key = `${row.repositoryId}\u0000${row.workspacePath || ""}`;
+    const full = fullInspection.get(row.repositoryId);
+    if (!groups.has(key)) groups.set(key, {
+      repositoryId: row.repositoryId,
+      workspacePath: row.workspacePath || full?.workspacePath || null,
+      baseHead: full?.baseHead || null,
+      paths: []
+    });
+    const group = groups.get(key);
+    group.paths.push(row.relativePath || row.path);
+    const landed = full?.landedBase?.[row.path];
+    if (landed) group.landedBase = { ...(group.landedBase || {}), [row.path]: landed };
+    return groups;
+  }, new Map()).values()];
+  const control = fullInspection.get("root");
+  if (control && !inspection.some((entry) => entry.repositoryId === "root"))
+    inspection.push({ ...control, paths: [], pathCount: 0, truncated: false });
+  return inspection;
+}
+
 export function reviewChangedSurface(context, id, state, surfaceRows) {
   const paths = surfaceRows.map((row) => `${row.repositoryId}/${row.path}`);
   const inspection = [...surfaceRows.reduce((groups, row) => {
@@ -90,11 +137,13 @@ export function reviewChangedSurface(context, id, state, surfaceRows) {
     // (`root/<submodule>/file`) bind to the repository that owns the file.
     const nested = repositoryId !== "root" && typeof repository?.relativePath === "string" &&
       repository.relativePath !== "." && !repository.relativePath.startsWith("../");
+    const landedBase = landedBaseFiles(context, state, repositoryId, repositoryPaths);
     return {
       repositoryId,
       workspacePath: reviewSurfaceWorkspace(context, id, state, repositoryId),
       baseHead: repositoryBaseHead(repository, state),
       ...(nested ? { relativePath: repository.relativePath } : {}),
+      ...(Object.keys(landedBase).length ? { landedBase } : {}),
       paths: repositoryPaths
     };
   });

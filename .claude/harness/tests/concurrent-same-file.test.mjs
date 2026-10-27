@@ -2,8 +2,33 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   SHARED_LINES, agentEdit, assertArchived, buildChange, cleanup, landTrail, proveChange,
-  replaceLine, startChange, tookLandedSync, world
+  replaceLine, runtimeText, startChange, tookLandedSync, world
 } from "./fixtures/concurrent-changes.mjs";
+
+// Sync leaves, for each landed file the root sandbox edited, the target and
+// sandbox bytes it merged against, so the review diff can compare the file with
+// the landed bytes instead of the base.
+test("the root sync records the bytes it left behind for a file merged with landed work", () => {
+  const w = world();
+  try {
+    for (const label of ["alpha", "bravo"]) startChange(w, label, ["src/shared.txt"]);
+    const sandboxes = {};
+    for (const [label, line] of [["alpha", 3], ["bravo", 15]]) {
+      sandboxes[label] = buildChange(w, label);
+      agentEdit(sandboxes[label], label, { "src/shared.txt": replaceLine(line, `${label}-edit`) });
+      proveChange(w, label);
+    }
+    assertArchived(w, "bravo", landTrail(w, "bravo"));
+    const synced = w.cli("sandbox", "sync", "alpha");
+    assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+    const record = JSON.parse(runtimeText(w, "alpha")).workspace.landedSynced;
+    assert.ok(record && Object.hasOwn(record, "src/shared.txt"), JSON.stringify(record));
+    assert.match(record["src/shared.txt"].target, /^[0-9a-f]{64}$/);
+    assert.match(record["src/shared.txt"].sandbox, /^[0-9a-f]{64}$/);
+    assert.notEqual(record["src/shared.txt"].target, record["src/shared.txt"].sandbox,
+      "the merged sandbox file holds alpha's own edit too");
+  } finally { cleanup(w); }
+});
 
 // Scenario 2: three changes edit different lines of the same file. Every later
 // Land replays the earlier landed work into its sandbox through `advance`

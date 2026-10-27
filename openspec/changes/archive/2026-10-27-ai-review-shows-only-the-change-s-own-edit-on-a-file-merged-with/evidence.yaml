@@ -1,0 +1,78 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "root-landed-sync-record",
+      "requirementKey": "root-landed-sync-record",
+      "scenario": "The root sync records the merged file",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-diff-excludes-landed-the-review-diff-is-built-for-bravo",
+      "requirementKey": "review-diff-excludes-landed",
+      "scenario": "A merged file shows only this change's lines",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-diff-excludes-landed-the-correction-round-s-review-inspec",
+      "requirementKey": "review-diff-excludes-landed",
+      "scenario": "A correction round keeps the landed comparison",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-diff-excludes-landed-the-review-diff-is-built-for-bravo-2",
+      "requirementKey": "review-diff-excludes-landed",
+      "scenario": "A file no earlier change landed keeps the base diff",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-diff-excludes-landed-the-review-diff-is-built-for-bravo-3",
+      "requirementKey": "review-diff-excludes-landed",
+      "scenario": "Landed bytes that no longer match fall back to the base diff",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-diff-excludes-landed-the-review-diff-is-built-for-bravo-4",
+      "requirementKey": "review-diff-excludes-landed",
+      "scenario": "A file equal to the landed bytes has no change of its own",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/concurrent-same-file.test.mjs) && (node --test .claude/harness/tests/configured-reviewer.test.mjs .claude/harness/tests/packet-value.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (node --test .claude/harness/tests/packet-value.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/concurrent-same-file.test.mjs",
+        "node --test .claude/harness/tests/configured-reviewer.test.mjs .claude/harness/tests/packet-value.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh",
+        "node --test .claude/harness/tests/packet-value.test.mjs"
+      ]
+    }
+  }
+}

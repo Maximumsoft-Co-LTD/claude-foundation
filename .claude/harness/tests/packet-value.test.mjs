@@ -7,6 +7,7 @@ import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createPacketRuntime,
+  deltaReviewInspection,
   priorReviewValue,
   reviewArtifactValue,
   reviewChangedSurface,
@@ -148,6 +149,72 @@ const currentSurface = reviewChangedSurface(surfaceContext, "change", {
 }, [{ repositoryId: "other", path: "src/current.js" }]);
 assert.equal(currentSurface.inspection[0].baseHead, "selected-other",
   "review metadata must expose the same selected base used by changed-surface diffing");
+// A file sync merged with an earlier change's landed edit is compared with the
+// landed target bytes, while the target still holds exactly those bytes.
+{
+  const landedContext = { ...surfaceContext, pathExists: () => true,
+    fileDigest: (path) => path === join(root, "src/merged.js") ? "landed-hash" : "other-hash" };
+  const landedRows = [{ repositoryId: "root", path: "src/merged.js" },
+    { repositoryId: "root", path: "src/own.js" }];
+  const synced = (target) => ({
+    workspace: { path: root, baseHead: "root-base",
+      landedSynced: { "src/merged.js": { target, sandbox: "sandbox-hash" } } },
+    repositories: {}
+  });
+  const merged = reviewChangedSurface(landedContext, "change", synced("landed-hash"), landedRows);
+  assert.deepEqual(merged.inspection[0].landedBase, { "src/merged.js": join(root, "src/merged.js") });
+  const edited = reviewChangedSurface(landedContext, "change", synced("older-hash"), landedRows);
+  assert.equal(edited.inspection[0].landedBase, undefined,
+    "target bytes that no longer match the record fall back to the base diff");
+  const missing = reviewChangedSurface({ ...landedContext, pathExists: () => false }, "change",
+    synced("landed-hash"), landedRows);
+  assert.equal(missing.inspection[0].landedBase, undefined);
+  const child = reviewChangedSurface(landedContext, "change", {
+    workspace: { path: root, baseHead: "root-base" },
+    repositories: { other: { path: repositories.other.workspacePath, baseHead: "other-base",
+      targetPath: join(root, "child-target"),
+      landedSynced: { "lib/m.js": { target: "child-landed", sandbox: "s" } } } }
+  }, [{ repositoryId: "other", path: "lib/m.js" }]);
+  assert.equal(child.inspection[0].landedBase, undefined, "the child file's bytes differ here");
+  const childMatched = reviewChangedSurface({ ...landedContext,
+    fileDigest: (path) => path === join(root, "child-target", "lib/m.js") ? "child-landed" : "x" },
+  "change", {
+    workspace: { path: root, baseHead: "root-base" },
+    repositories: { other: { path: repositories.other.workspacePath, baseHead: "other-base",
+      targetPath: join(root, "child-target"),
+      landedSynced: { "lib/m.js": { target: "child-landed", sandbox: "s" } } } }
+  }, [{ repositoryId: "other", path: "lib/m.js" }]);
+  assert.deepEqual(childMatched.inspection[0].landedBase,
+    { "lib/m.js": join(root, "child-target", "lib/m.js") },
+  "a repository file is matched against that repository's own target");
+}
+// A correction round rebuilds the inspection for its scoped rows only, and
+// keeps the first round's landed comparison for exactly those rows.
+{
+  const full = [
+    { repositoryId: "root", workspacePath: root, baseHead: "root-base", paths: [],
+      landedBase: { "src/merged.js": "/target/src/merged.js", "src/other.js": "/target/src/other.js" } },
+    { repositoryId: "other", workspacePath: "/other", baseHead: "other-base", paths: [],
+      landedBase: { "lib/m.js": "/other-target/lib/m.js" } }
+  ];
+  const delta = deltaReviewInspection([
+    { repositoryId: "root", path: "src/merged.js", workspacePath: root },
+    { repositoryId: "root", path: "src/new.js", workspacePath: root }
+  ], full);
+  assert.deepEqual(delta.map((entry) => entry.repositoryId), ["root"]);
+  assert.deepEqual(delta[0].paths, ["src/merged.js", "src/new.js"]);
+  assert.deepEqual(delta[0].landedBase, { "src/merged.js": "/target/src/merged.js" },
+    "only the scoped rows keep a landed comparison");
+  assert.equal(delta[0].baseHead, "root-base");
+  const plain = deltaReviewInspection([
+    { repositoryId: "root", path: "src/new.js", workspacePath: root }
+  ], [{ repositoryId: "root", workspacePath: root, baseHead: "root-base", paths: [] }]);
+  assert.equal(plain[0].landedBase, undefined);
+  const contractOnly = deltaReviewInspection([], full);
+  assert.deepEqual(contractOnly.map((entry) => entry.repositoryId), ["root"],
+    "the control workspace stays for contract aliases without granting paths");
+  assert.deepEqual(contractOnly[0].paths, []);
+}
 const largeRows = Array.from({ length: 61 }, (_, index) => ({
   repositoryId: "root", path: `src/file-${index}.js`, kind: "code", identity: String(index)
 }));
