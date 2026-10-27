@@ -1425,6 +1425,16 @@ asked only when the two changes' intents genuinely contradict. Each change
 archives in Land order, so OpenSpec merges each change's spec delta onto the
 specs the earlier Land already synchronized.
 
+A multi-repository change checks every writable repository the same way: an
+uncommitted target edit that the repository sandbox already holds (merging the
+base-to-target edit into the sandbox file changes nothing, and the file mode
+matches) is not an overwrite, and Land applies the sandbox bytes. Any other
+edit still stops Land with the repository and path. `sandbox sync` does not yet
+replay a landed edit into a repository sandbox, and a repository has no recorded
+conflict resolution, so an agent merge that overlaps a landed edit (merging it
+conflicts although nothing landed is dropped) is not accepted yet: Land keeps
+stopping with the repository and path.
+
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a
 Land deletion. A target path is deleted only when the authorized sandbox removed

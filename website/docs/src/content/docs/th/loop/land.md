@@ -64,6 +64,11 @@ change ถัดไปจะ Land เมื่อ diff ที่ change ก่�
 นี้ Prove ใหม่เฉพาะส่วนที่ merge ทำให้หมดอายุ แล้วจึง apply ถ้าทั้งสองแก้บรรทัด
 เดียวกัน agent จะ merge ใน sandbox copy โดยเก็บเนื้อหาที่ Land แล้วไว้ ระบบไม่เสนอให้
 ทิ้ง bytes ที่ Land ไปก่อน และถามผู้ใช้เฉพาะเมื่อ intent ของสอง change ขัดกันจริง
+ใน change แบบหลาย repository edit ที่ Land แล้วและ sandbox ของ repository นั้นถืออยู่แล้ว
+ไม่นับเป็นการเขียนทับ ส่วน edit ที่ยังไม่ commit อย่างอื่นใน target ยังหยุด Land อยู่
+`sandbox sync` ยังไม่ replay edit ที่ Land แล้วเข้า sandbox ของ repository และ merge ที่ agent ทำ
+แล้วซ้อนกับ edit ที่ Land แล้ว (merge แล้วเกิด conflict ทั้งที่ไม่มีอะไรที่ Land แล้วถูกทิ้ง)
+ยังไม่ถูกรับ Land จึงยังหยุดพร้อมระบุ repository และ path
 
 มีเพียง recoverable Land transaction ของ harness ที่ apply product และ sync
 agreement ได้ Agent ไม่แก้ไฟล์เหล่านั้นนอก transaction และ Land ไม่ให้อำนาจ

@@ -1,8 +1,10 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { createLandJournal, landEntryNoOp } from "./land-journal.mjs";
 import { deliveryTreeEntries } from "./delivery-integrity.mjs";
+import { targetEditCarried } from "./target-edits.mjs";
 
 export const REPOSITORY_DELIVERY_SAGA_VERSION = 1;
 
@@ -139,6 +141,25 @@ function overwriteError(repository, overwrite) {
     { repository: repository.id, path: overwrite.path });
 }
 
+// Whether the sandbox copy of `path` already holds the target's uncommitted
+// edit: merging base->target into the sandbox bytes is a clean no-op, so
+// applying the sandbox over the target loses nothing the target holds. This is
+// how a change that branched before another change landed (uncommitted) in
+// this repository can still land: its sandbox carries the landed bytes. Any
+// other edit, a different mode, or a path without recoverable base bytes stays
+// an overwrite. `runtime.path` is the sandbox; a caller without one has none.
+function childEditCarried(files, repository, runtime, path) {
+  if (!runtime?.path || !runtime.baseHead) return false;
+  const shown = spawnSync("git", ["show", `${runtime.baseHead}:${path}`], {
+    cwd: repository.path, maxBuffer: 64 * 1024 * 1024
+  });
+  if (shown.status !== 0 || !Buffer.isBuffer(shown.stdout)) return false;
+  const target = files.safeRootPath(path);
+  if (files.pathMode(target) !== files.pathMode(resolve(runtime.path, path))) return false;
+  return targetEditCarried({ root: repository.path, sandboxPath: runtime.path, path,
+    baseBytes: shown.stdout });
+}
+
 function assertChildTargetCompatible({ git, journalRuntime }, repository, runtime, entries,
   prior = new Map()) {
   const targetHead = git(["rev-parse", "HEAD"], repository.path);
@@ -150,7 +171,8 @@ function assertChildTargetCompatible({ git, journalRuntime }, repository, runtim
         observedHead: String(targetHead.stdout || "").trim() || null
       });
   const [overwrite] = targetOverwrites({ git, files: journalRuntime }, repository.path,
-    runtime.baseHead, entries, prior);
+    runtime.baseHead, entries, prior)
+    .filter((row) => row.untracked || !childEditCarried(journalRuntime, repository, runtime, row.path));
   if (overwrite) throw overwriteError(repository, overwrite);
 }
 

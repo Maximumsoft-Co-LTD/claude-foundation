@@ -76,7 +76,12 @@ edit into this change's sandbox copy, proves again what the merge invalidated,
 and applies. If both changed the same lines, the agent merges them in the
 sandbox copy and keeps the landed content. Earlier landed bytes are never
 offered for discard, and the user is asked only when the two intents
-contradict.
+contradict. In a multi-repository change, a landed edit that a repository
+sandbox already holds is not an overwrite; any other uncommitted target edit
+still stops Land. `sandbox sync` does not yet replay landed edits into a
+repository sandbox, and an agent merge that overlaps a landed edit (merging it
+conflicts although nothing landed is dropped) is not accepted yet, so Land
+keeps stopping with the repository and path.
 
 Only the harness-owned recoverable Land transaction may apply product files and
 synchronize the agreement; the agent does not edit them ad hoc. Land never

@@ -25,7 +25,9 @@ function createRepository(base, id) {
   git(["config", "user.email", "test@example.test"], target);
   git(["config", "user.name", "Test"], target);
   writeFileSync(join(target, "app.txt"), `${id}:base\n`);
-  git(["add", "app.txt"], target);
+  // Seven lines so two changes can edit distant lines of one file.
+  writeFileSync(join(target, "lines.txt"), `${["l1", "l2", "l3", "l4", "l5", "l6", "l7"].join("\n")}\n`);
+  git(["add", "app.txt", "lines.txt"], target);
   git(["commit", "-q", "-m", "base"], target);
   const head = git(["rev-parse", "HEAD"], target).stdout.trim();
   git(["worktree", "add", "--detach", sandbox, head], target);
@@ -180,6 +182,53 @@ test("overlapping target work is preserved as a typed conflict", () => {
       /overwrite an uncommitted target edit/);
     assert.equal(readFileSync(join(repository.target, "app.txt"), "utf8"),
       "user edit\n");
+  } finally { value.cleanup(); }
+});
+
+// An earlier change landed (uncommitted) in this target and this change's
+// sandbox carries that landed edit plus its own distant edit: applying the
+// sandbox over the target loses nothing the target holds, so it is not a user's
+// edit being overwritten. A sandbox that does not carry the edit still stops.
+const lines = (first, last) => `${first}\nl2\nl3\nl4\nl5\nl6\n${last}\n`;
+
+test("a target edit the sandbox already carries is not overwritten work", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    writeFileSync(join(repository.target, "lines.txt"), lines("landed", "l7"));
+    writeFileSync(join(repository.sandbox, "lines.txt"), lines("landed", "mine"));
+    assert.doesNotThrow(() => value.saga.preflight("change-a"));
+    assert.equal(value.saga.apply("change-a").status, "PASS");
+    assert.equal(readFileSync(join(repository.target, "lines.txt"), "utf8"), lines("landed", "mine"));
+    assert.equal(readFileSync(join(repository.target, "app.txt"), "utf8"), `${repository.id}:delivered\n`);
+    assert.equal(git(["rev-parse", "HEAD"], repository.target).stdout.trim(), repository.head);
+  } finally { value.cleanup(); }
+});
+
+test("a target edit the sandbox does not carry still stops Land and is kept", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    writeFileSync(join(repository.target, "lines.txt"), lines("landed", "l7"));
+    writeFileSync(join(repository.sandbox, "lines.txt"), lines("l1", "mine"));
+    assert.throws(() => value.saga.preflight("change-a"),
+      /overwrite an uncommitted target edit in 'repo-1': lines\.txt/);
+    assert.throws(() => value.saga.apply("change-a"),
+      /overwrite an uncommitted target edit in 'repo-1': lines\.txt/);
+    assert.equal(readFileSync(join(repository.target, "lines.txt"), "utf8"), lines("landed", "l7"));
+    assert.equal(readFileSync(join(repository.target, "app.txt"), "utf8"), `${repository.id}:base\n`);
+  } finally { value.cleanup(); }
+});
+
+test("a carried edit does not excuse a different edit to the same path", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    // The target edit rewrote the first line; the sandbox keeps the old first
+    // line, so it does not hold what the target holds.
+    writeFileSync(join(repository.target, "lines.txt"), lines("landed", "l7"));
+    writeFileSync(join(repository.sandbox, "lines.txt"), lines("other", "mine"));
+    assert.throws(() => value.saga.apply("change-a"), /overwrite an uncommitted target edit/);
   } finally { value.cleanup(); }
 });
 
