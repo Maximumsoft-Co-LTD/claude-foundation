@@ -374,6 +374,16 @@ test("packet metrics report missing and duplicate sections, words, EDIT rounds, 
   assert.match(markdown, /\| Change start compile ms \| 1424 \|/);
 });
 
+test("content-dependent sections the renderer omits when empty are not reported missing", async (t) => {
+  const project = packetProject(t, {
+    "proposal.md": "# Change: Add tags\n\n## Why\nTag items fast.\n",
+    "design.md": "# Design\n\n## Decisions\nFilter in the query.\n",
+    "tasks.md": "- [x] 1.1 Add tags\n"
+  });
+  const packet = await collectPacketMetrics({ project, changeId: "add-tags", outline: OUTLINE });
+  assert.deepEqual(packet.missingSections, { count: 0, sections: [] });
+});
+
 test("a run without a packet or intake rows reports unavailable, never zero", async (t) => {
   const project = packetProject(t, {});
   const packet = await collectPacketMetrics({ project, changeId: "absent", outline: OUTLINE });

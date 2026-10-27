@@ -301,6 +301,11 @@ export function duplicateSections(markdown) {
   return [...counts.values()].filter((entry) => entry.occurrences > 1);
 }
 
+// Rows the renderer omits when the draft supplies nothing and the draft
+// validator never requires (change-lifecycle: "a row with nothing to say is
+// omitted"). Counting them as missing flags every packet.
+const CONTENT_DEPENDENT_ROWS = new Set(["summary", "successCriteria", "provenance", "overview"]);
+
 // Required sections are the outline rows that hold for every draft: rows whose
 // condition is true without any draft field. The packet's draft is not kept,
 // so conditional rows cannot be judged and are left out.
@@ -308,7 +313,7 @@ export function requiredOutlineRows(outline, document) {
   if (typeof outline?.outlineSections !== "function") return [];
   try {
     return outline.outlineSections(document, {}, { archived: false })
-      .filter((row) => row.archiveOnly !== true);
+      .filter((row) => row.archiveOnly !== true && !CONTENT_DEPENDENT_ROWS.has(row.key));
   } catch { return []; }
 }
 
