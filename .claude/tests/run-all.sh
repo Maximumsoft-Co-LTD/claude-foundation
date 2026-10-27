@@ -167,7 +167,8 @@ execution preparation|node --test "$ROOT/.claude/harness/tests/tool-preparation.
 review policy|node --test "$ROOT/.claude/harness/tests/review-policy.test.mjs"
 rapid fast path seam|node --test "$ROOT/.claude/harness/tests/rapid-fast-path-seam.test.mjs"
 review overlap seam|node --test "$ROOT/.claude/harness/tests/review-overlap-seam.test.mjs"
-concurrent changes seam|node --test "$ROOT/.claude/harness/tests/concurrent-different-files.test.mjs" "$ROOT/.claude/harness/tests/concurrent-same-file.test.mjs" "$ROOT/.claude/harness/tests/concurrent-same-lines.test.mjs" "$ROOT/.claude/harness/tests/concurrent-user-edit.test.mjs" "$ROOT/.claude/harness/tests/concurrent-repositories.test.mjs"
+concurrent changes seam|node --test "$ROOT/.claude/harness/tests/concurrent-different-files.test.mjs" "$ROOT/.claude/harness/tests/concurrent-same-file.test.mjs" "$ROOT/.claude/harness/tests/concurrent-same-lines.test.mjs" "$ROOT/.claude/harness/tests/concurrent-user-edit.test.mjs"
+concurrent repositories seam|node --test "$ROOT/.claude/harness/tests/concurrent-repositories.test.mjs"
 harness time primitives|node --test "$ROOT/.claude/harness/tests/harness-time-primitives.test.mjs"
 harness time seam|node --test "$ROOT/.claude/harness/tests/harness-time-seam.test.mjs"
 traceability|node --test "$ROOT/.claude/harness/tests/traceability.test.mjs"
@@ -390,7 +391,7 @@ if [ "${1:-}" = "--suite" ]; then
     # The proof loop validates ~90 compiled rapid packets, each now linted by
     # the real OpenSpec CLI (~1.3s) when one is on PATH.
     case "${line%%|*}" in
-      'harness contracts (topology planning)'|'pull request delivery'|'proof loop end to end'|'apply conflict') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
+      'harness contracts (topology planning)'|'pull request delivery'|'proof loop end to end'|'apply conflict'|'concurrent repositories seam') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
     esac
     (
       sleep "$timeout"
