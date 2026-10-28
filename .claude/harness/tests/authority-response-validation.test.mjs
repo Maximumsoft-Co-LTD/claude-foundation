@@ -27,6 +27,24 @@ test("authority record preflight reports every response problem together", () =>
     /close exactly the first-round findings: F1, F2/])
     assert.ok(issues.some((issue) => pattern.test(issue)), `${pattern}: ${issues.join(" | ")}`);
   assert.equal(issues.some((issue) => /example\.test/.test(issue)), false, "a URI reference is fine");
+  // A failing response may close fewer first-round findings when it reports a
+  // blocker or major finding for what remains; a pass or a bare omission may not.
+  const closureIssue = (response) => authorityResponsePreflightIssues({
+    request: { ...delta, status: "dispatched" }, referenceExists: () => true,
+    response: { ...response, evidence: { reference: ["tasks.md"], "subject-actor": "claude",
+      "subject-session": "s-1", "subject-model": "m", ...response.evidence } }
+  }).filter((issue) => /close exactly the first-round findings/.test(issue));
+  assert.deepEqual(closureIssue({ status: "fail", evidence: {
+    findings: [{ id: "D1", severity: "major", path: "a.mjs" }], "verified-findings": 1,
+    verifiedFindingIds: ["F1"] } }), []);
+  assert.equal(closureIssue({ status: "pass", evidence: {
+    "verified-findings": 1, verifiedFindingIds: ["F1"] } }).length, 1);
+  assert.equal(closureIssue({ status: "fail", evidence: {
+    findings: [{ id: "D1", severity: "minor", path: "a.mjs" }], "verified-findings": 1,
+    verifiedFindingIds: ["F1"] } }).length, 1);
+  assert.equal(closureIssue({ status: "fail", evidence: {
+    findings: [{ id: "D1", severity: "major", path: "a.mjs" }], "verified-findings": 1,
+    verifiedFindingIds: ["F9"] } }).length, 1, "an ID outside the first round is refused");
   // A complete human response for a dispatched request has nothing to report.
   assert.deepEqual(authorityResponsePreflightIssues({
     request: { ...delta, status: "dispatched" }, referenceExists: () => true,

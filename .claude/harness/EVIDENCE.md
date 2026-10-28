@@ -638,7 +638,13 @@ full retry and never create a delivered baseline. If the final delta reports an
 in-contract blocker, it must bind that finding to affected claims and declared
 critical cases; a later current pass of those providers creates a deterministic
 repair-closure receipt, not a third AI review. A delta review that no longer
-reports an earlier finding closes it. When the repaired final finding has no
+reports an earlier finding closes it. A closure round lists in
+`verifiedFindingIds` the first-round findings the repair closed: all of them
+normally. A result that is not a pass may list fewer when it also reports a
+blocker or major finding for what remains; that is a delivered `fail` verdict,
+and the IDs it leaves out stay open. A pass must list every first-round ID, an
+ID outside the first round is always refused, and a shortfall with no blocker or
+major finding to explain it is a closure binding error. When the repaired final finding has no
 declared critical case to bind (for example a rapid change) and current
 non-review proof passes, Prove requests one closure review of the repaired
 workspace, comparing the review provider's current subject hash with the failed

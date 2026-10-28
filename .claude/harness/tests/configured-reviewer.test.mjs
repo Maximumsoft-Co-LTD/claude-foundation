@@ -258,6 +258,44 @@ assert.deepEqual(reviewFindingIssues({
   reviewScope: { ...scopedPacket.reviewScope, mode: "delta" },
   closureFindings: { ids: ["F-BASE"] }
 }), []);
+// A closure round may close only some of the first-round findings when it
+// fails with a blocker or major finding for what remains; the unverified IDs
+// stay open. Anything that would let a review pass or hide an ID is refused.
+{
+  const closurePacket = {
+    ...scopedPacket,
+    reviewScope: { ...scopedPacket.reviewScope, mode: "delta" },
+    closureFindings: { ids: ["F-ONE", "F-TWO", "F-THREE"] }
+  };
+  const closureIssues = (review) => reviewFindingIssues(review, closurePacket)
+    .filter((issue) => /delta closure/.test(issue));
+  const open = { ...validFinding, id: "D-OPEN", severity: "major" };
+  assert.deepEqual(closureIssues({ status: "fail", findings: [open],
+    verifiedFindingIds: ["F-ONE", "F-THREE"] }), [],
+  "a fail that closes a subset and reports a major finding is a verdict");
+  assert.deepEqual(closureIssues({ status: "fail", findings: [{ ...open, severity: "blocker" }],
+    verifiedFindingIds: [] }), [], "closing none is still a fail verdict with a blocker");
+  assert.deepEqual(closureIssues({ status: "fail", findings: [open],
+    verifiedFindingIds: ["F-TWO", "F-ONE", "F-THREE"] }), [], "closing all is unchanged");
+  assert.match(closureIssues({ status: "pass", findings: [],
+    verifiedFindingIds: ["F-ONE"] })[0], /delta closure must verify exactly: F-ONE, F-THREE, F-TWO/,
+  "a pass cannot leave a first-round finding open");
+  assert.match(closureIssues({ status: "fail", findings: [{ ...open, severity: "minor" }],
+    verifiedFindingIds: ["F-ONE"] })[0], /delta closure must verify exactly/,
+  "a missing ID needs a blocker or major finding to explain it");
+  assert.match(closureIssues({ status: "fail", findings: [open],
+    verifiedFindingIds: ["F-ONE", "F-ZZ"] })[0], /delta closure must verify exactly/,
+  "an ID outside the first round is never accepted");
+  assert.match(closureIssues({ status: "inconclusive", findings: [open],
+    verifiedFindingIds: ["F-ONE"] })[0] || "", /delta closure must verify exactly|^$/);
+  assert.match(closureIssues({ findings: [open], verifiedFindingIds: ["F-ONE"] })[0],
+    /delta closure must verify exactly/, "a result without a status keeps the exact rule");
+  const prompt = configuredReviewPrompt(closurePacket);
+  assert.match(prompt, /list in verifiedFindingIds only the closureFindings\.ids the repair closed/);
+  assert.match(prompt, /leave out the IDs it did not close, set status fail, and report what remains as a blocker or major finding/);
+  assert.match(prompt, /a minor finding cannot explain an ID you left out/);
+  assert.doesNotMatch(prompt, /return verifiedFindingIds exactly for closureFindings\.ids/);
+}
 for (const path of ["/tmp/app.mjs", "../src/app.mjs"])
   assert.match(reviewFindingIssues({ findings: [{ ...validFinding, path }] },
     scopedPacket)[0], /invalid finding path/);

@@ -5,7 +5,9 @@ import { join, relative, resolve } from "node:path";
 import { acquireProcessLock, isProcessAlive } from "../core/process-lock.mjs";
 import { effectiveReviewAttemptLimit } from "../core/authority-policy.mjs";
 import { authorityRunCommand, authorityStatusCommand } from "../core/authority-run-command.mjs";
-import { reviewFindingIssues, reviewPacketIssues, validReview } from "../evidence/configured-reviewer.mjs";
+import {
+  deltaClosureIssue, reviewFindingIssues, reviewPacketIssues, validReview
+} from "../evidence/configured-reviewer.mjs";
 import { checkpointReviewResult, recoverReviewResult } from "../evidence/review-result-recovery.mjs";
 import { normalizeReviewCompletionFindings } from "../evidence/review-attempt-store.mjs";
 import {
@@ -390,8 +392,10 @@ export function authorityResponsePreflightIssues({ request, response, undispatch
   const expected = request.packet?.closureFindings?.ids;
   if (Array.isArray(expected) && response?.status !== "error") {
     const supplied = [...new Set(verifiedIds.map((value) => String(value).trim()).filter(Boolean))].sort();
-    if (JSON.stringify([...expected].sort()) !== JSON.stringify(supplied))
-      issues.push(`verifiedFindingIds must close exactly the first-round findings: ${[...expected].sort().join(", ")}`);
+    if (deltaClosureIssue({ expected, verified: supplied, status: response?.status,
+      findings: Array.isArray(evidence.findings) ? evidence.findings : [] }))
+      issues.push(`verifiedFindingIds must close exactly the first-round findings: ${[...expected].sort().join(", ")}` +
+        " (a failing response may close fewer only by also reporting a blocker or major finding)");
   }
   return issues;
 }
@@ -1769,9 +1773,10 @@ export function createAuthorityRuntime({
       fail("configured reviewer finding IDs must be non-empty and unique");
     if (scope === "delta" && !infrastructureError) {
       const expectedIds = [...(dispatched.packet.closureFindings?.ids || [])].sort();
-      const verifiedIds = [...report.verifiedFindingIds].sort();
-      if (JSON.stringify(expectedIds) !== JSON.stringify(verifiedIds))
-        fail(`AI delta closure must verify exactly the first-round finding IDs: ${expectedIds.join(", ") || "<none>"}`);
+      const closureIssue = deltaClosureIssue({ expected: expectedIds,
+        verified: report.verifiedFindingIds, status: report.status, findings: report.findings });
+      if (closureIssue)
+        fail(`AI ${closureIssue}`);
       const scoped = dispatched.dispatch.scope.paths || [];
       const outside = report.findings.filter((finding) => {
         const path = String(finding.path || "").replace(/^\.\//, "");
@@ -2017,8 +2022,10 @@ export function createAuthorityRuntime({
     const expectedIds = [...(request.packet.closureFindings.ids || [])].sort();
     const suppliedIds = [...new Set(verifiedFindingIds.map((value) =>
       String(value).trim()).filter(Boolean))].sort();
-    if (JSON.stringify(expectedIds) !== JSON.stringify(suppliedIds))
-      fail("delta review verifiedFindingIds must exactly close the first-round finding IDs");
+    if (deltaClosureIssue({ expected: expectedIds, verified: suppliedIds,
+      status: response.status, findings }))
+      fail("delta review verifiedFindingIds must exactly close the first-round finding IDs " +
+        "(a failing review may close fewer only by also reporting a blocker or major finding)");
     if (request.dispatch.scope.mode !== "delta") return;
     const outside = findings.filter((finding) => {
       const path = String(finding?.path || "").replace(/^\.\//, "");

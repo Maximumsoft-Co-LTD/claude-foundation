@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "partial-closure-is-a-verdict-harness-closure",
+      "requirementKey": "partial-closure-is-a-verdict",
+      "scenario": "ปิดได้สามจากสี่แล้วยังเห็นปัญหาค้าง",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "partial-closure-is-a-verdict-harness-closure-2",
+      "requirementKey": "partial-closure-is-a-verdict",
+      "scenario": "pass ที่ปิดไม่ครบถูกปฏิเสธ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "partial-closure-is-a-verdict-harness-closure-3",
+      "requirementKey": "partial-closure-is-a-verdict",
+      "scenario": "fail ที่ขาด ID โดยไม่มี finding อธิบายถูกปฏิเสธ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "partial-closure-is-a-verdict-harness-closure-4",
+      "requirementKey": "partial-closure-is-a-verdict",
+      "scenario": "verified ที่มี ID นอกรอบแรกถูกปฏิเสธ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "partial-closure-is-a-verdict-harness-closure-5",
+      "requirementKey": "partial-closure-is-a-verdict",
+      "scenario": "ปิดครบทุกตัวคงเดิม",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "partial-closure-is-a-verdict-harness",
+      "requirementKey": "partial-closure-is-a-verdict",
+      "scenario": "ผลที่บันทึกด้วยมือผ่านกติกาเดียวกัน",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "reviewer-told-how-to-report-open-findings",
+      "requirementKey": "reviewer-told-how-to-report-open-findings",
+      "scenario": "คำสั่งของ reviewer อธิบายวิธีตอบเมื่อปิดไม่ครบ",
+      "impact": "high",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/configured-reviewer.test.mjs) && (node --test .claude/harness/tests/authority-response-validation.test.mjs .claude/harness/tests/workflow-policy.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/configured-reviewer.test.mjs",
+        "node --test .claude/harness/tests/authority-response-validation.test.mjs .claude/harness/tests/workflow-policy.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

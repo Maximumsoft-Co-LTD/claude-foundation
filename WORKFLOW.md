@@ -1839,7 +1839,9 @@ Configured `fallbackReviewers` are tried in order only after an infrastructure
 error. `fail` and `inconclusive` are delivered verdicts and never fall through.
 Packet inspection and finding/closure binding errors stop the current automatic
 retry chain rather than dispatching the unchanged validation failure to another
-model. The backend owns this routing through the existing commands.
+model. A closure round that closes only some first-round findings is such an
+error unless it is not a pass and reports a blocker or major finding for what
+remains; then it is a delivered `fail` verdict and the unclosed IDs stay open. The backend owns this routing through the existing commands.
 The existing `advance --through` route reopens a binding failure only after the
 retained packet/result validates again and the reviewer is ready, preserving
 scope, attempt history, and infrastructure retry accounting.

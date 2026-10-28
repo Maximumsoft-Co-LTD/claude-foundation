@@ -142,13 +142,29 @@ export function validReview(review) {
   return true;
 }
 
+// A closure round verifies the first-round findings the repair closed. All of
+// them is the normal answer. A reviewer that still sees a problem may close
+// only some, but then the result must be a verdict that says why: not a pass,
+// every verified ID a first-round ID, and a blocker or major finding reported.
+// The IDs it leaves out stay open. `status` absent keeps the exact rule.
+export function deltaClosureIssue({ expected, verified, status, findings }) {
+  const want = [...new Set((expected || []).map(String))].sort();
+  const got = [...new Set((verified || []).map(String))].sort();
+  if (JSON.stringify(want) === JSON.stringify(got)) return null;
+  const partial = got.every((id) => want.includes(id)) && Boolean(status) && status !== "pass" &&
+    (findings || []).some((finding) => ["blocker", "major"].includes(finding?.severity));
+  if (partial) return null;
+  return `delta closure must verify exactly: ${want.join(", ") || "<none>"}` +
+    " (a result that is not a pass may verify fewer only by also reporting a blocker or major finding)";
+}
+
 function deltaFindingIssue(review, packet) {
   if (packet?.reviewScope?.mode !== "delta" ||
       !Array.isArray(packet?.closureFindings?.ids)) return null;
-  const expected = [...packet.closureFindings.ids].map(String).sort();
-  const verified = [...(review?.verifiedFindingIds || [])].map(String).sort();
-  if (JSON.stringify(expected) === JSON.stringify(verified)) return null;
-  return `delta closure must verify exactly: ${expected.join(", ") || "<none>"}`;
+  return deltaClosureIssue({
+    expected: packet.closureFindings.ids, verified: review?.verifiedFindingIds,
+    status: review?.status, findings: review?.findings
+  });
 }
 
 function findingLineIssue(finding, binding, candidate) {
@@ -384,8 +400,12 @@ export function configuredReviewPrompt(packet) {
     "For UI claims check the required output is rendered and reachable; for persisted " +
     "or wire data challenge supported older representations. Passing counts, test " +
     "tags, and calculated-but-unused values do not establish those outcomes. " +
-    "For a delta packet, review only reviewScope.paths, return verifiedFindingIds exactly for " +
-    "closureFindings.ids, and never report findings outside that scope or reopen unchanged " +
+    "For a delta packet, review only reviewScope.paths and list in " +
+    "verifiedFindingIds only the closureFindings.ids the repair closed: all of them when it " +
+    "closed every one (status pass or fail), and when a problem remains leave out the IDs it " +
+    "did not close, set status fail, and report what remains as a blocker or major finding " +
+    "(a minor finding cannot explain an ID you left out). Never report " +
+    "findings outside that scope or reopen unchanged " +
     "surface. Bind every blocker/major finding to non-empty claimIds and " +
     "verificationCaseIds from the supplied packet so a final bounded repair can be " +
     "closed by current deterministic evidence without a third AI. Report findings " +

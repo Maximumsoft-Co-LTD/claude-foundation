@@ -1313,6 +1313,26 @@ try {
     "change-delta-mismatch", { request: mismatchRequest.requestId,
       "subject-actor": "human" })), /verify exactly/);
 
+  // A closure round that closes none of the first-round findings but fails with
+  // a major finding in scope is a delivered fail verdict, not an error.
+  seedDeltaFinding("change-delta-partial");
+  configuredReviewResults = { "codex-sol": {
+    status: "fail", summary: "still open", findings: [{
+      id: "D-STILL", severity: "major", path: "app.txt", line: 1, message: "still wrong",
+      claimIds: ["C1"], verificationCaseIds: ["V1"]
+    }], verifiedFindingIds: [], reportReference: "partial.json",
+    reviewer: { sessionId: "partial-delta" }
+  } };
+  const partialRequest = quiet(() => authority.requestAuthority(
+    "change-delta-partial", { type: "review" }));
+  assert.doesNotThrow(() => quiet(() => authority.runAuthorityReviewer(
+    "change-delta-partial", { request: partialRequest.requestId, "subject-actor": "human" })));
+  const partialAttempt = attemptStore.reviewAttemptByDigest("change-delta-partial",
+    state.reviewHistory.chainHead);
+  assert.equal(partialAttempt.resultStatus, "fail");
+  assert.deepEqual(partialAttempt.verifiedFindingIds, []);
+  assert.deepEqual(partialAttempt.findings.map((finding) => finding.id), ["D-STILL"]);
+
   seedDeltaFinding("change-delta-outside");
   configuredReviewResults = { "codex-sol": {
     status: "fail", summary: "outside finding", findings: [{
