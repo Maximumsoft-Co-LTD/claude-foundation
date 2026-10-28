@@ -1,80 +1,41 @@
 ---
 name: grill-task-gu
-description: "Ground approved PRDs in production code and architecture, settle material choices in one Decision Sheet, and produce dependency-ordered backlogs. Use for PRD grooming or feature intake. Preserve locked decisions; do not implement or infer compiled-spec approval."
+description: "Use when grooming an approved PRD into a grounded decision sheet and ordered backlog. Skip implementation and compiled-spec approval."
 ---
 
 # Grill Task Gu
 
-Prove material consumer assumptions before treating them as settled choices;
-use `change-impact-analysis` for hidden activation risks.
+`full discovery → one Decision Sheet → backlog + coverage → handoff`; never
+implement or run a one-question interview.
 
-Produce `full discovery → one Decision Sheet → backlog + coverage → handoff`.
-Never implement or run a one-question interview.
+## Steps
 
-## Required intake
+1. Read `references/intake-contract.md`, the PRD, and the backlog; read each
+   critical file end to end along its production path.
+2. Keep a private read set; reuse locked decisions, never re-ask them.
+   Discoverable facts come from sources; only product/scope/risk choices are material.
+3. Challenge fuzzy or conflicting terms against
+   specifications and code; resolve factual conflicts from source, and
+   only a remaining semantic choice goes on the sheet as one canonical term.
+4. Model remaining choices as a private dependency tree; settle source-owned
+   prerequisites yourself.
+5. Present one Decision Sheet: every material choice, defaults, alternatives,
+   effects, groups, risk tier, critical tests, blockers. When one choice changes
+   another, show the prerequisite and every conditional effect in this same
+   sheet; do not defer known choices to a later question round.
+   Assignee and date are non-blocking unless `--schedule` is present.
+   Ask for approval or all overrides together; do not ask to approve the same PRD
+   choices again. This approves intake choices, not a compiled OpenSpec packet.
+   Change still requires explicit compiled-spec approval before Build.
+6. Write `docs/backlog/{service}/{PRD-ID}.md`: stable task IDs, locked
+   decisions, acyclic groups, two-way coverage; name the ready group.
 
-Read [references/intake-contract.md](references/intake-contract.md) completely.
-Then resolve the PRD and existing backlog. Read every selected critical file end
-to end and follow the production path from configuration/composition root through
-the caller, adapter, dependency, and corresponding tests. For security behavior,
-read every relevant rejection stage in dependency source.
+## Harness
 
-Maintain a private read set of repository, path, role, mode, digest, and supported
-fact. Reuse locked decisions. Discoverable facts come from sources; reversible
-safe defaults are recommended; only observable product/scope/risk choices are
-material. Assignee and date are non-blocking unless `--schedule` is present.
-Reuse any compact brainstorming agreement without re-asking its settled answers.
-Challenge fuzzy or conflicting project-specific terms against specifications
-and code. Resolve factual conflicts from source; only a remaining semantic
-choice belongs in the Decision Sheet as one canonical term, its meaning, and
-aliases to avoid.
+New material gaps follow Change intake's decision rounds. Resolved terms go in
+the standard `design.md`, never a parallel ledger. No `/change`, Land, or Git
+mutation here.
 
-Model the remaining material choices as a private dependency tree. Each choice
-names its prerequisites, alternatives, and dependent effects. Settle source-owned
-prerequisites from the read set. Do not persist the tree or create an interview
-ledger; it exists only to make the finalized sheet complete.
+## References
 
-Before the sheet, trace conditional production entry points, real serialized
-bytes, dormant code being activated, and failure classifiers. For every
-cross-service call or message, settle owner, producer, consumer, contract,
-delivery, timeout/retry, idempotency, ordering, consistency, rollout, and
-rollback. For every operated boundary, settle correlation, structured events,
-SLI, alert, runbook, and the operator question the telemetry must answer.
-Source-proven `N/A` rows stay in the same sheet and are never asked later.
-
-## Single PRD decision gate
-
-Before asking, draft task outcomes, dependency groups, two-way requirement
-coverage, source grounding, and risk-to-evidence mappings. Present one Decision
-Sheet containing every material choice, recommended defaults, alternatives,
-effects, proposed groups, risk tier, critical test cases, required mutants,
-service interactions, observability, and external blockers. When one choice
-changes another, show the prerequisite and every conditional effect in this same
-sheet; do not defer known choices to a later question round. Ask for approval or
-all overrides together. Record the answer; do not ask to approve the same PRD
-choices again. This approves intake choices, not a compiled OpenSpec packet.
-Change still requires explicit compiled-spec approval before Build.
-Flag a tradeoff for durable rationale only when it is hard to reverse,
-surprising without context, and chosen among meaningful alternatives.
-
-Later phases reuse settled answers. New material gaps follow Change intake's
-dependency-ready decision rounds; never infer answers or repeat settled choices.
-If evidence proves an approved agreement unsafe, collect newly opened decisions
-into one reopen sheet, record its reference, and revise the same change atomically.
-Retirement requires separate user authority. Ordinary findings return to Build.
-Carry resolved terms and qualifying tradeoffs into the existing standard
-`design.md`; create no `CONTEXT.md`, glossary, ADR store, or parallel ledger.
-
-## Output and audit
-
-Write `docs/backlog/{service}/{PRD-ID}.md` with stable task IDs, locked decisions,
-dependency groups, coverage, and evidence readiness. Preserve existing IDs and
-statuses. Each task names its observable completion, source anchors, risk,
-evidence class, production path for composition/security claims, and blocker
-owner. New tasks are `Pending`; task status remains the sole delivery ledger.
-
-Before writing, verify both directions: every requirement maps to a task, every
-task maps to real source, groups are acyclic, and the first ready group has no
-placeholder, unresolved decision, or blocked task. Derive precise counts from
-source or omit them. Finish by naming the first ready group and anchors; do not
-start `/change`, Land, commit, push, or open a PR.
+- `references/intake-contract.md` — read set, rules, backlog fields; read first.

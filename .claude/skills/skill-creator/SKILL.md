@@ -1,26 +1,36 @@
 ---
 name: skill-creator
-description: "Create or revise skills only when explicitly requested or approved. Use for skill authoring and scoped procedure capture. Follow Change Loop for shipped changes, skill-evaluation for behavioral/trigger comparisons, and skill-suite-auditor for catalog audits."
+description: "Use when explicitly asked to create or edit a skill. Skip unrequested skill changes; use skill-evaluation to compare behavior."
 ---
 
 # Skill creator
 
-Use this explicit authoring handoff for approved skill changes. For material
-shipped changes, use Change Loop and keep implementation status in the active
-OpenSpec tasks, never a second ledger.
+Explicit authoring handoff for approved skill changes; a description selects a
+skill, it never grants authority.
 
-1. Capture the user's settled intent, examples, constraints, and corrections.
-   Ask only for consequential choices still missing.
+## Steps
+
+1. Capture the settled intent, examples, constraints, and corrections. Ask
+   only for consequential choices still missing.
 2. Define the task, positive and negative triggers, output, tool requirements,
-   and boundaries. A description selects a skill; it never grants authority.
-3. Write the shortest operational body. Keep technical depth in selectively
-   loaded references and link canonical contracts instead of copying them.
+   and boundaries.
+3. Write the shortest operational body; keep depth in selectively loaded
+   references and link canonical contracts instead of copying them.
 4. Validate metadata, references, install independence, and harness ownership.
-5. Use `skill-evaluation` for meaningful old/new comparisons. Label static
-   checks separately from observed model behavior; missing runs are unknown.
-6. Review the diff and resume the current harness action. Publishing or Git
-   mutations require separate authority.
+5. Use `skill-evaluation` for old/new comparisons; label static checks apart
+   from observed model behavior, and keep missing runs unknown.
+6. Review the diff and resume the current harness action.
 
-Read [authoring overview](references/authoring-overview.md) for the complete
-authoring phases and existing templates. Read only the phase references it
-names. Use `skill-suite-auditor` when the problem spans the whole catalog.
+## Harness
+
+Shipped changes go through Change Loop with status in the active OpenSpec
+tasks, never a second ledger. Publishing or Git mutations need separate authority.
+
+## References
+
+- `references/authoring-overview.md` — phases and templates; read first, then
+  only the phase reference it names.
+- `references/creating-skills.md`, `references/improving-skills.md`,
+  `references/description-optimization.md`, `references/testing-and-evaluation.md`,
+  `references/environment-specifics.md`, `references/schemas.md` — per phase.
+- Use `skill-suite-auditor` when the problem spans the whole catalog.

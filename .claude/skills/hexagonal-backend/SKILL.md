@@ -1,54 +1,44 @@
 ---
 name: hexagonal-backend
-description: "Design dependency direction and use-case ownership inside one backend service using narrow ports and adapters. Use when domain policy needs framework/storage isolation. Record consequential boundaries in OpenSpec; skip trivial CRUD and cross-service architecture."
+description: "Use when one backend service needs domain logic isolated from framework and storage through ports and adapters. Skip trivial CRUD and cross-service design (architecture-fundamentals)."
 ---
 
 # Hexagonal backend
 
-Avoid pass-through abstractions. Exercise real adapter serialization; mock
-only at a genuine external seam.
-
-Use this as the primary skill when the difficult decision is dependency
-direction or use-case ownership.
-
-## Boundary
+Dependencies point inward; a port is as small as the use case that needs it.
 
 ```text
-driving adapter → application port/use case → domain
-                                      ↓
-                                driven port
-                                      ↓
-                                driven adapter
+driving adapter → use case → domain
+                      ↓
+                driven port → driven adapter
 ```
 
-- Domain contains business state, rules, and domain errors. It imports no
-  framework, transport, ORM, or vendor client.
-- Application coordinates one use case, transaction boundary, authorization
-  decision, and driven ports.
-- Infrastructure translates HTTP/messages/storage/vendors to and from ports.
-- Driving ports describe what the application offers. Driven ports describe
-  what it needs.
+## Steps
 
-## Rules
-
-1. Dependencies point inward; adapters depend on ports, never the reverse.
-2. Define a port at the consumer boundary and keep it as small as the use case.
-3. Do not leak ORM, HTTP, broker, or vendor types through ports.
-4. Map persistence and transport models explicitly when their lifecycle or
-   constraints differ from the domain.
+1. Keep the domain free of framework, transport, ORM, and vendor imports; it
+   holds business state, rules, and domain errors.
+2. Let the application layer own one use case: its transaction boundary,
+   authorization decision, and driven ports.
+3. Define each port at the consumer boundary; never leak ORM, HTTP, broker, or
+   vendor types through it. Map persistence and transport models explicitly
+   when their lifecycle differs from the domain.
+4. Put cross-cutting concerns at the right edge: authentication in the adapter,
+   authorization/policy in application or domain, observability around use-case
+   and adapter calls.
 5. Test domain rules directly, application behavior with fake driven ports, and
-   adapters with focused integration tests.
-6. Keep cross-cutting concerns at the correct boundary: authentication in the
-   adapter, authorization/policy in the application/domain, observability around
-   use-case and adapter calls.
+   adapters with focused integration tests that exercise real serialization.
+6. Use a simpler vertical slice for truly trivial CRUD; add ports only where
+   policy, replacement risk, or test isolation justifies them. Avoid
+   pass-through abstractions.
 
-Use a simpler vertical slice for truly trivial CRUD; introduce ports where
-policy, replacement risk, or test isolation justifies them.
+## Harness
 
 Record only consequential dependency or transaction-boundary decisions in the
-active OpenSpec design. Do not create a parallel architecture document or add
-ports solely to satisfy a diagram; executable tests at domain/use-case/adapter
-seams provide the evidence.
+active OpenSpec design; seam tests run through the harness are the evidence.
+No parallel architecture document; Build never stages or commits.
 
-References: `references/typescript.md`, `go.md`, and
-`patterns-and-pitfalls.md`. Read only the language/pattern needed.
+## References
+
+- `references/typescript.md` — folder layout, ports, adapters, unit of work in TypeScript
+- `references/go.md` — the same structure in Go
+- `references/patterns-and-pitfalls.md` — transactions, error translation, query ports, common mistakes

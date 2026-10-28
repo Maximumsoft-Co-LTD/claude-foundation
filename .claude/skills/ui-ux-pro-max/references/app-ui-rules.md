@@ -1,99 +1,82 @@
-# Common Rules for Professional UI
+# Common rules for professional app UI
 
-These are frequently overlooked issues that make UI look unprofessional:
-Scope notice: The rules below are for App UI (iOS/Android/React Native/Flutter), not desktop-web interaction patterns.
+Frequently overlooked issues that make a UI look unprofessional. Scope: app UI
+(iOS, Android, React Native, Flutter), not desktop-web interaction patterns.
 
-### Icons & Visual Elements
+## Icons and visual elements
 
-| Rule | Standard | Avoid | Why It Matters |
-|------|----------|--------|----------------|
-| **No Emoji as Structural Icons** | Use vector-based icons (e.g., Lucide, react-native-vector-icons, @expo/vector-icons). | Using emojis (🎨 🚀 ⚙️) for navigation, settings, or system controls. | Emojis are font-dependent, inconsistent across platforms, and cannot be controlled via design tokens. |
-| **Vector-Only Assets** | Use SVG or platform vector icons that scale cleanly and support theming. | Raster PNG icons that blur or pixelate. | Ensures scalability, crisp rendering, and dark/light mode adaptability. |
-| **Stable Interaction States** | Use color, opacity, or elevation transitions for press states without changing layout bounds. | Layout-shifting transforms that move surrounding content or trigger visual jitter. | Prevents unstable interactions and preserves smooth motion/perceived quality on mobile. |
-| **Correct Brand Logos** | Use official brand assets and follow their usage guidelines (spacing, color, clear space). | Guessing logo paths, recoloring unofficially, or modifying proportions. | Prevents brand misuse and ensures legal/platform compliance. |
-| **Consistent Icon Sizing** | Define icon sizes as design tokens (e.g., icon-sm, icon-md = 24pt, icon-lg). | Mixing arbitrary values like 20pt / 24pt / 28pt randomly. | Maintains rhythm and visual hierarchy across the interface. |
-| **Stroke Consistency** | Use a consistent stroke width within the same visual layer (e.g., 1.5px or 2px). | Mixing thick and thin stroke styles arbitrarily. | Inconsistent strokes reduce perceived polish and cohesion. |
-| **Filled vs Outline Discipline** | Use one icon style per hierarchy level. | Mixing filled and outline icons at the same hierarchy level. | Maintains semantic clarity and stylistic coherence. |
-| **Touch Target Minimum** | Minimum 44×44pt interactive area (use hitSlop if icon is smaller). | Small icons without expanded tap area. | Meets accessibility and platform usability standards. |
-| **Icon Alignment** | Align icons to text baseline and maintain consistent padding. | Misaligned icons or inconsistent spacing around them. | Prevents subtle visual imbalance that reduces perceived quality. |
-| **Icon Contrast** | Follow WCAG contrast standards: 4.5:1 for small elements, 3:1 minimum for larger UI glyphs. | Low-contrast icons that blend into the background. | Ensures accessibility in both light and dark modes. |
+| Rule | Standard | Why it matters |
+|---|---|---|
+| **No emoji as structural icons** | Vector icon sets (Lucide, `react-native-vector-icons`, `@expo/vector-icons`) for navigation, settings, and system controls | Emoji are font-dependent, inconsistent across platforms, and cannot follow design tokens |
+| **Vector-only assets** | SVG or platform vector icons that scale and theme | Raster icons blur, and cannot adapt to light/dark |
+| **Consistent icon sizing** | Size tokens (`icon-sm`, `icon-md` = 24pt, `icon-lg`) | Arbitrary 20/24/28pt mixing breaks rhythm and hierarchy |
+| **Stroke consistency** | One stroke width per visual layer (1.5px or 2px) | Mixed strokes read as unfinished |
+| **Filled vs outline discipline** | One icon style per hierarchy level | Mixing them at the same level muddies semantics |
+| **Icon alignment** | Align to the text baseline with consistent padding | Prevents subtle imbalance that lowers perceived quality |
+| **Icon contrast** | 4.5:1 for small elements, 3:1 minimum for larger glyphs | Keeps icons legible in both themes |
+| **Touch target minimum** | ≥44×44pt interactive area; use `hitSlop` when the glyph is smaller | Meets accessibility and platform usability standards |
+| **Stable interaction states** | Express press with color, opacity, or elevation | Layout-shifting transforms jitter the surrounding content |
+| **Correct brand logos** | Official assets, their spacing and clear-space rules | Avoids brand misuse and platform compliance problems |
 
-
-### Interaction (App)
-
-| Rule | Do | Don't |
-|------|----|----- |
-| **Tap feedback** | Provide clear pressed feedback (ripple/opacity/elevation) within 80-150ms | No visual response on tap |
-| **Animation timing** | Keep micro-interactions around 150-300ms with platform-native easing | Instant transitions or slow animations (>500ms) |
-| **Accessibility focus** | Ensure screen reader focus order matches visual order and labels are descriptive | Unlabeled controls or confusing focus traversal |
-| **Disabled state clarity** | Use disabled semantics (`disabled`/native disabled props), reduced emphasis, and no tap action | Controls that look tappable but do nothing |
-| **Touch target minimum** | Keep tap areas >=44x44pt (iOS) or >=48x48dp (Android), expand hit area when icon is smaller | Tiny tap targets or icon-only hit areas without padding |
-| **Gesture conflict prevention** | Keep one primary gesture per region and avoid nested tap/drag conflicts | Overlapping gestures causing accidental actions |
-| **Semantic native controls** | Prefer native interactive primitives (`Button`, `Pressable`, platform equivalents) with proper accessibility roles | Generic containers used as primary controls without semantics |
-
-### Light/Dark Mode Contrast
+## Interaction
 
 | Rule | Do | Don't |
-|------|----|----- |
-| **Surface readability (light)** | Keep cards/surfaces clearly separated from background with sufficient opacity/elevation | Overly transparent surfaces that blur hierarchy |
-| **Text contrast (light)** | Maintain body text contrast >=4.5:1 against light surfaces | Low-contrast gray body text |
-| **Text contrast (dark)** | Maintain primary text contrast >=4.5:1 and secondary text >=3:1 on dark surfaces | Dark mode text that blends into background |
-| **Border and divider visibility** | Ensure separators are visible in both themes (not just light mode) | Theme-specific borders disappearing in one mode |
-| **State contrast parity** | Keep pressed/focused/disabled states equally distinguishable in light and dark themes | Defining interaction states for one theme only |
-| **Token-driven theming** | Use semantic color tokens mapped per theme across app surfaces/text/icons | Hardcoded per-screen hex values |
-| **Scrim and modal legibility** | Use a modal scrim strong enough to isolate foreground content (typically 40-60% black) | Weak scrim that leaves background visually competing |
+|---|---|---|
+| **Tap feedback** | Clear pressed state (ripple, opacity, elevation) within 80–150ms | No visual response on tap |
+| **Animation timing** | 150–300ms micro-interactions with platform easing | Instant snaps or >500ms animations |
+| **Accessibility focus** | Screen-reader order matches visual order; descriptive labels | Unlabeled controls, confusing traversal |
+| **Disabled state clarity** | Native disabled semantics, reduced emphasis, no tap action | Controls that look tappable and do nothing |
+| **Touch target minimum** | ≥44×44pt (iOS) or 48×48dp (Android); expand the hit area | Icon-only hit areas without padding |
+| **Gesture conflict prevention** | One primary gesture per region | Nested tap/drag conflicts causing accidental actions |
+| **Semantic native controls** | `Button`, `Pressable`, or the platform equivalent with proper roles | Generic containers used as primary controls |
 
-### Layout & Spacing
+## Light and dark mode contrast
 
 | Rule | Do | Don't |
-|------|----|----- |
-| **Safe-area compliance** | Respect top/bottom safe areas for all fixed headers, tab bars, and CTA bars | Placing fixed UI under notch, status bar, or gesture area |
-| **System bar clearance** | Add spacing for status/navigation bars and gesture home indicator | Let tappable content collide with OS chrome |
-| **Consistent content width** | Keep predictable content width per device class (phone/tablet) | Mixing arbitrary widths between screens |
-| **8dp spacing rhythm** | Use a consistent 4/8dp spacing system for padding/gaps/section spacing | Random spacing increments with no rhythm |
-| **Readable text measure** | Keep long-form text readable on large devices (avoid edge-to-edge paragraphs on tablets) | Full-width long text that hurts readability |
-| **Section spacing hierarchy** | Define clear vertical rhythm tiers (e.g., 16/24/32/48) by hierarchy | Similar UI levels with inconsistent spacing |
-| **Adaptive gutters by breakpoint** | Increase horizontal insets on larger widths and in landscape | Same narrow gutter on all device sizes/orientations |
-| **Scroll and fixed element coexistence** | Add bottom/top content insets so lists are not hidden behind fixed bars | Scroll content obscured by sticky headers/footers |
+|---|---|---|
+| **Surface readability** | Separate cards from the background with enough opacity or elevation | Over-transparent surfaces that blur hierarchy |
+| **Text contrast** | ≥4.5:1 body text in both themes; ≥3:1 secondary on dark | Low-contrast gray body text, or dark-mode text that blends in |
+| **Border and divider visibility** | Separators visible in both themes | Theme-specific borders that vanish in one mode |
+| **State contrast parity** | Pressed, focused, and disabled equally distinguishable in both | Interaction states defined for one theme only |
+| **Token-driven theming** | Semantic color tokens mapped per theme | Hardcoded per-screen hex values |
+| **Scrim legibility** | A modal scrim strong enough to isolate the foreground (typically 40–60% black) | A weak scrim leaving the background competing |
 
-## Pre-Delivery Checklist
+## Layout and spacing
 
-Before delivering UI code, verify these items:
-Scope notice: This checklist is for App UI (iOS/Android/React Native/Flutter).
+| Rule | Do | Don't |
+|---|---|---|
+| **Safe areas** | Respect top and bottom safe areas for fixed headers, tab bars, CTA bars | Fixed UI under the notch, status bar, or gesture area |
+| **System bar clearance** | Space for status, navigation, and home indicator | Tappable content colliding with OS chrome |
+| **Consistent content width** | Predictable width per device class | Arbitrary widths that change between screens |
+| **Spacing rhythm** | One 4/8dp system for padding, gaps, and sections, with clear tiers (16/24/32/48) | Random increments; similar levels spaced differently |
+| **Readable text measure** | Constrain long-form text on large devices | Edge-to-edge paragraphs on tablets |
+| **Adaptive gutters** | Wider horizontal insets at larger widths and in landscape | The same narrow gutter everywhere |
+| **Scroll and fixed coexistence** | Content insets so lists clear fixed bars | Scroll content hidden behind sticky headers or footers |
 
-### Visual Quality
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons come from a consistent icon family and style
-- [ ] Official brand assets are used with correct proportions and clear space
-- [ ] Pressed-state visuals do not shift layout bounds or cause jitter
-- [ ] Semantic theme tokens are used consistently (no ad-hoc per-screen hardcoded colors)
+## Pre-delivery checklist
 
-### Interaction
-- [ ] All tappable elements provide clear pressed feedback (ripple/opacity/elevation)
-- [ ] Touch targets meet minimum size (>=44x44pt iOS, >=48x48dp Android)
-- [ ] Micro-interaction timing stays in the 150-300ms range with native-feeling easing
-- [ ] Disabled states are visually clear and non-interactive
-- [ ] Screen reader focus order matches visual order, and interactive labels are descriptive
-- [ ] Gesture regions avoid nested/conflicting interactions (tap/drag/back-swipe conflicts)
+**Visual quality** — no emoji as icons; one icon family and style; official
+brand assets with correct proportions; pressed states that do not shift layout;
+semantic theme tokens with no ad hoc per-screen colors.
 
-### Light/Dark Mode
-- [ ] Primary text contrast >=4.5:1 in both light and dark mode
-- [ ] Secondary text contrast >=3:1 in both light and dark mode
-- [ ] Dividers/borders and interaction states are distinguishable in both modes
-- [ ] Modal/drawer scrim opacity is strong enough to preserve foreground legibility (typically 40-60% black)
-- [ ] Both themes are tested before delivery (not inferred from a single theme)
+**Interaction** — pressed feedback on every tappable element; touch targets
+≥44×44pt / 48×48dp; 150–300ms micro-interactions with native easing; disabled
+states visually clear and non-interactive; screen-reader order matching visual
+order with descriptive labels; no nested or conflicting gesture regions.
 
-### Layout
-- [ ] Safe areas are respected for headers, tab bars, and bottom CTA bars
-- [ ] Scroll content is not hidden behind fixed/sticky bars
-- [ ] Verified on small phone, large phone, and tablet (portrait + landscape)
-- [ ] Horizontal insets/gutters adapt correctly by device size and orientation
-- [ ] 4/8dp spacing rhythm is maintained across component, section, and page levels
-- [ ] Long-form text measure remains readable on larger devices (no edge-to-edge paragraphs)
+**Light/dark** — primary text ≥4.5:1 and secondary ≥3:1 in both themes;
+dividers and interaction states distinguishable in both; scrim opacity
+preserving foreground legibility; both themes actually tested, not inferred
+from one.
 
-### Accessibility
-- [ ] All meaningful images/icons have accessibility labels
-- [ ] Form fields have labels, hints, and clear error messages
-- [ ] Color is not the only indicator
-- [ ] Reduced motion and dynamic text size are supported without layout breakage
-- [ ] Accessibility traits/roles/states (selected, disabled, expanded) are announced correctly
+**Layout** — safe areas respected for headers, tab bars, and bottom CTA bars;
+scroll content clear of fixed bars; verified on small phone, large phone, and
+tablet in both orientations; insets adapting by size and orientation; the 4/8dp
+rhythm maintained at component, section, and page level; long-form text measure
+readable on larger devices.
+
+**Accessibility** — accessibility labels on all meaningful images and icons;
+labels, hints, and clear error messages on form fields; color never the only
+indicator; reduced motion and dynamic text size supported without layout
+breakage; traits, roles, and states (selected, disabled, expanded) announced
+correctly.

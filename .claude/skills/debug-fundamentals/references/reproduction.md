@@ -55,6 +55,6 @@ Too sensitive to log values? Log the *shape* — types, lengths, field presence.
 - "Reproduces sometimes" stops being enough below ~80% — find the variable or instrument prod.
 - Re-running until it passes teaches CI to hide the bug; it's not a fix.
 - Repros needing your branch + laptop aren't portable — bake into the repo.
-- Don't lose the repro after the fix; promote it to the suite (principle 7).
+- Don't lose the repro after the fix; promote it to the suite as the regression test.
 
 Two failed fixes on the same gate, or a decision to add or remove a guard → read [root cause](root-cause.md).

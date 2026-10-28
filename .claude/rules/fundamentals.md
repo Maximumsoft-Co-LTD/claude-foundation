@@ -38,11 +38,11 @@ unclear after this digest.
 
 | Trigger | Load |
 |---|---|
-| Unknown-cause bug, crash, regression, or flake | `debug-fundamentals` first |
-| Measured slowness, resource growth, benchmark, or speedup claim | `performance-investigation` |
-| Unverified consumer/compatibility assumptions or blast radius | `change-impact-analysis` |
-| Behavior-preserving restructure | `refactoring-fundamentals` first |
-| Test design, level, coverage, or review | `testing-fundamentals` |
+| Bugfix with unknown cause: crash, regression, or flake | `debug-fundamentals` first |
+| Measured slow, memory growing, or a speedup to prove | `performance-investigation` |
+| Changing an API, schema, config, or shared behavior without knowing who depends on it | `change-impact-analysis` |
+| Refactor: extract, move, rename, split, deduplicate, simplify without changing behavior | `refactoring-fundamentals` first |
+| Scenarios to prove: failing-first tests, test level, doubles | `testing-fundamentals` |
 
 ## Construction skills
 
@@ -54,34 +54,31 @@ reference only when its named decision is active.
 
 | Trigger | Load |
 |---|---|
-| Bounded contexts, subdomains, aggregates, semantic ownership | `ddd-strategic` |
-| UX/UI principles, user flows, interaction/IA/a11y decisions, usability review | `ux-ui-principles` |
-| Searchable product/style/palette/typography design intelligence | `ui-ux-pro-max` |
-| Settled web visual implementation and rendered polish | `frontend-design` |
-| Shared Tailwind tokens, themes, or component APIs | `tailwind-design-system` |
-| Non-trivial logic, model, module boundary, abstraction depth, implementation, or code review | `programming-fundamentals` |
-| Threads, async, shared mutable state, locks, races | `concurrency-fundamentals` |
-| Schema, query, index, migration, persistence model | `database-fundamentals` |
-| Backend domain logic, use cases, ports, repositories | `hexagonal-backend` |
-| Published endpoint/resource/request/response/error/version contract | `api-design-fundamentals` |
-| Runtime/deployable split, component relationship, cross-service call, scaling/failure model | `architecture-fundamentals` |
-| Broker, stream, job, worker, pub/sub, cross-process async | `queue-fundamentals` |
-| Auth/session/token, secrets, untrusted input, SQL/HTML/file/exec sink, crypto, dependency, external endpoint | `security-fundamentals` |
-| Runtime failure mode, logs, metrics, traces, SLO, alert, blind spot | `observability-fundamentals` |
+| Business terms, bounded contexts, aggregates, model ownership unclear | `ddd-strategic` |
+| User flows, hierarchy, forms, navigation, accessibility, responsive layout | `ux-ui-principles` |
+| Look up product, style, palette, typography, chart guidance | `ui-ux-pro-max` |
+| Implement or polish web UI after UX direction is settled | `frontend-design` |
+| Shared Tailwind v4 tokens, variants, themes, v3 migration | `tailwind-design-system` |
+| Nontrivial local logic, types, state, error paths, module boundary, abstraction depth | `programming-fundamentals` |
+| Threads, async tasks, locks, shared mutable state, cancellation, races | `concurrency-fundamentals` |
+| Schema, query, index, transaction, migration, persisted file | `database-fundamentals` |
+| One backend service: domain logic isolated through ports and adapters | `hexagonal-backend` |
+| Request, response, status code, error body, pagination, version other code consumes | `api-design-fundamentals` |
+| How services, runtimes, or deployables split, talk, fail, or scale | `architecture-fundamentals` |
+| Broker, stream, job queue, worker: delivery, idempotency, retries, ordering | `queue-fundamentals` |
+| Access control, authorization, secrets, external integration, input to reject | `security-fundamentals` |
+| Logs, metrics, traces, SLOs, alerts for a runtime failure surface | `observability-fundamentals` |
 
-Semantic boundaries belong to DDD; local logic to programming; storage
-correctness to database; ports to hexagonal; published contracts to API design;
-runtime relationships to architecture. Transaction isolation is database work,
-in-process races are concurrency work, and cross-process async is queue work.
-Choose the deepest decision actually being made, then add only required
-cross-cutting skills.
+Transaction isolation is database work, in-process races are concurrency work,
+cross-process async is queue work. Choose the deepest decision actually being
+made, then add only required cross-cutting skills.
 
 ## Delivery skills
 
 | Trigger | Load |
 |---|---|
-| Branch, commit, merge, rebase, force operation, PR, destructive Git cleanup | `git-workflow` |
-| CI/CD, build, container, deploy, environment, rollout/rollback, release | `delivery-engineering` |
+| Asked to branch, commit, rebase, merge, push, clean up, or open a PR | `git-workflow` |
+| CI/CD, builds, containers, deploys, rollouts, rollbacks | `delivery-engineering` |
 
 Non-lifecycle skills trigger from their descriptions or explicit commands.
 

@@ -73,7 +73,7 @@ The **logical layering rule** (domain has zero external dependencies; ports defi
 
 ## Conversation guidance
 
-Use this skill when dependency direction or use-case ownership is the active decision, following [the skill rules](../SKILL.md#rules) and [construction routing](../../../rules/fundamentals.md#construction-skills). Use a simpler vertical slice for trivial CRUD; introduce ports only where policy, replacement risk, or test isolation justifies them.
+Use this skill when dependency direction or use-case ownership is the active decision, following [the skill steps](../SKILL.md#steps) and [construction routing](../../../rules/fundamentals.md#construction-skills). Use a simpler vertical slice for trivial CRUD; introduce ports only where policy, replacement risk, or test isolation justifies them.
 
 - **Starting fresh** — propose folder structure first, then sketch domain entities and ports before code.
 - **Refactoring** — classify existing code into domain/application/infrastructure; migrate one use case at a time.

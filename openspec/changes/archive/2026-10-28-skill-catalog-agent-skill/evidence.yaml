@@ -1,0 +1,181 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "trigger-descriptions-frontmatter-description",
+      "requirementKey": "trigger-descriptions",
+      "scenario": "description ตรงตามข้อความที่กำหนด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "trigger-descriptions-claude-harness-tests-skill-routing-test-mjs",
+      "requirementKey": "trigger-descriptions",
+      "scenario": "spec-vocabulary ยังอยู่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "trigger-descriptions-head-281caac1b",
+      "requirementKey": "trigger-descriptions",
+      "scenario": "lifecycle skill ไม่ถูกแตะ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "trigger-descriptions-description-80",
+      "requirementKey": "trigger-descriptions",
+      "scenario": "description ยาวเกิน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "minimal-skill-bodies-frontmatter",
+      "requirementKey": "minimal-skill-bodies",
+      "scenario": "ทุก body อยู่ใน budget และใช้โครงเดียวกัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "minimal-skill-bodies-skill-catalog-test-mjs",
+      "requirementKey": "minimal-skill-bodies",
+      "scenario": "guardrail ยังถูกจับ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "minimal-skill-bodies-3",
+      "requirementKey": "minimal-skill-bodies",
+      "scenario": "จำนวน assertion ห้ามคำไม่ลดลง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pruned-references-reference-governance-mjs",
+      "requirementKey": "pruned-references",
+      "scenario": "ขนาดรวมลดและ governance ผ่าน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pruned-references-skill-catalog-test-mjs-run-context-budget-test",
+      "requirementKey": "pruned-references",
+      "scenario": "เนื้อหาที่ pin ยังครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pruned-references-list-references-build",
+      "requirementKey": "pruned-references",
+      "scenario": "ไฟล์ที่แผนบอกว่าลบหรือรวมหายไปจริง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "pruned-references-reference-skill-md-reference",
+      "requirementKey": "pruned-references",
+      "scenario": "ลบไฟล์ที่ยังถูกอ้าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "router-in-sync",
+      "requirementKey": "router-in-sync",
+      "scenario": "แถว router ตรงกับ description",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "trigger-evaluation-report-1",
+      "requirementKey": "trigger-evaluation-report",
+      "scenario": "รายงานมีสอง arm",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "trigger-evaluation-report-host-runner-case",
+      "requirementKey": "trigger-evaluation-report",
+      "scenario": "run ไม่สำเร็จ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "trigger-evaluation-report-missed-trigger-candidate-baseline",
+      "requirementKey": "trigger-evaluation-report",
+      "scenario": "catalog ใหม่แย่ลง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "test-design-not-duplicated-test-design-md",
+      "requirementKey": "test-design-not-duplicated",
+      "scenario": "มีสองการแก้และ hollow assertion",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "test-design-not-duplicated-reference-governance-duplicate-skill",
+      "requirementKey": "test-design-not-duplicated",
+      "scenario": "ไม่ซ้ำกับ programming-fundamentals testing",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node -e \"const s=require('fs').readFileSync('docs/reports/2026-10-27-skill-catalog-trigger-evaluation.md','utf8');if(!/281caac1b/.test(s)||!/## Baseline/.test(s)||!/\\| *api-design-fundamentals/.test(s))process.exit(1)\") && (node --test .claude/harness/tests/skill-routing.test.mjs && sh .claude/tests/harness/run-context-budget-tests.sh && node --test .claude/tests/docs/skill-catalog.test.mjs && git diff --quiet 281caac1b -- .claude/skills/change/SKILL.md .claude/skills/build/SKILL.md .claude/skills/prove/SKILL.md .claude/skills/land/SKILL.md .claude/skills/investigate/SKILL.md .claude/skills/dev/SKILL.md .claude/skills/feature/SKILL.md .claude/skills/changes/SKILL.md) && (sh .claude/tests/harness/run-context-budget-tests.sh && node --test .claude/tests/docs/skill-catalog.test.mjs && sh .claude/tests/docs/run-doc-consistency.sh) && (node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs && test ! -e .claude/skills/debug-fundamentals/references/instrumentation.md && test -e .claude/skills/debug-fundamentals/references/tools.md) && (node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs && test ! -e .claude/skills/architecture-fundamentals/references/observability.md && test ! -e .claude/skills/programming-fundamentals/references/testing.md && test ! -e .claude/skills/api-design-fundamentals/references/auth-and-limits.md) && (node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs && sh .claude/tests/docs/run-doc-consistency.sh && test \"$(find .claude/skills -path '*/references/*' -name '*.md' -exec cat {} + | wc -l)\" -le 8500 && test \"$(ls .claude/skills/ux-ui-principles/references/*.md | wc -l)\" -le 10) && (node -e \"const s=require('fs').readFileSync('docs/reports/2026-10-27-skill-catalog-trigger-evaluation.md','utf8');if(!/## Candidate/.test(s)||!/## Regression/.test(s)||/\\bREGRESSION: yes\\b/.test(s)||!/## Deterministic suite/.test(s)||!/ALL\\s+SUITES PASS \\(254 suites/.test(s))process.exit(1)\" && sh .claude/tests/harness/run-context-budget-tests.sh && sh .claude/tests/docs/run-doc-consistency.sh && node --test .claude/tests/docs/skill-catalog.test.mjs .claude/harness/tests/skill-routing.test.mjs && node .claude/tests/harness/reference-governance.mjs .claude/skills && git diff --check) && (test ! -e .claude/skills/programming-fundamentals/references/testing.md && node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node -e \"const s=require('fs').readFileSync('docs/reports/2026-10-27-skill-catalog-trigger-evaluation.md','utf8');if(!/281caac1b/.test(s)||!/## Baseline/.test(s)||!/\\| *api-design-fundamentals/.test(s))process.exit(1)\"",
+        "node --test .claude/harness/tests/skill-routing.test.mjs && sh .claude/tests/harness/run-context-budget-tests.sh && node --test .claude/tests/docs/skill-catalog.test.mjs && git diff --quiet 281caac1b -- .claude/skills/change/SKILL.md .claude/skills/build/SKILL.md .claude/skills/prove/SKILL.md .claude/skills/land/SKILL.md .claude/skills/investigate/SKILL.md .claude/skills/dev/SKILL.md .claude/skills/feature/SKILL.md .claude/skills/changes/SKILL.md",
+        "sh .claude/tests/harness/run-context-budget-tests.sh && node --test .claude/tests/docs/skill-catalog.test.mjs && sh .claude/tests/docs/run-doc-consistency.sh",
+        "node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs && test ! -e .claude/skills/debug-fundamentals/references/instrumentation.md && test -e .claude/skills/debug-fundamentals/references/tools.md",
+        "node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs && test ! -e .claude/skills/architecture-fundamentals/references/observability.md && test ! -e .claude/skills/programming-fundamentals/references/testing.md && test ! -e .claude/skills/api-design-fundamentals/references/auth-and-limits.md",
+        "node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs && sh .claude/tests/docs/run-doc-consistency.sh && test \"$(find .claude/skills -path '*/references/*' -name '*.md' -exec cat {} + | wc -l)\" -le 8500 && test \"$(ls .claude/skills/ux-ui-principles/references/*.md | wc -l)\" -le 10",
+        "node -e \"const s=require('fs').readFileSync('docs/reports/2026-10-27-skill-catalog-trigger-evaluation.md','utf8');if(!/## Candidate/.test(s)||!/## Regression/.test(s)||/\\bREGRESSION: yes\\b/.test(s)||!/## Deterministic suite/.test(s)||!/ALL\\s+SUITES PASS \\(254 suites/.test(s))process.exit(1)\" && sh .claude/tests/harness/run-context-budget-tests.sh && sh .claude/tests/docs/run-doc-consistency.sh && node --test .claude/tests/docs/skill-catalog.test.mjs .claude/harness/tests/skill-routing.test.mjs && node .claude/tests/harness/reference-governance.mjs .claude/skills && git diff --check",
+        "test ! -e .claude/skills/programming-fundamentals/references/testing.md && node .claude/tests/harness/reference-governance.mjs .claude/skills && node --test .claude/tests/docs/skill-catalog.test.mjs"
+      ]
+    }
+  }
+}

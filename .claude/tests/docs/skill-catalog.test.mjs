@@ -197,9 +197,10 @@ test("shipped catalog and proposed routing cases cover the same skills without c
     assert.notEqual(row.expectedSkill, row.expectedNegativeSkill);
     assert.ok(names.includes(row.expectedNegativeSkill));
   }
-  for (const { description } of result.skills) {
-    assert.ok(description.split(/\s+/).length <= 80, "description should remain selection metadata");
-    assert.doesNotMatch(description, /Must always apply|any prose surface|Use any MCP tool/i);
+  for (const { name, description } of result.skills) {
+    const words = description.split(/\s+/).length;
+    assert.ok(words <= 80, `${name}: description is ${words} words; it must stay selection metadata (≤ 80)`);
+    assert.doesNotMatch(description, /Must always apply|any prose surface|Use any MCP tool/i, name);
   }
   const map = readFileSync(join(catalog, "skill-suite-auditor/references/pstack-adoption.md"), "utf8");
   const sources = [...map.matchAll(/^\| `([a-z-]+)` \|/gm)].map(match => match[1]);
@@ -409,4 +410,71 @@ test("adopted pstack guidance never grants Git, dispatch, or approval authority"
   // The new hillclimb log is raw evidence, never a commit trail or a ledger.
   assert.doesNotMatch(adopted[0], /\bcommit/i);
   assert.doesNotMatch(adopted[0], /\bledger\b|status log|progress tracker/i);
+});
+
+// The 2026-10 catalog simplification rewrote every non-lifecycle skill. These
+// guards cover the whole catalog, not only the bundles earlier changes pinned.
+const LIFECYCLE_SKILLS = new Set(["change", "build", "prove", "land", "investigate", "dev", "feature", "changes"]);
+const skillMarkdown = () => readdirSync(catalog, { recursive: true })
+  .filter(file => file.endsWith(".md") && !file.split(/[\\/]/).includes("assets"))
+  .map(file => [file, readFileSync(join(catalog, file), "utf8")]);
+
+test("no skill or reference reintroduces per-step commit or unapproved-action instructions", () => {
+  const forbidden = /commit when green|committing per step|one commit each|commit them \*\*before\*\*|check it off|merge to trunk daily|proceed without approval|Open a PR as \*\*Draft\*\*/i;
+  // "open a PR" is an instruction unless the sentence refuses or scopes it
+  // ("Land and /dev do not commit, push, open a PR"). git-workflow is the one
+  // skill whose job is the authorized PR operation itself.
+  const prInstruction = /\bopen(?:s|ing)? a (?:pull request|PR)\b/i;
+  const negated = /\b(?:not|never|no|without|cannot|grants? no|only (?:via|with|when))\b/i;
+  for (const [file, body] of skillMarkdown()) {
+    const hit = body.match(forbidden);
+    assert.equal(hit, null, `${file}: forbidden instruction "${hit?.[0]}"`);
+    if (file.split(/[\\/]/)[0] === "git-workflow") continue;
+    for (const sentence of body.split(/(?<=[.!?])\s+|\n\s*\n/)) {
+      const pr = sentence.match(prInstruction);
+      if (pr && !negated.test(sentence))
+        assert.fail(`${file}: forbidden instruction "${pr[0]}" in: ${sentence.trim().slice(0, 80)}`);
+    }
+  }
+});
+
+test("simplified skill bodies keep one shape and stay short", () => {
+  for (const [file, body] of skillMarkdown()) {
+    const parts = file.split(/[\\/]/);
+    if (parts.length !== 2 || parts[1] !== "SKILL.md" || LIFECYCLE_SKILLS.has(parts[0])) continue;
+    const skill = parts[0];
+    const content = body.replace(/^---[\s\S]*?\n---\n/, "");
+    const words = content.split(/\s+/).filter(Boolean).length;
+    assert.ok(words <= 250, `${skill}: body is ${words} words; limit 250`);
+    for (const heading of ["## Steps", "## Harness", "## References"])
+      assert.ok(content.includes(`\n${heading}\n`), `${skill}: missing ${heading}`);
+    const harness = content.split("\n## Harness\n")[1].split("\n## ")[0].trim().split("\n");
+    assert.ok(harness.length <= 3, `${skill}: Harness section is ${harness.length} lines; limit 3`);
+    const description = body.match(/^description: "(.*)"$/m)?.[1] || "";
+    const descriptionWords = description.split(/\s+/).filter(Boolean).length;
+    assert.ok(descriptionWords <= 40, `${skill}: description is ${descriptionWords} words; limit 40`);
+    assert.match(description, /^(Use |Alias for )/, `${skill}: description must open with its trigger`);
+    assert.match(description, /Skip |skip |use [a-z-]+ for|\([a-z-]+\)|only when/, `${skill}: description must say when not to use it`);
+  }
+});
+
+test("reference files link only to siblings and cross-bundle files that exist", () => {
+  // Markdown links are routes and must resolve; a bare backtick name such as
+  // `tasks.md` or `OVERVIEW.md` is an artifact mention, so only explicit
+  // `../` or `references/` backtick paths are checked. Document-template
+  // bundles link to files the reader will create, not to the catalog.
+  const illustrative = new Set(["init-project-docs", "ui-ux-pro-max", "harness-html-report", "claude-md", "grill-task-gu"]);
+  for (const [file, body] of skillMarkdown()) {
+    const parts = file.split(/[\\/]/);
+    if (!parts.includes("references") || LIFECYCLE_SKILLS.has(parts[0]) || illustrative.has(parts[0])) continue;
+    const links = [
+      ...[...body.matchAll(/\[[^\]]*\]\(([^)#\s]+\.md)(?:#[^)]*)?\)/g)].map(match => match[1]),
+      ...[...body.matchAll(/`((?:\.\.\/|references\/)[A-Za-z0-9._/-]+\.md)`/g)].map(match => match[1])
+    ];
+    for (const link of new Set(links)) {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(link)) continue;
+      const target = resolve(dirname(join(catalog, file)), link);
+      assert.ok(existsSync(target), `${file}: link ${link} does not resolve`);
+    }
+  }
 });

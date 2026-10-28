@@ -1,8 +1,8 @@
 # Coverage — Flashlight, Not Goal
 
-Moved from `SKILL.md` — principle 7's full detail: using coverage to find untested code instead of chasing a percentage.
+Full detail of the coverage rule in `SKILL.md`: use coverage to find untested code instead of chasing a percentage.
 
-## Principle 7 (from SKILL.md): Coverage is a flashlight, not a goal
+## Coverage is a flashlight, not a goal
 
 **Rule:** Use coverage to *find* untested code — especially uncovered branches on critical paths — not as a target to hit. A percentage is a floor and a diagnostic, never the objective.
 

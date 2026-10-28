@@ -1,43 +1,39 @@
 ---
 name: concurrency-fundamentals
-description: "Design in-process async, threads, shared state, cancellation, atomicity, and bounded parallelism. Use when interleaving affects correctness. Record invariants and executable evidence in OpenSpec; skip harness worker scheduling, cross-process queues, and database isolation."
+description: "Use when threads, async tasks, locks, shared mutable state, cancellation, or races affect correctness inside one process. Skip cross-process queues (queue-fundamentals) and database isolation (database-fundamentals)."
 ---
 
 # Concurrency fundamentals
 
-Test retries, partial failure, and restart ownership. PID alone cannot prove
-a stale lock. Harness scheduling is not application concurrency.
+The easiest race is the one you designed out; correctness must not depend on
+timing.
 
-Use this as the primary skill when multiple in-process activities can overlap.
+## Steps
 
-## Rules
+1. Avoid shared mutable state first: immutability, ownership confinement, or
+   message passing.
+2. Where sharing is unavoidable, make each read-modify-write one atomic
+   operation with the narrowest lock, atomic, CAS, or version check.
+3. Prevent deadlock structurally: fixed lock order, minimal scope, no nested
+   locks, never hold a lock across unowned I/O.
+4. Treat `async`/`await` as concurrency: await or supervise every task, choose
+   sequential versus parallel explicitly, keep CPU work off the event loop.
+5. Propagate cancellation and deadlines; release resources and define how
+   partial effects unwind. Ask of every operation: what if it runs twice,
+   crashed halfway, or overlaps another run?
+6. Bound in-flight work to the real bottleneck (semaphore, pool, backpressure),
+   then prove with deterministic interleaving tests, stress tests, or a race
+   detector — never sleeps.
 
-1. Avoid shared mutable state first; prefer immutability, ownership confinement,
-   or message passing.
-2. Protect every shared read-modify-write as one atomic operation using the
-   narrowest suitable lock, atomic, CAS, or version check.
-3. Prevent deadlock structurally: enforce lock order, minimize lock scope, avoid
-   nested locks, and never hold a lock across unowned I/O.
-4. Treat `async`/`await` as concurrency. Await or deliberately supervise every
-   task, choose sequential versus parallel execution explicitly, and keep CPU
-   work off the event loop.
-5. Propagate cancellation and deadlines. Release locks/resources and define how
-   partial effects unwind when work stops.
-6. Bound in-flight work to the real bottleneck with a semaphore, pool, or
-   backpressure; avoid unbounded fan-out.
-7. Design correctness independent of timing, then use deterministic interleaving
-   tests, stress tests, and race detectors as evidence.
+Harness scheduling is not application concurrency; a PID alone cannot prove a
+stale lock.
 
-## Check before finishing
-
-- Who owns each mutable value, and which operation is atomic?
-- Can any lock acquisition form a wait cycle?
-- Are task errors, cancellation, and cleanup observable?
-- Is concurrency capped and overload behavior explicit?
-- Does the test force a bad interleaving without sleeps?
+## Harness
 
 Record material invariants and failure expectations in the active OpenSpec
-change; let project test/race-detector providers produce proof.
+change; project test/race-detector providers produce the proof through the
+harness. No parallel ledger; Build never stages or commits.
 
-Reference: read `references/shared-state-and-async.md` for lock/atomic/CAS
-selection, deadlock recipes, async pitfalls, bounded patterns, and examples.
+## References
+
+- `references/shared-state-and-async.md` — lock/atomic/CAS selection, deadlock recipes, async pitfalls, bounded patterns, idempotency and crash questions

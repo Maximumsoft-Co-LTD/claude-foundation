@@ -1,9 +1,11 @@
-# Accessibility: requirements and checks
+# Accessibility: requirements, checks, and verification
 
-This is a scoped aid, not the complete WCAG checklist. Source IDs resolve in
-[sources.md](sources.md). WCAG success criteria are normative; Understanding
-documents and APG explain application. AA conformance includes all applicable
-A and AA criteria, entire pages, and complete processes. [S02]
+Use the product's stated accessibility target; where none exists for the web,
+propose WCAG 2.2 AA as the working baseline and make the assumption visible.
+This is a scoped aid, not the complete checklist: WCAG success criteria are
+normative, Understanding documents and APG explain application, and AA
+conformance covers all applicable A and AA criteria across entire pages and
+complete processes. Source IDs resolve in [sources.md](sources.md). [S02]
 
 ## Visual and input checks
 
@@ -14,45 +16,74 @@ A and AA criteria, entire pages, and complete processes. [S02]
 | 1.4.10 Reflow | AA | For horizontal writing, content works at width equivalent to 320 CSS px without two-dimensional scrolling or loss. Two-dimensional content such as data tables can be excepted; the surrounding page still reflows. | S05 |
 | 1.4.12 Text Spacing | AA | No loss when users set line-height 1.5×, paragraph spacing 2× font size, letter spacing .12em, word spacing .16em. These are override tests, not mandatory default design values. Properties unused by a language/script need not apply. | S06 |
 | 2.5.8 Target Size (Minimum) | AA | Pointer targets ≥24×24 CSS px, or qualify for exceptions: sufficient spacing, equivalent control, inline, user-agent control, essential. For spacing, test the 24px-diameter circles centered on undersized targets against nearby targets/circles. | S07 |
-| 2.4.11 Focus Not Obscured (Minimum) | AA | Author-created content must not entirely hide the component receiving keyboard focus. Test sticky headers, cookie banners, and overlays. Partial obstruction is distinct from complete hiding. | S08 |
+| 2.4.11 Focus Not Obscured (Minimum) | AA | Author-created content must not entirely hide the component receiving keyboard focus. Test sticky headers, cookie banners, and overlays. Partial obstruction is distinct from complete hiding; this criterion is about obscuration, not focus-ring contrast. | S08 |
 | 2.4.13 Focus Appearance | AAA | Focus indicator area and contrast-change requirements apply with specified exceptions. The common 2 CSS px perimeter-equivalent area and 3:1 focused/unfocused change are AAA, not 2.4.11 AA. | S09 |
 | 2.5.7 Dragging Movements | AA | Supply a single-pointer action without dragging unless essential or user-agent determined; keyboard-only support is not the same alternative. | S10 |
 | 3.3.7 Redundant Entry | A | Reuse or make selectable information already entered during the process, with essential/security/stale-information exceptions. | S11 |
 | 3.3.8 Accessible Authentication (Minimum) | AA | Avoid cognitive-function tests unless an allowed alternative, assistance mechanism, or exception applies. Support password managers and paste; inspect the whole login and recovery flow. | S12 |
 | 4.1.3 Status Messages | AA | Expose qualifying status messages programmatically without requiring focus to move. Choose appropriate roles/live regions; do not make every update an interrupting alert. | S13 |
 
-Larger practical touch targets may improve motor accessibility, but a 44×44
-design preference is not the AA 24×24 rule. Verify platform-specific guidance
-for native controls rather than translating units mechanically.
+Exceptions need their actual conditions checked: a 44×44 touch preference is
+not the AA 24×24 rule, and the target-spacing exception holds only when the
+24 px circle on each undersized target intersects no other target or circle —
+an arbitrary gap between icons is not evidence. Measure the real hit area, not
+the glyph. Large-text and inactive-control exceptions must not make essential
+help unreadable, and a reflow exception for a table or map does not exempt the
+surrounding page. Verify platform guidance for native controls rather than
+translating units mechanically.
 
 ## Semantics and keyboard checks
 
-Prefer native buttons, links, form controls, headings, lists, and tables.
-Inspect accessible name, role, state, and relationship rather than relying on
-appearance. ARIA does not add missing keyboard behavior. APG is informative
-implementation guidance, not a separate conformance standard. [S14]
+Prefer native buttons, links, form controls, headings, lists, and tables; give
+controls accessible names, expose state, and associate field errors. Use a
+custom widget only when the task needs it, then verify its keyboard and
+assistive-technology behavior — ARIA does not add missing keyboard behavior,
+and APG is informative guidance, not a conformance standard. [S14]
 
-For modal dialogs, move focus inside appropriately, keep Tab/Shift+Tab within
-the dialog while open, provide a visible close mechanism, support Escape in
-the modal pattern, and return focus to the invoker or a logical next location.
-Only mark a dialog modal when background interaction is actually blocked.
-For long or structured content, initial focus may belong on a static heading
-rather than the first input. [S15]
+Walk the critical task with the keyboard: reachability, order, activation,
+escape, visible focus, and focus return after dialogs. For modal dialogs, move
+focus inside, keep Tab/Shift+Tab within the dialog, provide a visible close,
+support Escape, and return focus to the invoker or a logical next location;
+only mark a dialog modal when background interaction is actually blocked. For
+long or structured content, initial focus may belong on a static heading rather
+than the first input. [S15]
 
-Inspect keyboard reachability, focus order, visible focus, labels/instructions,
-color-independent meaning, and non-text alternatives against the full standard
-when relevant. Do not report these as passed from a still image. [S02]
+Check screen-reader names, relationships, state, and important announcements
+when the environment is available. Source-level expectations remain unverified
+until the assistive interaction is checked; never report these as passed from a
+still image. [S02]
 
 ## Motion
 
-Honor reduced-motion preferences for nonessential movement. SC 2.3.3 allows
-disabling nonessential interaction-triggered animation and is AAA. Do not
-label all reduced-motion support an AA mandate. Separately assess autoplay,
-moving content and flashing under applicable criteria. [S16, S02]
+Honor reduced-motion preferences for nonessential movement. SC 2.3.3 (disabling
+nonessential interaction-triggered animation) is AAA; do not label all
+reduced-motion support an AA mandate. Assess autoplay, moving content, and
+flashing separately under their own criteria. [S16, S02]
+
+## Evidence plan proportional to the change
+
+| Available surface | Can establish | Cannot establish alone |
+|---|---|---|
+| Source inspection | Intended markup, event paths, styles, and declared semantics | Actual rendering, focus behavior, usability |
+| Screenshot | Visible composition, clipping, labels, and some state cues | Keyboard, screen reader, persistence, timing |
+| Browser interaction | Actions, transitions, focus, responsive behavior, persistence checks | Outcomes for every user population |
+| Accessibility tooling | Specific detectable violations or inspected properties | Complete WCAG conformance |
+| Task-based user observation | Observed comprehension and completion for the tested people/tasks | Universal usability or unmeasured improvement |
+
+Exercise the changed critical action with realistic data, including a relevant
+failure or recovery state. Test representative wide and narrow layouts,
+enlarged text/zoom, long labels, applicable themes, and reduced-motion behavior
+when animation is involved. When rendered verification is unavailable, deliver
+a scoped specification or source review with that limitation stated; do not
+fabricate a completed live check.
 
 ## Report accurately
 
 Record criterion, scope, environment, procedure, actual result, and remaining
-unknowns. Automated checks, manual keyboard checks, and screen-reader tests
-cover different failure modes. A measured contrast pass is one criterion
-result; it is not a declaration that the product conforms to WCAG.
+unknowns. Give one concrete example per material finding, then the consequence,
+repair, and verification; separate observed failures from plausible risks and
+fix blockers and lost-work paths before polishing details. Automated checks,
+manual keyboard checks, and screen-reader tests cover different failure modes;
+a measured contrast pass is one criterion result, not a declaration that the
+product conforms to [WCAG 2.2](https://www.w3.org/TR/WCAG22/). Do not invent
+participant feedback, measurements, pass counts, or a usability score.

@@ -1,41 +1,36 @@
 ---
 name: coding-discipline
-description: "Resolve consequential assumptions, scope ambiguity, speculative complexity, or unrelated diff growth before implementation. Verify facts and choose the smallest adequate solution. Skip routine settled work; this conduct skill does not grant lifecycle or external-action authority."
+description: "Use when scope, assumptions, or the right size of a fix is unclear and you might over-build. Skip routine settled work."
 ---
 
 # Coding discipline
 
-Keep comments for non-obvious constraints and public contracts. Prove guards
-unnecessary before removal; uncertainty is not grounds for deletion.
+Pick the smallest change that provably meets the request; verify before you ask.
 
-Use this only when the concise conduct rules in `.claude/rules/fundamentals.md`
-do not resolve the task. It selects a safe working stance; the primary
-construction skill owns technical design and Foundation owns lifecycle/proof.
+## Steps
 
-## Rules
-
-1. Surface assumptions that can change behavior, compatibility, security,
-   persistence, scope, or irreversible effects. Verify repository facts before
-   asking the user; ask only when the remaining choice is consequential.
-2. Choose the smallest adequate solution in this order: no code, standard
-   library, platform/framework, installed dependency, then minimal new code.
-   Never trade away required safety, correctness, accessibility, or evidence.
+1. Surface assumptions that could change behavior, compatibility, security,
+   persistence, scope, or an irreversible effect. Check repository facts first;
+   ask the user only when the remaining choice is consequential.
+2. Choose the smallest adequate solution in order: no code, standard library,
+   platform/framework, installed dependency, then minimal new code. Never trade
+   away required safety, correctness, accessibility, or evidence.
 3. Keep every changed line traceable to the request. Match local conventions,
-   remove only debris caused by the change, and report unrelated issues instead
-   of silently fixing them.
-4. Turn the request into a checkable outcome and continue until applicable
-   project-owned evidence proves it or a concrete blocker remains.
+   remove only debris your change caused, and report unrelated issues instead
+   of fixing them.
+4. Keep comments for non-obvious constraints and public contracts. Prove a
+   guard unnecessary before removing it; uncertainty is not grounds for deletion.
+5. Turn the request into a checkable outcome and continue until project-owned
+   evidence proves it or a concrete blocker remains.
+6. Then load the construction or process skill that owns the technical decision.
 
-## Harness handoff
+## Harness
 
-- Use `brainstorming` or `/investigate` for genuine unresolved alternatives.
-- Put durable intent and decisions in OpenSpec, not a chat-only or parallel plan.
-- Keep implementation status in `tasks.md` and proof in harness receipts.
-- Do not interpret “goal-driven” as authority to expand scope, mutate external
-  systems, commit, push, or Land.
+Durable intent and decisions go to OpenSpec, not a chat-only or parallel plan.
+Status lives in `tasks.md` and proof in harness receipts. "Goal-driven" grants
+no authority to widen scope, mutate external systems, commit, or Land.
 
-Reference: read `references/details.md` only when a rule needs rationale or a
-worked application. Then load the construction/process skill for the actual
-technical decision.
+## References
 
-For cleanup, read [residue removal](references/cleanup.md).
+- `references/details.md` — rationale for each rule, encoding a recurring correction as a check, building a lever for repeated work.
+- `references/cleanup.md` — removing residue after a change.

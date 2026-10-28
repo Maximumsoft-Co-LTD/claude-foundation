@@ -1,8 +1,9 @@
 # Tailwind Design System — Component Patterns
 
-Companion to `SKILL.md`. Runnable CVA/compound/form component examples for `SKILL.md > Structure` patterns 1–3.
+Read for the shape of a shared component: CVA variants, compound parts, and
+form controls. `cn()` comes from [utilities-and-advanced](utilities-and-advanced.md).
 
-### Pattern 1: CVA (Class Variance Authority) Components
+## Pattern 1: CVA variants
 
 ```typescript
 // components/ui/button.tsx
@@ -11,7 +12,6 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  // Base styles - v4 uses native CSS variables
   'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
@@ -30,10 +30,7 @@ const buttonVariants = cva(
         icon: 'size-10',
       },
     },
-    defaultVariants: {
-      variant: 'default',
-      size: 'default',
-    },
+    defaultVariants: { variant: 'default', size: 'default' },
   }
 )
 
@@ -41,232 +38,87 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  ref?: React.Ref<HTMLButtonElement> // React 19: ref is a prop, no forwardRef
 }
 
-// React 19: No forwardRef needed
-export function Button({
-  className,
-  variant,
-  size,
-  asChild = false,
-  ref,
-  ...props
-}: ButtonProps & { ref?: React.Ref<HTMLButtonElement> }) {
+export function Button({ className, variant, size, asChild = false, ref, ...props }: ButtonProps) {
   const Comp = asChild ? Slot : 'button'
-  return (
-    <Comp
-      className={cn(buttonVariants({ variant, size, className }))}
-      ref={ref}
-      {...props}
-    />
-  )
+  return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
 }
 
-// Usage
-<Button variant="destructive" size="lg">Delete</Button>
-<Button variant="outline">Cancel</Button>
-<Button asChild><Link href="/home">Home</Link></Button>
+// <Button variant="destructive" size="lg">Delete</Button>
+// <Button asChild><Link href="/home">Home</Link></Button>
 ```
 
-### Pattern 2: Compound Components (React 19)
+Rules: every state the contract promises (focus-visible, disabled, loading,
+invalid) lives in the base string or a variant, never in call sites; `className`
+is the only override seam.
+
+## Pattern 2: Compound components
+
+Each part is a plain function taking `ref` as a prop; all parts share one token
+vocabulary so a consumer can restyle a part without breaking the others.
 
 ```typescript
 // components/ui/card.tsx
 import { cn } from '@/lib/utils'
 
-// React 19: ref is a regular prop, no forwardRef
-export function Card({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return (
-    <div
-      ref={ref}
-      className={cn(
-        'rounded-lg border border-border bg-card text-card-foreground shadow-sm',
-        className
-      )}
-      {...props}
-    />
-  )
-}
+type DivProps = React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }
 
-export function CardHeader({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return (
-    <div
-      ref={ref}
-      className={cn('flex flex-col space-y-1.5 p-6', className)}
-      {...props}
-    />
-  )
+export function Card({ className, ref, ...props }: DivProps) {
+  return <div ref={ref} className={cn('rounded-lg border border-border bg-card text-card-foreground shadow-sm', className)} {...props} />
 }
-
-export function CardTitle({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLHeadingElement> & { ref?: React.Ref<HTMLHeadingElement> }) {
-  return (
-    <h3
-      ref={ref}
-      className={cn('text-2xl font-semibold leading-none tracking-tight', className)}
-      {...props}
-    />
-  )
+export function CardHeader({ className, ref, ...props }: DivProps) {
+  return <div ref={ref} className={cn('flex flex-col space-y-1.5 p-6', className)} {...props} />
 }
-
-export function CardDescription({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLParagraphElement> & { ref?: React.Ref<HTMLParagraphElement> }) {
-  return (
-    <p
-      ref={ref}
-      className={cn('text-sm text-muted-foreground', className)}
-      {...props}
-    />
-  )
+export function CardTitle({ className, ref, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { ref?: React.Ref<HTMLHeadingElement> }) {
+  return <h3 ref={ref} className={cn('text-2xl font-semibold leading-none tracking-tight', className)} {...props} />
 }
-
-export function CardContent({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return (
-    <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />
-  )
+export function CardContent({ className, ref, ...props }: DivProps) {
+  return <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />
 }
-
-export function CardFooter({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return (
-    <div
-      ref={ref}
-      className={cn('flex items-center p-6 pt-0', className)}
-      {...props}
-    />
-  )
+export function CardFooter({ className, ref, ...props }: DivProps) {
+  return <div ref={ref} className={cn('flex items-center p-6 pt-0', className)} {...props} />
 }
-
-// Usage
-<Card>
-  <CardHeader>
-    <CardTitle>Account</CardTitle>
-    <CardDescription>Manage your account settings</CardDescription>
-  </CardHeader>
-  <CardContent>
-    <form>...</form>
-  </CardContent>
-  <CardFooter>
-    <Button>Save</Button>
-  </CardFooter>
-</Card>
 ```
 
-### Pattern 3: Form Components
+## Pattern 3: Form controls
+
+The control owns its invalid state and the error's accessible wiring
+(`aria-invalid`, `aria-describedby`, `role="alert"`); the form library only
+supplies the message.
 
 ```typescript
 // components/ui/input.tsx
-import { cn } from '@/lib/utils'
-
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string
   ref?: React.Ref<HTMLInputElement>
 }
 
 export function Input({ className, type, error, ref, ...props }: InputProps) {
+  const errorId = error ? `${props.id}-error` : undefined
   return (
     <div className="relative">
       <input
         type={type}
+        ref={ref}
+        aria-invalid={!!error}
+        aria-describedby={errorId}
         className={cn(
-          'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+          'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
           error && 'border-destructive focus-visible:ring-destructive',
           className
         )}
-        ref={ref}
-        aria-invalid={!!error}
-        aria-describedby={error ? `${props.id}-error` : undefined}
         {...props}
       />
-      {error && (
-        <p
-          id={`${props.id}-error`}
-          className="mt-1 text-sm text-destructive"
-          role="alert"
-        >
-          {error}
-        </p>
-      )}
+      {error && <p id={errorId} role="alert" className="mt-1 text-sm text-destructive">{error}</p>}
     </div>
   )
 }
 
-// components/ui/label.tsx
-import { cva, type VariantProps } from 'class-variance-authority'
-
-const labelVariants = cva(
-  'text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70'
-)
-
-export function Label({
-  className,
-  ref,
-  ...props
-}: React.LabelHTMLAttributes<HTMLLabelElement> & { ref?: React.Ref<HTMLLabelElement> }) {
-  return (
-    <label ref={ref} className={cn(labelVariants(), className)} {...props} />
-  )
-}
-
-// Usage with React Hook Form + Zod
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-
-const schema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-})
-
-function LoginForm() {
-  const { register, handleSubmit, formState: { errors } } = useForm({
-    resolver: zodResolver(schema),
-  })
-
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          type="email"
-          {...register('email')}
-          error={errors.email?.message}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
-        <Input
-          id="password"
-          type="password"
-          {...register('password')}
-          error={errors.password?.message}
-        />
-      </div>
-      <Button type="submit" className="w-full">Sign In</Button>
-    </form>
-  )
-}
+// Usage with react-hook-form + zod: pass errors.email?.message as `error`
+// and keep <Label htmlFor="email"> paired with id="email".
 ```
 
+Prove each pattern with the project's browser or accessibility provider:
+keyboard focus ring visible, error announced, disabled state not clickable.

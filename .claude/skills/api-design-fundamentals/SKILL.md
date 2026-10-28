@@ -1,45 +1,41 @@
 ---
 name: api-design-fundamentals
-description: "Use when a change's workType includes api or library, or a requirement defines a request, response, status code, error body, pagination, or version that other code consumes. Skip private module interfaces; use programming-fundamentals."
+description: "Use when workType includes api or library, or a requirement defines a request, response, status code, error body, pagination, or version other code consumes. Skip private module interfaces (use programming-fundamentals)."
 ---
 
 # API design fundamentals
 
-Trace external consumers and serialized bytes; use `change-impact-analysis`
-for unverified consumer assumptions.
+A published contract is for clients you cannot see; trace external consumers
+and serialized bytes before changing it.
 
-Use this as the primary skill when clients must code against the changed
-surface.
+## Steps
 
-## Rules
+1. Model resources in domain language, not controller or RPC verbs. Use
+   protocol semantics honestly: method, status, caching, and safety match
+   behavior.
+2. Define request/response schemas, defaults, limits, and validation at the
+   boundary. Never expose persistence models.
+3. Treat errors as versioned contract data: stable machine codes, safe human
+   detail, one envelope everywhere. A client must distinguish validation,
+   conflict, auth, absence, and server failure without parsing prose.
+4. Make retryable mutations idempotent; define key identity, scope, retention,
+   and conflict behavior. Bound every collection with pagination, ordering, and
+   filter limits.
+5. Authenticate at the edge, authorize each action and object server-side, and
+   set rate/abuse limits separately.
+6. Evolve additively. A breaking change needs a version, migration path,
+   deprecation window, and observability so old and new clients overlap.
 
-1. Model resources and domain language, not controller or RPC verbs.
-2. Use protocol semantics honestly: methods, status, caching, and safety must
-   match behavior.
-3. Define request and response schemas, defaults, limits, and validation at the
-   boundary. Do not expose persistence models.
-4. Treat errors as versioned contract data with stable machine codes and safe
-   human detail.
-5. Make retryable mutations idempotent and define the identity, scope,
-   retention, and conflict behavior of idempotency keys.
-6. Bound collections from day one; define pagination ordering, cursors,
-   filtering, and limits.
-7. Authenticate at the edge and authorize each action/object server-side.
-   Define rate and abuse limits separately.
-8. Prefer additive evolution. Breaking changes require versioning, migration,
-   observability, and a deprecation window.
+Use `change-impact-analysis` for unverified consumer assumptions.
 
-## Check before finishing
+## Harness
 
-- Can a client distinguish validation, conflict, auth, absence, and server
-  failure without parsing prose?
-- Are retries, duplicates, concurrent updates, and partial results defined?
-- Does every identifier expose only authorized objects?
-- Can old and new clients overlap safely?
+Record the public contract, compatibility window, and failure cases in the
+active OpenSpec change; project contract/integration providers prove it through
+the harness. No parallel API document; Build never stages or commits.
 
-Record the public contract, compatibility window, failure cases, and consumer
-evidence in the active OpenSpec change. Let project contract/integration
-providers prove it; do not treat examples or prose alone as executable proof.
+## References
 
-References: `references/resource-modeling.md`, `contracts-and-errors.md`,
-`auth-and-limits.md`, and `evolution.md`. Read only the matching file.
+- `references/resource-modeling.md` — URL conventions, protocol choice, status codes
+- `references/contracts-and-errors.md` — schema boundary, error envelope, authn/authz and rate limits at the edge
+- `references/evolution.md` — idempotency keys, pagination, versioning, deprecation

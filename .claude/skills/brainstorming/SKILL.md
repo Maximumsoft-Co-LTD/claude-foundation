@@ -1,52 +1,43 @@
 ---
 name: brainstorming
-description: "Resolve consequential product or scope ambiguity before Change intake. Use for competing outcomes or approaches; verify discoverable facts first and carry settled choices into OpenSpec. Skip settled implementation and read-only how/why questions; use investigate."
+description: "Use when the product outcome or approach is still open and the user must pick between real alternatives before /change. Skip settled work and how/why questions (use investigate)."
 ---
 
-# Change investigation
+# Brainstorming
 
-Preserve attributable historical decisions and label inference. Test factual
-assumptions before comparing designs.
+Facts come from sources; choices come from the user.
 
-Use the lightest path that resolves the decision.
+## Steps
 
-1. Read existing OpenSpec specs and only the code needed to understand the seam.
-2. Separate verified facts, hypotheses, constraints, and unknowns. Model the
-   material user decisions as a private dependency tree: each decision names
-   its prerequisites, alternatives, and dependent effects. Do not persist this
-   tree as an artifact or lifecycle state. Challenge fuzzy or conflicting
-   project terms against specifications and code; ask only when more than one
-   material domain meaning remains.
-3. Identify at most three viable approaches and recommend one with concrete
-   tradeoffs.
-4. Never ask what you can find. Any fact the specs, code, LSP, or sandbox can
-   settle is yours to resolve; only questions downstream of that fact wait.
-5. Ask in rounds, not one at a time. A round is every open decision whose
-   prerequisites are already settled; a question depending on another still
-   open belongs to the next round. Carry your recommended answer with each
-   question and mark it `(Recommended)`. Present the round through the host's
-   structured question tool (AskUserQuestion) when the session provides one,
-   one question per decision; otherwise ask in plain text.
+1. Read the OpenSpec specs and only the code needed to understand the seam.
+   Separate verified facts, hypotheses, constraints, and unknowns.
+2. Never ask what you can find. Challenge fuzzy or conflicting project terms
+   against specifications and code; ask only when more than one material
+   domain meaning remains.
+3. Model open decisions as a private dependency tree (prerequisites,
+   alternatives, dependent effects); never persist it as an
+   artifact or lifecycle state.
+4. Offer at most three approaches and recommend one with concrete tradeoffs.
    Ask only what materially changes behavior, compatibility, security,
-   persistence, scope, or a measurable/observable non-functional target;
-   recompute the round from the answers and stop only
-   when every material decision has been asked and answered.
-6. End with a compact agreement: outcome, in/out, observable scenarios, chosen
-   approach, remaining risk, and each asked question with its chosen answer.
-   Include canonical project terms with meanings and avoided aliases plus any
-   qualifying durable tradeoffs. For runtime-shipping work, also state which of
-   performance, capacity, availability, security/privacy, accessibility,
-   operability, compatibility, and recoverability are applicable; source `N/A`
-   decisions and never invent a target.
-   Carry the agreement into feature or change intake. Reuse its settled answers
-   without asking them again, and record them in the existing change packet so
-   no answer lives only in chat.
+   persistence, scope, or an observable non-functional target
+   (performance, capacity, availability, privacy, accessibility).
+5. Ask in rounds, not one at a time: every open decision whose
+   prerequisites are already settled, through the host's
+   structured question tool (AskUserQuestion), recommendation first. Recompute
+   from the answers; stop only when
+   every material decision has been asked and answered.
+6. End with a compact agreement: outcome, in/out, scenarios, chosen approach,
+   remaining risk, canonical terms, and
+   each asked question with its chosen answer. Hand it to `/change`, reuse
+   the settled answers without asking them again, and record them in the
+   change packet, not chat.
 
-Use `/investigate` when the exploration should remain no-stakes. Once the
-agreement is clear, hand it to `/change`; do not create a separate spec, plan,
-interview ledger, glossary, `CONTEXT.md`, ADR store, or lifecycle state.
+## Harness
 
-No product code lands during investigation. Repository facts must be grounded
-in files actually read; label inference explicitly. Prototypes stay inside the
-harness-provided investigation scope and are evidence for a decision, not
-implementation to Land.
+No product code lands here; prototypes stay inside the harness investigation
+scope as evidence. Create no separate spec, plan, interview ledger, glossary,
+or lifecycle state; the harness owns lifecycle and receipts.
+
+## References
+
+None; use `/investigate` for no-stakes exploration.
