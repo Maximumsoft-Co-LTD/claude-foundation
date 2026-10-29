@@ -308,6 +308,19 @@ test("baseline dry-run prints the exact host plan for free and keeps no project"
     assert.equal(plan.host.maxModelRequests, 2);
     assert.equal(existsSync(outputRoot), false, "a dry run writes no results");
     assert.deepEqual(readdirSync(tempParent), []);
+    // The reviewed baseline is the same plan plus the review hint and the
+    // REVIEW.md write rule; still no harness, still no shim.
+    const reviewed = runScenarioLab({
+      matrixPath: matrix, scenarioId: "fixture", outputRoot, tempParent,
+      runId: "dry-2", arm: "baseline-review", dryRun: true
+    });
+    assert.equal(reviewed.harnessInstalled, false);
+    assert.equal(reviewed.host.arm, "baseline-review");
+    assert.match(reviewed.host.prompt, /review the complete diff .*REVIEW\.md/);
+    assert.doesNotMatch(plan.host.prompt, /REVIEW\.md/);
+    assert.ok(reviewed.host.argv.includes("Write(/**/REVIEW.md)"));
+    assert.equal(reviewed.runnerArgs[reviewed.runnerArgs.indexOf("--arm") + 1], "baseline-review");
+    assert.deepEqual(readdirSync(tempParent), []);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -327,6 +340,10 @@ test("baseline tools are what a plain user approves for the task", () => {
     assert.ok(node.includes("Bash(node *)"));
     assert.ok(node.includes("Bash(npm test)"));
     assert.equal(node.some((rule) => /git (?:commit|push|reset|checkout)/.test(rule)), false);
+    assert.equal(node.includes("Write(/**/REVIEW.md)"), false);
+    // The reviewed baseline may write its findings file and nothing else more.
+    const reviewed = baselineAllowedTools({ project, projectCommand: "node --test", review: true });
+    assert.deepEqual(reviewed.filter((rule) => !node.includes(rule)), ["Write(/**/REVIEW.md)"]);
   } finally {
     rmSync(project, { recursive: true, force: true });
   }

@@ -5,8 +5,10 @@ import { TOOL_CALL_CATEGORIES } from "../../../harness/runtime/observability/tel
 export const SCORECARD_PROTOCOL = "foundation-openspec-native-scorecard-v1";
 export const MEASUREMENT_STATES = new Set(["measured", "partial", "unavailable"]);
 // The bench arm that produced a row. `change-loop` is the installed harness;
-// `baseline` is the same seed and task with no harness installed.
-export const BENCH_ARMS = Object.freeze(["change-loop", "baseline"]);
+// `baseline` is the same seed and task with no harness installed;
+// `baseline-review` is the baseline plus one self-review-and-repair pass in
+// the same session, so the harness's review cost has a matched control.
+export const BENCH_ARMS = Object.freeze(["change-loop", "baseline", "baseline-review"]);
 export const DEFAULT_ARM = "change-loop";
 
 export function benchArm(value) {
@@ -14,6 +16,11 @@ export function benchArm(value) {
   if (!BENCH_ARMS.includes(value))
     throw new Error(`arm must be one of ${BENCH_ARMS.join(", ")}`);
   return value;
+}
+
+// Every arm that runs without the harness: no lifecycle, no packet, no ledger.
+export function isBaselineArm(value) {
+  return benchArm(value).startsWith("baseline");
 }
 
 export const OUTCOME_STATES = new Set([
@@ -388,7 +395,7 @@ function normalizeOutcome(input = {}, oracle = {}, arm = DEFAULT_ARM) {
   }
   // The baseline has no task ledger: its evidence is its own green project
   // command, so completion cannot wait on a pending-task count.
-  const ledgerDone = arm === "baseline" || pendingTasks === 0;
+  const ledgerDone = isBaselineArm(arm) || pendingTasks === 0;
   const complete = outcomeStatus === "completed" && ledgerDone &&
     requiredEvidencePassed === true && !oracleFailed;
   return {

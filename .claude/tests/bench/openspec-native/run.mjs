@@ -9,7 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import { benchArm, buildScorecard, costMeasurement, digest } from "./scorecard.mjs";
+import { benchArm, buildScorecard, costMeasurement, digest, isBaselineArm } from "./scorecard.mjs";
 import { shellCheck } from "./lab.mjs";
 import { runLifecycle } from "./lifecycle.mjs";
 import {
@@ -118,7 +118,7 @@ export function changeLoopAuthority({ selfReviewAuthorized = false, landAuthoriz
 // minus every Change Loop instruction: a leading slash command such as `/dev`
 // is the harness entry point and is dropped, and no lifecycle, review, or Land
 // line is added.
-export function baselinePrompt({ prompt, projectCommand }) {
+export function baselinePrompt({ prompt, projectCommand, review = false }) {
   const task = required(prompt, "--prompt").replace(/^\/[A-Za-z][\w:-]*\s+/, "").trim();
   const command = required(projectCommand, "baseline projectCommand");
   return [
@@ -127,11 +127,17 @@ export function baselinePrompt({ prompt, projectCommand }) {
       `The canonical project test command is \`${command}\`; use it as the sole test command and do not probe alternate runner paths, globs, or reporters.`,
       "Implement the change directly in this repository, with tests, and run that command until it passes.",
       `Before finishing, ${PARTITION_HINT}`,
+      // The reviewed baseline adds the one thing Change Loop always spends on:
+      // a review of the finished diff with its findings repaired before the
+      // run ends. Same session, same model; no harness.
+      review ? BASELINE_REVIEW_HINT : "",
       "Do not ask clarifying questions; make reasonable assumptions and continue.",
       "Leave your changes uncommitted: do not commit, push, or open a pull request."
-    ].join(" ")
+    ].filter(Boolean).join(" ")
   ].join("\n\n");
 }
+
+export const BASELINE_REVIEW_HINT = "After the test command passes, review the complete diff (`git diff`) once as an independent reviewer would: correctness against the task, security and data-loss risks, missing or non-discriminating tests, and unrequested scope. Write every finding with a severity (blocker, major, minor) to REVIEW.md at the repository root, then fix every blocker and major finding, rerun the test command until it passes, and mark those findings resolved in REVIEW.md.";
 
 // A baseline has no lifecycle: the host's exit, its own green project command,
 // and the hidden oracle are the whole terminal truth.
@@ -512,7 +518,7 @@ export function collectNativeScorecard({
   hostTelemetry = {}, hostUsage = {}, oracle = null, decisionBoundary = null,
   arm = "change-loop", outcome = null, packet = undefined, lifecycle = undefined
 }) {
-  const baseline = benchArm(arm) === "baseline";
+  const baseline = isBaselineArm(arm);
   const discovered = baseline ? null
     : discoverChangeId(project, changeId, stopwatch.startedEpochMs ?? null);
   const resolvedMetrics = metrics ?? metricsFor(project, discovered) ?? {};
@@ -1141,7 +1147,7 @@ async function main() {
   const runId = args["run-id"] || `${scenario}-${repeat}-${Date.now()}`;
   const output = resolve(args.output || DEFAULT_OUTPUT);
   const arm = benchArm(args.arm);
-  const baseline = arm === "baseline";
+  const baseline = isBaselineArm(arm);
   if (args['max-cost-usd'] !== undefined &&
       (!Number.isFinite(Number(args['max-cost-usd'])) || Number(args['max-cost-usd']) <= 0))
     throw new Error('--max-cost-usd must be positive');
@@ -1174,7 +1180,8 @@ async function main() {
     // host's own exit ends the run.
     request = {
       project,
-      prompt: baselinePrompt({ prompt: args.prompt, projectCommand }),
+      prompt: baselinePrompt({ prompt: args.prompt, projectCommand,
+        review: arm === "baseline-review" }),
       claudeBin: args["claude-bin"] || "claude",
       claudeArgs: budgetClaudeArgs(args),
       timeoutMs: Number(args["timeout-ms"] || 1800000),

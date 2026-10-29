@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { executionPlan, loadMatrix, matrixIssues } from "./matrix.mjs";
-import { benchArm } from "./scorecard.mjs";
+import { benchArm, isBaselineArm } from "./scorecard.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../../..");
@@ -230,7 +230,8 @@ export function initializeLabRepositories(project, catalog) {
 // nothing is installed. The seed becomes one local Git commit so the agent can
 // use read-only Git like any user repository and the lab can keep the product
 // diff; the marker stays out of that history.
-export function prepareBaselineProject({ fixture, tempParent = tmpdir(), projectCommand = null }) {
+export function prepareBaselineProject({ fixture, tempParent = tmpdir(), projectCommand = null,
+  arm = "baseline" }) {
   const source = resolve(fixture);
   if (!existsSync(source) || !statSync(source).isDirectory())
     throw new Error(`fixture seed does not exist: ${source}`);
@@ -250,7 +251,7 @@ export function prepareBaselineProject({ fixture, tempParent = tmpdir(), project
       `${JSON.stringify({
         disposable: true,
         createdBy: "openspec-native-lab-v1",
-        arm: "baseline",
+        arm,
         projectCommand
       })}\n`);
   } catch (error) {
@@ -263,10 +264,11 @@ export function prepareBaselineProject({ fixture, tempParent = tmpdir(), project
 // What a plain user approves for this task: edits inside the project, the
 // project's own interpreter/test runner, `npm test` when a manifest declares
 // it, and read-only Git. Nothing else is pre-approved.
-export function baselineAllowedTools({ project, projectCommand }) {
+export function baselineAllowedTools({ project, projectCommand, review = false }) {
   const command = String(projectCommand || "").trim();
   const runner = command.split(/\s+/)[0];
-  const rules = ["Edit(/**)"];
+  // The reviewed baseline writes its findings to REVIEW.md; nothing else is widened.
+  const rules = ["Edit(/**)", ...(review ? ["Write(/**/REVIEW.md)"] : [])];
   if (runner) rules.push(`Bash(${runner} *)`);
   if (command && command !== runner) rules.push(`Bash(${command})`);
   try {
@@ -335,7 +337,7 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
   tempParent = tmpdir(), keepProject = false, runId = null, resumeProject = null,
   arm = "change-loop", dryRun = false, lifecycleInterruptions = null }) {
   const selectedArm = benchArm(arm);
-  const baseline = selectedArm === "baseline";
+  const baseline = isBaselineArm(selectedArm);
   const matrix = loadMatrix(matrixPath);
   const issues = matrixIssues(matrix);
   if (issues.length) throw new Error(`invalid matrix:\n${issues.join("\n")}`);
@@ -350,7 +352,7 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
     : baseline
       ? prepareBaselineProject({
           fixture: resolve(ROOT, plan.fixture), tempParent,
-          projectCommand: scenario.project_command
+          projectCommand: scenario.project_command, arm: selectedArm
         })
       : prepareLabProject({
           fixture: resolve(ROOT, plan.fixture), installer, tempParent,
@@ -364,7 +366,7 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
     if (marker.disposable !== true)
       throw new Error("resume project must be an explicitly disposable benchmark project");
   }
-  const id = runId || `${scenarioId}${baseline ? "-baseline" : ""}-${Date.now()}`;
+  const id = runId || `${scenarioId}${baseline ? `-${selectedArm}` : ""}-${Date.now()}`;
   const runDir = resolve(outputRoot, id);
   const scorecards = join(runDir, "scorecards.jsonl");
   const args = [runner, "--scenario", scenarioId, "--project", prepared.project,
@@ -385,12 +387,13 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
     args.push("--max-model-requests", String(plan.budget.model_requests));
   if (plan.budget.tool_calls !== undefined)
     args.push("--max-tool-calls", String(plan.budget.tool_calls));
-  if (baseline) args.push("--arm", "baseline");
+  if (baseline) args.push("--arm", selectedArm);
   if (baseline && scenario.execution === "paid")
     args.push("--claude-arg", "--permission-mode", "--claude-arg", "acceptEdits",
       "--claude-arg", "--allowedTools",
       ...baselineAllowedTools({
-        project: prepared.project, projectCommand: scenario.project_command
+        project: prepared.project, projectCommand: scenario.project_command,
+        review: selectedArm === "baseline-review"
       }).flatMap((rule) => ["--claude-arg", rule]));
   else if (scenario.execution === "paid")
     args.push("--test-self-review", "true", "--test-land", "true",

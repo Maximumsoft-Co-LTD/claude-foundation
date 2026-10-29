@@ -1280,6 +1280,15 @@ test("baseline prompt carries every scenario task but no Change Loop instruction
     assert.doesNotMatch(prompt, lifecycle, scenario.id);
   }
   assert.throws(() => baselinePrompt({ prompt: "fix it" }), /projectCommand is required/);
+  // The reviewed baseline adds one review-and-repair instruction and nothing
+  // of the harness; the plain baseline never mentions a review.
+  const plain = baselinePrompt({ prompt: "/dev fix it", projectCommand: "npm test" });
+  const reviewed = baselinePrompt({ prompt: "/dev fix it", projectCommand: "npm test", review: true });
+  assert.doesNotMatch(plain, /review|REVIEW\.md/i);
+  assert.match(reviewed, /review the complete diff \(`git diff`\) once as an independent reviewer/);
+  assert.match(reviewed, /fix every blocker and major finding, rerun the test command/);
+  assert.doesNotMatch(reviewed, lifecycle);
+  assert.equal(reviewed.replace(/After the test command passes.*?REVIEW\.md\. /, ""), plain);
 });
 
 test("baseline outcome is host exit, own green project command, and the oracle", () => {

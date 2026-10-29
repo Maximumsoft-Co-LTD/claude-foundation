@@ -288,6 +288,15 @@ node .claude/tests/bench/openspec-native/lab.mjs \
   --scenario notes-api --arm baseline
 ```
 
+A third arm, `--arm baseline-review`, is the baseline plus one instruction:
+after the project command passes, review the whole diff once as an independent
+reviewer would, write the findings with severities to `REVIEW.md`, repair every
+blocker and major finding, and rerun the command. Same session, same model,
+same ceilings, no harness; it may additionally write `REVIEW.md`. It is the
+matched control for the review Change Loop always spends on. Run directories
+are named `<scenario>-baseline-review-<stamp>` and scorecards carry
+`arm: "baseline-review"`.
+
 The baseline arm:
 
 - copies the same frozen seed and writes the same disposable marker, but runs
