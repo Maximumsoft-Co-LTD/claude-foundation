@@ -1105,13 +1105,20 @@ function runtimeStatus(project, changeId) {
 }
 
 export function oracleRepairPrompt(changeId, failedCases) {
+  const cases = failedCases.join(", ");
   return `Resume existing change ${changeId}. The deterministic pre-Land oracle failed: ` +
-    `${failedCases.join(", ")}. Run claude-foundation advance ${changeId} --through build, ` +
-    "repair the complete root cause and adjacent cases as one batch, verify each task only " +
-    "through its returned checkCommand (claude-foundation exec ...), then run " +
-    `claude-foundation advance ${changeId} --through proven. Never run a test runner ` +
-    "(npm test, node --test, pytest) directly; it is not pre-allowed. Do not Land; the " +
-    "backend owns the oracle and Land boundary.";
+    `${cases}. This failure is a real product defect the harness cannot see: ` +
+    `claude-foundation advance ${changeId} --through build will report its target reached ` +
+    "and hand you no task, because every task's own verify passed. Do not stop there. " +
+    `Read the change's specs and the code paths behind ${cases}, find the root cause in the ` +
+    "Build workspace (the sandbox, or the repository sandbox owning that behavior), fix it " +
+    "there, and add a test that fails on the old code for that case and its adjacent " +
+    "partitions. Verify only through claude-foundation exec " +
+    `${changeId} --task <task> -- <verify> (or --repo <repository> -- <verify>), then run ` +
+    `claude-foundation advance ${changeId} --through proven so the harness re-proves the ` +
+    "edited workspace. Finish with code changed, not a report that nothing was required. " +
+    "Never run a test runner (npm test, node --test, pytest) directly; it is not pre-allowed. " +
+    "Do not Land; the backend owns the oracle and Land boundary.";
 }
 
 // The zero-cost plan: exactly what a live run would hand the host.

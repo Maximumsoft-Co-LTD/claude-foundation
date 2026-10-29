@@ -325,11 +325,18 @@ test("oracle repair verifies only through pre-allowed harness commands", () => {
   const prompt = oracleRepairPrompt("change-a", ["boundary-zero", "no-collateral"]);
   assert.match(prompt, /oracle failed: boundary-zero, no-collateral\./);
   assert.match(prompt, /claude-foundation advance change-a --through build/);
-  assert.match(prompt, /checkCommand \(claude-foundation exec/);
+  assert.match(prompt, /claude-foundation exec change-a --task <task> -- <verify>/);
   assert.match(prompt, /claude-foundation advance change-a --through proven/);
   assert.match(prompt, /Never run a test runner .* directly/);
   assert.doesNotMatch(prompt, /canonical project test/);
   assert.match(prompt, /Do not Land/);
+  // The harness sees no failing task for a hidden-oracle defect: the prompt
+  // must say so and demand a code change, or the repair session ends with
+  // "target reached" and no edit (observed three times on 2026-10-29).
+  assert.match(prompt, /will report its target reached/);
+  assert.match(prompt, /Do not stop there/);
+  assert.match(prompt, /add a test that fails on the old code/);
+  assert.match(prompt, /Finish with code changed/);
 });
 
 test("initial benchmark authority keeps projectCommand as verify and runs checks via the harness", () => {
