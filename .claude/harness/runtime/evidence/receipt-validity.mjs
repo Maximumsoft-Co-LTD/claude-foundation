@@ -115,6 +115,28 @@ export function acceptanceDecisionIsValid({
     value.acceptance?.reason === currentAcceptance.reason;
 }
 
+// Whether `from` reaches `to` through recorded identity bridges (`{from, to}`
+// rows a sandbox sync wrote for its own clean rewrites). Bounded by the number
+// of rows, so a cycle or a stray row can never loop.
+export function identityBridged(bridges, from, to) {
+  if (!from || !to) return false;
+  if (from === to) return true;
+  const rows = Array.isArray(bridges) ? bridges.filter((row) => row?.from && row?.to) : [];
+  const seen = new Set([from]);
+  let frontier = [from];
+  for (let step = 0; step < rows.length && frontier.length; step += 1) {
+    const next = [];
+    for (const row of rows)
+      if (frontier.includes(row.from) && !seen.has(row.to)) {
+        if (row.to === to) return true;
+        seen.add(row.to);
+        next.push(row.to);
+      }
+    frontier = next;
+  }
+  return false;
+}
+
 export function createReceiptValidity({
   evidenceVault, providerProtocolVersion, adapterProtocolVersion,
   reviewProtocolVersion, acceptanceProtocolVersion, receiptPath, readJson,
@@ -123,7 +145,7 @@ export function createReceiptValidity({
   reviewAttemptByDigest, reviewAttemptIsValid, resolvedAcceptance,
   claimsForProvider, stableHash, adapterFingerprint, providerWorkspaceHash,
   providerInputIdentity, validateArtifact, relevantHash, relevantSnapshot,
-  changeDiffIdentity
+  changeDiffIdentity, identityBridges = () => []
 }) {
   const invalidReceipt = (provider, validity, value) =>
     ({ provider, validity, status: value.status });
@@ -179,6 +201,14 @@ export function createReceiptValidity({
           currentDiff = changeDiffIdentity(id);
           currentPacket = relevantSnapshot(id)?.packetReviewHash;
         }
+        // The sandbox sync records each harness-only rewrite of the change's
+        // diff (landed replay, carried target edit, moved base) as a bridge
+        // from the identity before it to the one after. A verdict bound to
+        // any identity the bridges join to the current one still binds the
+        // same contribution; an author edit never produces a bridge.
+        const bridged = Boolean(currentDiff && value.rebind?.diffIdentity) &&
+          identityBridged(identityBridges(id), value.rebind.diffIdentity, currentDiff);
+        if (bridged) currentDiff = value.rebind.diffIdentity;
         reviewInvalidation = value.rebind?.mode !== "diff" ||
           !value.rebind?.diffIdentity || !currentDiff ||
           !value.rebind?.packetReviewHash || !currentPacket

@@ -1,0 +1,122 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "headless-read-allowlist-install-sh",
+      "requirementKey": "headless-read-allowlist",
+      "scenario": "installer ต่อท้ายกฎอ่าน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "headless-read-allowlist-2",
+      "requirementKey": "headless-read-allowlist",
+      "scenario": "ไม่มีกฎเขียนหรือ git ที่เปลี่ยน state",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "headless-read-allowlist-agent-git-status-git-diff",
+      "requirementKey": "headless-read-allowlist",
+      "scenario": "git แบบไม่มี argument",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "headless-read-allowlist-install-sh-2",
+      "requirementKey": "headless-read-allowlist",
+      "scenario": "opt-out",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-aware-diff-identity-sandbox-sync-alpha-merge",
+      "requirementKey": "landed-aware-diff-identity",
+      "scenario": "sync ที่ merge งานที่ land แล้วบันทึก bridge",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-aware-diff-identity-sandbox-sync",
+      "requirementKey": "landed-aware-diff-identity",
+      "scenario": "sync ที่ไม่เปลี่ยนอะไรไม่บันทึก bridge",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-aware-diff-identity-receipt-validity",
+      "requirementKey": "landed-aware-diff-identity",
+      "scenario": "receipt rebind ข้าม bridge",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-aware-diff-identity-receipt-validity-2",
+      "requirementKey": "landed-aware-diff-identity",
+      "scenario": "bridge ที่ไม่ถึง identity ปัจจุบัน",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-aware-diff-identity-receipt-validity-3",
+      "requirementKey": "landed-aware-diff-identity",
+      "scenario": "packet เปลี่ยนแม้มี bridge",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-aware-diff-identity-receipt-acceptance-review",
+      "requirementKey": "landed-aware-diff-identity",
+      "scenario": "base move ที่ reshape diff ยังทำให้ verdict หมดอายุ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-aware-diff-identity-sandbox-sync-2",
+      "requirementKey": "landed-aware-diff-identity",
+      "scenario": "sync ที่ทิ้ง conflict ไม่บันทึก bridge",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/sandbox-diff-identity.test.mjs .claude/harness/tests/concurrent-same-file.test.mjs .claude/harness/tests/receipt-validity.test.mjs && sh .claude/tests/harness/run-base-move-rebind-tests.sh) && (sh .claude/tests/harness/run-installer-tests.sh && node --test .claude/harness/tests/permission-allowlist.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/sandbox-diff-identity.test.mjs .claude/harness/tests/concurrent-same-file.test.mjs .claude/harness/tests/receipt-validity.test.mjs && sh .claude/tests/harness/run-base-move-rebind-tests.sh",
+        "sh .claude/tests/harness/run-installer-tests.sh && node --test .claude/harness/tests/permission-allowlist.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ]
+    }
+  }
+}

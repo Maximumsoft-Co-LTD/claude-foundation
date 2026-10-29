@@ -110,7 +110,7 @@ interactive ปกติข้ามส่วนนี้ได้
 
 ### Permission allowlist
 
-`.claude/settings.json` ยังเป็นของ project Installer จะ merge hook ที่ ship มา และต่อท้าย `permissions.allow` แบบแคบ เพื่อไม่ให้ Claude Code ขออนุมัติทุกขั้นของ harness ได้แก่ `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)` (draft ของ Change) และ `Edit(/openspec/investigations/**)` (record ของ Investigate) test runner ของโปรเจกต์ไม่ได้รับ rule: Build task แต่ละงานคืน verify เป็น `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) ซึ่ง rule ของ CLI ครอบคลุมอยู่แล้ว โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ PreToolUse ยังทำงานก่อน rule เหล่านี้ ให้ใส่ `--no-permission-allowlist` ทุกครั้งที่ install หรือ upgrade หากไม่ต้องการให้แตะ `permissions.allow`
+`.claude/settings.json` ยังเป็นของ project Installer จะ merge hook ที่ ship มา และต่อท้าย `permissions.allow` แบบแคบ เพื่อไม่ให้ Claude Code ขออนุมัติทุกขั้นของ harness ได้แก่ `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)` (draft ของ Change), `Edit(/openspec/investigations/**)` (record ของ Investigate) และคำสั่งอ่านอย่างเดียว ได้แก่ `Bash(find *)`, `Bash(grep *)`, `Bash(ls *)`, `Bash(head *)`, `Bash(wc *)` รวมถึงรูปแบบที่ `rtk ls` / `rtk grep` แปลงให้ และ Git แบบอ่านอย่างเดียว (`Bash(git status)`, `Bash(git status *)` และคู่เดียวกันสำหรับ `diff`, `log`, `show`) `cat` ไม่ได้รับ rule (rule แบบ prefix จะปล่อย `cat > file` ด้วย ให้อ่านไฟล์ผ่าน Read tool แทน) และไม่มี rule ใดให้สิทธิ์เขียน ลบ หรือ Git ที่เปลี่ยน state test runner ของโปรเจกต์ไม่ได้รับ rule: Build task แต่ละงานคืน verify เป็น `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) ซึ่ง rule ของ CLI ครอบคลุมอยู่แล้ว โดยเพิ่มเฉพาะ rule ที่ยังไม่มีต่อจาก rule ของผู้ใช้ ไม่ลบหรือสลับลำดับ entry เดิม และการรันซ้ำไม่เพิ่มอะไร guard ของ PreToolUse ยังทำงานก่อน rule เหล่านี้ ให้ใส่ `--no-permission-allowlist` ทุกครั้งที่ install หรือ upgrade หากไม่ต้องการให้แตะ `permissions.allow`
 
 ### Headless / CI (`claude -p`)
 
@@ -121,7 +121,11 @@ claude -p "/change <intent>" --allowedTools \
   "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
   "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
   "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" \
-  "Edit(/openspec/investigations/**)"
+  "Edit(/openspec/investigations/**)" \
+  "Bash(find *)" "Bash(grep *)" "Bash(ls *)" "Bash(head *)" "Bash(wc *)" \
+  "Bash(rtk ls *)" "Bash(rtk grep *)" \
+  "Bash(git status)" "Bash(git status *)" "Bash(git diff)" "Bash(git diff *)" \
+  "Bash(git log)" "Bash(git log *)" "Bash(git show)" "Bash(git show *)"
 ```
 
 check ของ Build รันผ่าน `claude-foundation exec` จึงไม่ต้องให้สิทธิ์ test runner เพิ่ม tool อื่นของโปรเจกต์เฉพาะเมื่อการรันต้องใช้ Claude Code ถือว่า path ใต้ `~/.claude/` เป็น sensitive path จึงควรวาง consumer project ไว้นอก directory นั้นเมื่อรันแบบไม่มีคนเฝ้า

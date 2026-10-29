@@ -1433,7 +1433,15 @@ each sync, so Build and Prove run with that work; `sandbox create` and
 `sandbox sync` name each carried path. Only bytes a Land journal still vouches
 for are carried; a target file the user edited is not. While unchanged, carried
 files are not the later change's contribution: they stay out of its task
-paths, review, diff identity, replay, and Apply. The harness treats the earlier landed bytes as part of the
+paths, review, diff identity, replay, and Apply. When a sync's own clean
+replay of uncommitted work changes the change's diff identity (a landed edit
+merged into a file both changes edited, or a carried target edit, with no
+conflict left behind and no base move in the same sync), the sync records the
+identity before and after it as one bridge in the runtime state. A review or
+acceptance verdict bound to any identity the bridges join to the current one
+still binds the same contribution, so it rebinds instead of costing another
+review wave; an author's own edit never records a bridge and expires the
+verdict as before, and a moved base keeps its own contract below. The harness treats the earlier landed bytes as part of the
 target: paths the later change left alone land beside it untouched, and for a
 path both changed it replays the landed edit into the later change's sandbox
 copy (a 3-way merge), proves again only what that invalidated, and applies.

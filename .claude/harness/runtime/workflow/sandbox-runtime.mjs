@@ -1376,6 +1376,25 @@ export function changeDiffCandidatePlan(context, id, state, candidate) {
   };
 }
 
+// A sync that merged landed work, carried a target edit, or replayed onto a
+// moved base rewrites sandbox bytes the change's author never touched. The
+// diff identity before and after such a harness-only rewrite are recorded as
+// one bridge, so a review verdict bound to the earlier identity still binds
+// the later one: the change's own contribution did not move, the harness
+// attests exactly which identities it joined, and nothing else can forge the
+// pair. A sync that left a conflict, or one that changed nothing, records no
+// bridge. Bounded so a long-lived sandbox never grows the state unboundedly.
+export const IDENTITY_BRIDGE_LIMIT = 32;
+
+export function recordIdentityBridge({ state, preDiffIdentity, postDiffIdentity, kinds, now }) {
+  if (!state?.workspace || !preDiffIdentity || !postDiffIdentity ||
+      preDiffIdentity === postDiffIdentity || !kinds?.length) return null;
+  const row = { from: preDiffIdentity, to: postDiffIdentity, kinds: [...kinds].sort(), at: now() };
+  const prior = Array.isArray(state.workspace.identityBridges) ? state.workspace.identityBridges : [];
+  state.workspace.identityBridges = [...prior, row].slice(-IDENTITY_BRIDGE_LIMIT);
+  return row;
+}
+
 // Copy baselines already carry the exact entry identities used by Apply.
 // Hash only the contribution: forwarding an untouched target path advances
 // both manifests equally. Whole-file before/after identities deliberately
@@ -2423,6 +2442,9 @@ export function createSandboxRuntime({
     // review accounting asks, and it is only observable across this boundary.
     const capturesBaseMove = !workspace.applied && replayCandidates(state)
       .some(({ record }) => record?.mode === "worktree");
+    // Also the `from` end of an identity bridge. A copy-only sync captures
+    // nothing here: no replay can rewrite its diff, and a third manifest walk
+    // would be pure cost.
     const preDiffIdentity = capturesBaseMove ? changeDiffIdentity(id, state) : null;
     const movement = workspace.applied ? null : rebaseWorktree(id, state, preserveAmendment);
     if (!preserveAmendment)
@@ -2470,6 +2492,21 @@ export function createSandboxRuntime({
     recordSandboxBaseMove({
       id, state, movement, preDiffIdentity, now, changeDiffIdentity
     });
+    // Only the harness's own clean replays of uncommitted work bridge
+    // identities. A moved base keeps its own contract (`lastBaseMove`): its
+    // replay may reshape the change's hunks, so a verdict expires and the
+    // attempt is released instead. A conflict leaves the agent's merge to the
+    // next review.
+    const harnessRewrites = [
+      ...(landedReplay.merged.length ? ["landed-replay"] : []),
+      ...(targetCarried.length ? ["target-carry"] : []),
+      ...(landedCarried.length ? ["landed-carry"] : [])
+    ];
+    const cleanRewrite = harnessRewrites.length && !movement?.rebased && !conflicts.length &&
+      !movement?.conflicts?.length && !landedReplay.conflicts.length;
+    if (cleanRewrite && preDiffIdentity)
+      recordIdentityBridge({ state, preDiffIdentity, kinds: harnessRewrites, now,
+        postDiffIdentity: changeDiffIdentity(id, state) });
     clearSnapshotCache(id);
     saveRuntime(state);
     // A replay rebuilds the root worktree, and a moved gitlink names a new

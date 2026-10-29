@@ -112,7 +112,7 @@ section for a normal interactive setup.
 
 ### Permission allowlist
 
-`.claude/settings.json` stays project-owned. The installer merges the shipped hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask for approval on every harness step: `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)` (the Change draft), and `Edit(/openspec/investigations/**)` (the Investigate record). Project test runners get no rule: each Build task returns its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) that the CLI rule already covers. It adds only missing rules after your own, never removes or reorders entries, and a rerun adds nothing. The PreToolUse guards still run before these rules. Pass `--no-permission-allowlist` on every install or upgrade to leave `permissions.allow` untouched.
+`.claude/settings.json` stays project-owned. The installer merges the shipped hooks and appends a narrow `permissions.allow` list, so Claude Code does not ask for approval on every harness step: `Bash(claude-foundation *)`, `Bash(.foundation/bin/claude-foundation *)`, `Bash(node .claude/harness/foundation.mjs *)`, `Edit(/.foundation/sandboxes/**)`, `Edit(/.foundation/repository-sandboxes/**)`, `Edit(/.foundation/drafts/**)` (the Change draft), `Edit(/openspec/investigations/**)` (the Investigate record), and read-only exploration: `Bash(find *)`, `Bash(grep *)`, `Bash(ls *)`, `Bash(head *)`, `Bash(wc *)`, the `rtk ls` / `rtk grep` proxied forms, and read-only Git (`Bash(git status)`, `Bash(git status *)`, and the same pair for `diff`, `log`, `show`). `cat` gets no rule (a prefix rule would also pre-allow `cat > file`; read files with the Read tool), and no rule grants a write, a delete, or Git that moves state. Project test runners get no rule: each Build task returns its verify as a `checkCommand` (`claude-foundation exec <change> --task <id> -- <verify>`) that the CLI rule already covers. It adds only missing rules after your own, never removes or reorders entries, and a rerun adds nothing. The PreToolUse guards still run before these rules. Pass `--no-permission-allowlist` on every install or upgrade to leave `permissions.allow` untouched.
 
 ### Headless / CI (`claude -p`)
 
@@ -123,7 +123,11 @@ claude -p "/change <intent>" --allowedTools \
   "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" \
   "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" \
   "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" \
-  "Edit(/openspec/investigations/**)"
+  "Edit(/openspec/investigations/**)" \
+  "Bash(find *)" "Bash(grep *)" "Bash(ls *)" "Bash(head *)" "Bash(wc *)" \
+  "Bash(rtk ls *)" "Bash(rtk grep *)" \
+  "Bash(git status)" "Bash(git status *)" "Bash(git diff)" "Bash(git diff *)" \
+  "Bash(git log)" "Bash(git log *)" "Bash(git show)" "Bash(git show *)"
 ```
 
 Build checks run through `claude-foundation exec`, so test runners need no grant; add other project tools only when a run needs them. Claude Code treats paths under `~/.claude/` as sensitive, so keep consumer projects outside that directory for unattended runs.

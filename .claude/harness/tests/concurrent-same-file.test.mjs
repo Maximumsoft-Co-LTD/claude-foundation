@@ -27,6 +27,17 @@ test("the root sync records the bytes it left behind for a file merged with land
     assert.match(record["src/shared.txt"].sandbox, /^[0-9a-f]{64}$/);
     assert.notEqual(record["src/shared.txt"].target, record["src/shared.txt"].sandbox,
       "the merged sandbox file holds alpha's own edit too");
+    // The sync's own clean replay rewrote alpha's diff: it records the identity
+    // it moved from and to, so alpha's review verdict rebinds across it.
+    const bridges = JSON.parse(runtimeText(w, "alpha")).workspace.identityBridges;
+    assert.equal(bridges?.length, 1, JSON.stringify(bridges));
+    assert.ok(bridges[0].kinds.includes("landed-replay"));
+    assert.match(bridges[0].from, /^[0-9a-f]{64}$/);
+    assert.match(bridges[0].to, /^[0-9a-f]{64}$/);
+    assert.notEqual(bridges[0].from, bridges[0].to);
+    // A second sync that changes nothing records no further bridge.
+    assert.equal(w.cli("sandbox", "sync", "alpha").status, 0);
+    assert.equal(JSON.parse(runtimeText(w, "alpha")).workspace.identityBridges.length, 1);
   } finally { cleanup(w); }
 });
 

@@ -586,4 +586,4 @@ if command -v git >/dev/null 2>&1 &&
 fi
 printf 'Next: describe the outcome with /change <intent>; the agent handles the workflow details.\n'
 printf 'Headless (claude -p): trust the workspace by running claude once interactively, or grant exactly the installed allowlist:\n'
-printf '  claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" "Edit(/openspec/investigations/**)"\n'
+printf '  claude -p "/change <intent>" --allowedTools "Bash(claude-foundation *)" "Bash(.foundation/bin/claude-foundation *)" "Bash(node .claude/harness/foundation.mjs *)" "Edit(/.foundation/drafts/**)" "Edit(/.foundation/sandboxes/**)" "Edit(/.foundation/repository-sandboxes/**)" "Edit(/openspec/investigations/**)" "Bash(find *)" "Bash(grep *)" "Bash(ls *)" "Bash(head *)" "Bash(wc *)" "Bash(rtk ls *)" "Bash(rtk grep *)" "Bash(git status)" "Bash(git status *)" "Bash(git diff)" "Bash(git diff *)" "Bash(git log)" "Bash(git log *)" "Bash(git show)" "Bash(git show *)"\n'

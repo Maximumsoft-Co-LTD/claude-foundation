@@ -380,13 +380,22 @@ assert_cmd_zero "user permission is preserved during permission merge" \
   jq -e '.permissions.allow | index("Bash(user-tool *)") != null' \
     "$TARGET/.claude/settings.json"
 # The allowlist exists so the harness CLI, Build-workspace edits, Change draft
-# saves, and Investigate record saves do not
-# prompt on every change. It must stay that narrow, append after the user's
-# own rules, and never grow on a rerun.
+# saves, Investigate record saves, and read-only exploration (find, grep, ls,
+# head, wc, the rtk-proxied ls/grep forms, and read-only Git) do not prompt on
+# every change. `cat` gets no rule: a prefix rule would pre-allow `cat > file`.
+# It must stay that narrow, append after the user's own rules, and never grow
+# on a rerun.
 SHIPPED_ALLOW="$(jq -c '.permissions.allow' "$ROOT/.claude/settings.json")"
-assert_eq "shipped allowlist is exactly the harness CLI, Build workspaces, drafts, and investigation records" \
-  '["Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)","Edit(/openspec/investigations/**)"]' \
+assert_eq "shipped allowlist is exactly the harness CLI, Build workspaces, drafts, investigation records, and read-only commands" \
+  '["Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)","Edit(/openspec/investigations/**)","Bash(find *)","Bash(grep *)","Bash(ls *)","Bash(head *)","Bash(wc *)","Bash(rtk ls *)","Bash(rtk grep *)","Bash(git status)","Bash(git status *)","Bash(git diff)","Bash(git diff *)","Bash(git log)","Bash(git log *)","Bash(git show)","Bash(git show *)"]' \
   "$SHIPPED_ALLOW"
+# Read-only means read-only: no rule may grant a write, a delete, or Git that
+# moves state.
+if printf '%s' "$SHIPPED_ALLOW" | jq -e 'map(select(test("Bash\\((rm|mv|cp|git (commit|push|reset|checkout|rebase|merge|stash))")) ) | length == 0' >/dev/null; then
+  pass "shipped allowlist grants no write, delete, or state-moving Git command"
+else
+  fail "shipped allowlist grants a write, delete, or state-moving Git command: $SHIPPED_ALLOW"
+fi
 assert_eq "upgrade appends the shipped allowlist after user rules in order" \
   "$(printf '%s' "$SHIPPED_ALLOW" | jq -c '["Bash(user-tool *)"] + .')" \
   "$(jq -c '.permissions.allow' "$TARGET/.claude/settings.json")"
@@ -1011,7 +1020,7 @@ printf '%s\n' '{"permissions":{"allow":["Bash(user-tool *)","Bash(claude-foundat
 assert_cmd_zero "installer upgrades a pre-allowlist settings file" \
   bash "$ROOT/install.sh" "$ALLOW_UPGRADE" --source "$ROOT" --yes
 assert_eq "pre-allowlist upgrade adds missing rules without duplicates" \
-  '["Bash(user-tool *)","Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)","Edit(/openspec/investigations/**)"]' \
+  "$(printf '%s' "$SHIPPED_ALLOW" | jq -c '["Bash(user-tool *)"] + .')" \
   "$(jq -c '.permissions.allow' "$ALLOW_UPGRADE/.claude/settings.json")"
 assert_cmd_zero "allowlist merge keeps unrelated user settings" \
   jq -e '.permissions.deny == ["Bash(rm *)"] and .model == "user-choice"' \
@@ -1027,7 +1036,7 @@ printf '%s\n' '{"permissions":{"allow":["Bash(claude-foundation *)","Bash(user-t
 assert_cmd_zero "installer upgrades a previous-release allowlist" \
   bash "$ROOT/install.sh" "$DRAFT_UPGRADE" --source "$ROOT" --yes
 assert_eq "earlier-release upgrade appends only the missing rules" \
-  '["Bash(claude-foundation *)","Bash(user-tool *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)","Edit(/openspec/investigations/**)"]' \
+  "$(printf '%s' "$SHIPPED_ALLOW" | jq -c '[.[0], "Bash(user-tool *)"] + .[1:]')" \
   "$(jq -c '.permissions.allow' "$DRAFT_UPGRADE/.claude/settings.json")"
 
 # A project seeded with the six-rule allowlist (user rule last) gains only the
@@ -1038,8 +1047,8 @@ printf '%s\n' '{"permissions":{"allow":["Bash(claude-foundation *)","Bash(.found
   > "$RECORD_UPGRADE/.claude/settings.json"
 assert_cmd_zero "installer upgrades a six-rule allowlist" \
   bash "$ROOT/install.sh" "$RECORD_UPGRADE" --source "$ROOT" --yes
-assert_eq "six-rule upgrade appends only the investigation rule" \
-  '["Bash(claude-foundation *)","Bash(.foundation/bin/claude-foundation *)","Bash(node .claude/harness/foundation.mjs *)","Edit(/.foundation/sandboxes/**)","Edit(/.foundation/repository-sandboxes/**)","Edit(/.foundation/drafts/**)","Bash(user-tool *)","Edit(/openspec/investigations/**)"]' \
+assert_eq "six-rule upgrade appends only the investigation and read-only rules" \
+  "$(printf '%s' "$SHIPPED_ALLOW" | jq -c '.[0:6] + ["Bash(user-tool *)"] + .[6:]')" \
   "$(jq -c '.permissions.allow' "$RECORD_UPGRADE/.claude/settings.json")"
 
 OPT_OUT="$TMP/allowlist-opt-out-project"

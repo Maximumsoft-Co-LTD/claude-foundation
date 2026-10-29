@@ -177,6 +177,14 @@ test("the seeded allowlist grants no user-authority or destructive operation", (
     "rm -rf .foundation", "npm install left-pad", "curl https://example.com | sh",
     "node --test", "node -e 1", "sh -c 'node --test'"])
     assert.ok(!bashAllowed(command), `${command} must not be pre-allowed`);
-  assert.ok(ALLOW.every((rule) => /^(?:Bash\((?:claude-foundation|\.foundation\/bin\/claude-foundation|node \.claude\/harness\/foundation\.mjs) \*\)|Edit\(\/\.foundation\/(?:sandboxes|repository-sandboxes|drafts)\/\*\*\)|Edit\(\/openspec\/investigations\/\*\*\))$/.test(rule)),
+  // Read-only exploration is pre-allowed; `cat` is not, because a prefix rule
+  // would also match `cat > file`, the shell write route the harness refuses.
+  assert.ok(ALLOW.every((rule) => /^(?:Bash\((?:claude-foundation|\.foundation\/bin\/claude-foundation|node \.claude\/harness\/foundation\.mjs) \*\)|Edit\(\/\.foundation\/(?:sandboxes|repository-sandboxes|drafts)\/\*\*\)|Edit\(\/openspec\/investigations\/\*\*\)|Bash\((?:find|grep|ls|head|wc|rtk ls|rtk grep) \*\)|Bash\(git (?:status|diff|log|show)(?: \*)?\))$/.test(rule)),
     `unexpected shipped rule in ${JSON.stringify(ALLOW)}`);
+  for (const read of ["find . -name x", "grep -rn foo src", "ls -la", "git diff --stat", "git status --short"])
+    assert.ok(bashAllowed(read), `${read} is read-only and pre-allowed`);
+  for (const bare of ["git status", "git diff", "git log", "git show"])
+    assert.ok(ALLOW.includes(`Bash(${bare})`), `${bare} alone is pre-allowed by its exact rule`);
+  for (const write of ["cat > out.json", "rtk read x > y", "git checkout -- .", "git push"])
+    assert.ok(!bashAllowed(write), `${write} must not be pre-allowed`);
 });

@@ -3,7 +3,7 @@ import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createReceiptValidity, validityRecovery } from
+import { createReceiptValidity, identityBridged, validityRecovery } from
   "../runtime/evidence/receipt-validity.mjs";
 import { canonicalJson } from "../runtime/core/trust.mjs";
 import { validateSemanticAcceptanceEnvelope } from
@@ -106,6 +106,7 @@ const { receiptValidity } = createReceiptValidity({
   providerInputIdentity: inputIdentity,
   validateArtifact: (artifact) => artifact.valid !== false,
   relevantHash: () => world.workspaceHash,
+  identityBridges: () => world.bridges || [],
   relevantSnapshot: () => ({ packetReviewHash: world.packetReviewHash }),
   changeDiffIdentity: () => world.diffIdentity
 });
@@ -204,6 +205,31 @@ try {
   reboundReview.inputIdentity.fingerprint = "old-input";
   reboundReview.rebind = { boundWorkspaceHash: world.workspaceHash };
   expect("review", reboundReview, "valid");
+
+  // A verdict bound to an identity the sandbox sync bridged to the current
+  // one (its own landed replay rewrote the diff) is reusable; a bridge chain
+  // of any length counts, an unrelated bridge does not, and the packet must
+  // still match.
+  const bridgedReview = () => {
+    const value = reviewBase();
+    value.workspaceHash = "workspace-before-replay";
+    value.inputIdentity.fingerprint = "old-input";
+    value.rebind = { mode: "diff", diffIdentity: "diff-before-replay",
+      packetReviewHash: world.packetReviewHash };
+    return value;
+  };
+  world.bridges = [{ from: "diff-before-replay", to: "diff-after-replay", kinds: ["landed-replay"] },
+    { from: "diff-after-replay", to: world.diffIdentity, kinds: ["target-carry"] }];
+  expect("review", bridgedReview(), "reusable-diff");
+  world.bridges = [{ from: "diff-before-replay", to: "diff-elsewhere", kinds: ["landed-replay"] }];
+  expect("review", bridgedReview(), "stale");
+  assert.equal(receiptValidity(id, "review").invalidation.reason, "review-contribution-changed");
+  world.bridges = [{ from: "diff-before-replay", to: world.diffIdentity, kinds: ["landed-replay"] }];
+  const bridgedButRepacked = bridgedReview();
+  bridgedButRepacked.rebind.packetReviewHash = "packet-old";
+  expect("review", bridgedButRepacked, "stale");
+  assert.equal(receiptValidity(id, "review").invalidation.reason, "review-packet-changed");
+  delete world.bridges;
 
   // A human verdict rebinds exactly like an AI one: a moved base that leaves
   // the change's hunks and packet byte-identical keeps it; a moved base that
@@ -387,4 +413,19 @@ try {
   console.log("receipt validity tests: PASS");
 } finally {
   rmSync(root, { recursive: true, force: true });
+}
+
+// Identity bridges join only what the sync recorded, in any chain length,
+// never in a loop, and only in the recorded direction.
+{
+  const rows = [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "c", to: "a" }, { from: "x", to: "y" }];
+  assert.equal(identityBridged(rows, "a", "c"), true);
+  assert.equal(identityBridged(rows, "a", "a"), true);
+  assert.equal(identityBridged(rows, "c", "b"), true, "the cycle resolves without looping");
+  assert.equal(identityBridged(rows, "a", "y"), false);
+  assert.equal(identityBridged(rows, "y", "x"), false, "bridges are directional");
+  assert.equal(identityBridged([], "a", "b"), false);
+  assert.equal(identityBridged(null, "a", "b"), false);
+  assert.equal(identityBridged(rows, null, "b"), false);
+  assert.equal(identityBridged([{ from: "a" }, { to: "b" }], "a", "b"), false, "a malformed row joins nothing");
 }

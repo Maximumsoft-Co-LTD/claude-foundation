@@ -792,7 +792,10 @@ const { receiptValidity } = createReceiptValidity({
   relevantSnapshot,
   // Late-bound: the sandbox runtime is composed after evidence, and receipt
   // validity only consults diff identity at command time, long after both.
-  changeDiffIdentity: (id, state) => sandboxRuntime.changeDiffIdentity(id, state)
+  changeDiffIdentity: (id, state) => sandboxRuntime.changeDiffIdentity(id, state),
+  // The sync's record of its own clean diff rewrites (landed replay, carried
+  // target edit, moved base): a review verdict rebinds across them.
+  identityBridges: (id) => loadRuntime(id)?.workspace?.identityBridges || []
 });
 const changeValidationRuntime = createChangeValidationRuntime({
   policyProviderSetupActions,

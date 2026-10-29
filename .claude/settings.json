@@ -7,7 +7,22 @@
       "Edit(/.foundation/sandboxes/**)",
       "Edit(/.foundation/repository-sandboxes/**)",
       "Edit(/.foundation/drafts/**)",
-      "Edit(/openspec/investigations/**)"
+      "Edit(/openspec/investigations/**)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(ls *)",
+      "Bash(head *)",
+      "Bash(wc *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk grep *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show)",
+      "Bash(git show *)"
     ]
   },
   "hooks": {

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A sandbox sync whose own clean replay of uncommitted work changes the
+  change's diff identity (landed replay or carried target edit, no conflict
+  left, no base move in the same sync) records the identity before and after
+  as a bridge. Review and acceptance receipts rebind across recorded bridges,
+  so a stacked change no longer spends an AI review wave on work an earlier
+  change landed; an author edit still expires the verdict, and a moved base
+  keeps its expire-and-release contract.
+- The shipped `permissions.allow` adds read-only exploration rules (`find`,
+  `grep`, `ls`, `head`, `wc`, the `rtk ls`/`grep` forms, and
+  `git status`/`diff`/`log`/`show`) so a headless agent reads code without a
+  prompt. `cat` gets no rule because a prefix rule would also pre-allow
+  `cat > file`; no rule grants a write, a delete, or state-moving Git.
+
 - Land of a stacked change accepts a file the harness's own sandbox sync merged
   cleanly with landed work while neither side changed since, in the root
   workspace and in repository sandboxes, instead of re-merging and refusing it
