@@ -1466,7 +1466,7 @@ export function createSandboxRuntime({
   selectedRepositories, cleanupRepositorySandboxes, cleanupAppliedSandbox,
   repositoryCatalog,
   clearSnapshotCache, validate, repositorySelectionIdsAt, contractFingerprint,
-  executionFingerprint, taskBlocks, proofPath, relevantHash, now, fail,
+  executionFingerprint, taskBlocks, proofPath, proofAdvancePath = () => null, relevantHash, now, fail,
   markBlocked,
   recordScheduler,
   declaredSurfaceMatcher = null
@@ -1888,6 +1888,10 @@ export function createSandboxRuntime({
     invalidateProof: (id, state) => {
       clearSnapshotCache(id);
       if (existsSync(proofPath(id))) rmSync(proofPath(id));
+      // Same rule as a sync: a checkpoint left behind would read as current
+      // proof while the lifecycle is back in Build.
+      const checkpoint = proofAdvancePath(id);
+      if (checkpoint && existsSync(checkpoint)) rmSync(checkpoint);
       transitionLifecycleState(state, "building", "sandbox-replay-recovered");
       // No pre-crash diff comparison is available to authorize review rebinding.
       delete state.lastBaseMove;
@@ -2350,7 +2354,13 @@ export function createSandboxRuntime({
     // Sync projects the already-approved bytes; its bookkeeping revision is
     // not another product decision. Content changes still require approval.
     if (approvedSource) state.specApproval.revision = Number(state.contractRevision || 0);
-    if (invalidated && existsSync(proofPath(id))) rmSync(proofPath(id));
+    if (invalidated) {
+      if (existsSync(proofPath(id))) rmSync(proofPath(id));
+      // The proof-advance checkpoint describes the pre-sync workspace; left in
+      // place it would read as current proof while the lifecycle is building.
+      const checkpoint = proofAdvancePath(id);
+      if (checkpoint && existsSync(checkpoint)) rmSync(checkpoint);
+    }
   }
 
   function activeSandboxAmendment(id, state) {

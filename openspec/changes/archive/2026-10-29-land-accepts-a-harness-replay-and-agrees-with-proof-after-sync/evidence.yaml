@@ -1,0 +1,95 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "replay-carries-landed-land-preflight-b-repository-backend",
+      "requirementKey": "replay-carries-landed",
+      "scenario": "clean replay ใน repository sandbox",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "replay-carries-landed-advance-alpha-through-archived",
+      "requirementKey": "replay-carries-landed",
+      "scenario": "clean replay ใน root workspace",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "replay-carries-landed-land-preflight",
+      "requirementKey": "replay-carries-landed",
+      "scenario": "target เปลี่ยนหลัง sync",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "replay-carries-landed-land-preflight-2",
+      "requirementKey": "replay-carries-landed",
+      "scenario": "sync รายงาน conflict ที่ยังไม่ resolve",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-agrees-with-lifecycle-sandbox-sync",
+      "requirementKey": "proof-agrees-with-lifecycle",
+      "scenario": "sync ที่ invalidate ลบ checkpoint",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-agrees-with-lifecycle-sandbox-sync-2",
+      "requirementKey": "proof-agrees-with-lifecycle",
+      "scenario": "sync ที่ไม่ invalidate คง checkpoint",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-agrees-with-lifecycle-coordinator-advance-through-proven",
+      "requirementKey": "proof-agrees-with-lifecycle",
+      "scenario": "cursor ว่างและ lifecycle building",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "proof-agrees-with-lifecycle-advance-through-proven",
+      "requirementKey": "proof-agrees-with-lifecycle",
+      "scenario": "lifecycle proven และ cursor ตรง",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/repository-delivery-saga.test.mjs .claude/harness/tests/target-edits.test.mjs .claude/harness/tests/concurrent-same-file.test.mjs) && (node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/sandbox-runtime-sync.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/repository-delivery-saga.test.mjs .claude/harness/tests/target-edits.test.mjs .claude/harness/tests/concurrent-same-file.test.mjs",
+        "node --test .claude/harness/tests/advance-runtime.test.mjs .claude/harness/tests/sandbox-runtime-sync.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ]
+    }
+  }
+}

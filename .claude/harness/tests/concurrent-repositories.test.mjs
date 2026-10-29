@@ -112,12 +112,17 @@ test("two changes that create the same new file end in a stop or a landing, neve
     const synced = w.cli("sandbox", "sync", "bravo");
     assert.match(synced.stdout, /CONFLICT backend:fresh\.txt/);
     // Unresolved, the sync has already run against these bytes, so Land stops
-    // with the repository and path named instead of syncing again forever.
+    // with the conflict's resolve route — repository, path and the sync
+    // --resolve command — instead of syncing again forever or a bare refusal.
     const trail = landTrail(w, "bravo", { limit: 6 });
     const stop = trail.at(-1);
     assert.notEqual(stop.action, "DONE", JSON.stringify(stop));
     assert.ok(trail.length < 6, "the stop ends the trail, not the attempt limit");
-    assert.match(stop.reason, /overwrite an uncommitted target path in 'backend': fresh\.txt/);
+    assert.equal(stop.legacyAction, "REPAIR_SYNC_CONFLICT", JSON.stringify(stop));
+    assert.equal(stop.actor, "agent");
+    assert.deepEqual(stop.conflicts, [{ repository: "backend", path: "fresh.txt" }]);
+    assert.match(stop.reason, /repository 'backend' still holds unresolved conflicts .* fresh\.txt/);
+    assert.equal(stop.resolveCommand, `claude-foundation sandbox sync ${w.ids.bravo} --resolve fresh.txt`);
     assert.equal(w.read("backend/fresh.txt"), "alpha fresh\n", "the landed file is untouched");
     // Resolved by the agent, the next landing archives with the merged file.
     editRepositorySandbox(sandboxes.bravo, "bravo", { "fresh.txt": () => "alpha fresh\nbravo fresh\n" });

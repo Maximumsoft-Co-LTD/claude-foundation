@@ -52,6 +52,8 @@ function syncFixture(id = "sync-copy", { unchanged = false, hashChanged = false 
   write(join(sandbox, "conflict.txt"), "sandbox-new\n");
   const proof = join(root, ".foundation", "proof", `${id}.json`);
   write(proof, "{}\n");
+  const proofAdvance = join(root, ".foundation", "evidence", id, "proof-advance.json");
+  write(proofAdvance, JSON.stringify({ status: "PASS", workspaceHash: "relevant-hash" }) + "\n");
   const targetManifest = {
     "same.txt": "same", "already.txt": "new", "forward.txt": "new",
     "resolved.txt": "new", "conflict.txt": "new"
@@ -106,6 +108,7 @@ function syncFixture(id = "sync-copy", { unchanged = false, hashChanged = false 
     taskBlocks: (text) => text.includes("[x]")
       ? [{ id: "T001", text: "T001 keep progress", done: true }] : [],
     proofPath: () => proof,
+    proofAdvancePath: () => proofAdvance,
     relevantHash: () => {
       onHash();
       return hashChanged && hashReads++ > 0 ? "changed-hash" : "relevant-hash";
@@ -115,7 +118,7 @@ function syncFixture(id = "sync-copy", { unchanged = false, hashChanged = false 
   });
   return {
     root, sandbox, source, destination, state, runtime, manifestReads, targetManifest,
-    sandboxManifest,
+    sandboxManifest, proofAdvance,
     setRepositoryScope(value) { repositoryScope = value; },
     setSourceHash(value) { sourceHash = value; },
     onHash(callback) { onHash = callback; },
@@ -145,6 +148,8 @@ test("copy sync reconciles target movement and preserves task progress", () => {
   assert.equal(fixture.state.workspace.recovery, undefined);
   assert.equal(existsSync(join(fixture.root, ".foundation", "proof", "sync-copy.json")),
     false);
+  assert.equal(existsSync(fixture.proofAdvance), false,
+    "an invalidating sync also drops the proof-advance checkpoint");
   assert.equal(fixture.saves(), 1);
   assert.deepEqual(fixture.manifestReads, [fixture.root, fixture.sandbox],
     "copy-only sync must not walk a third manifest for an unused base-move identity");
@@ -465,6 +470,7 @@ test("repeated no-op sync preserves proof bytes and proven state", () => {
     capture(() => fixture.runtime.sync("no-op"));
     capture(() => fixture.runtime.sync("no-op"));
     assert.equal(readFileSync(proof, "utf8"), original);
+    assert.equal(existsSync(fixture.proofAdvance), true, "a no-op sync keeps the proof checkpoint");
     assert.equal(fixture.state.status, "proven");
     assert.equal(fixture.state.contractRevision, 0);
     assert.equal(fixture.state.executionRevision, 0);
@@ -476,6 +482,8 @@ test("sync invalidates proof for content movement even when the contract is unch
   try {
     capture(() => fixture.runtime.sync("content-change"));
     assert.equal(existsSync(join(fixture.root, ".foundation", "proof", "content-change.json")), false);
+    assert.equal(existsSync(fixture.proofAdvance), false,
+      "the checkpoint would otherwise read as current proof while the lifecycle is building");
     assert.equal(fixture.state.status, "building");
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 });

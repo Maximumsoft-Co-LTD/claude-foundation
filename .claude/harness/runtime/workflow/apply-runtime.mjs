@@ -56,9 +56,9 @@ import {
   ROOT_POINTER_MOVED, repositoryPointerStop, rootPointerMoves, rootPointerRepairMessage
 } from "./land-verification.mjs";
 import {
-  carriedLandedExcludes, landedChangeSyncStop, landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths,
-  replayLandedEdit, restorableTargetPaths, targetConflictStop, targetEditCarried,
-  targetEditSyncStop
+  carriedLandedExcludes, landedChangeSyncStop, landedConflictStop, landedTargetPaths, otherLandedOutput,
+  parseRestoreTargetPaths, pendingLandedConflict, replayCarriesLanded, replayLandedEdit,
+  restorableTargetPaths, targetConflictStop, targetEditCarried, targetEditSyncStop
 } from "./target-edits.mjs";
 import {
   complianceEnabledFromConfig, renderComplianceChangeRecord, renderReviewRecord,
@@ -367,6 +367,17 @@ function stopForTargetConflict(context, id, state, paths, cause, options = {}) {
     const stop = landedChangeSyncStop({ changeId: id, landedBy });
     return context.blockWithDecision(id, stop.code, stop.decision);
   }
+  // The replay already ran and left conflicts on these exact bytes: another
+  // sync would report them again, so the agent gets the resolve route.
+  const pending = landed.filter((path) => pendingLandedConflict({
+    record: state.workspace, path,
+    targetIdentity: context.pathIdentity(join(context.root, path)),
+    sandboxIdentity: context.pathIdentity(join(state.workspace.path, path))
+  }));
+  if (pending.length && context.blockWithDecision) {
+    const stop = landedConflictStop({ changeId: id, paths: pending, landedBy });
+    return context.blockWithDecision(id, stop.code, stop.decision);
+  }
   carryTargetEdits(context, id, state, paths, landedBy, options);
   const stop = targetConflictStop({ changeId: id, paths, snapshot, cause, landedBy });
   if (stop.decision && context.blockWithDecision)
@@ -487,7 +498,13 @@ export function gitApplyInputsOperation(context, id, sandboxPath,
     return Boolean(row) && row.target === context.pathIdentity(join(context.root, path)) &&
       row.sandbox === context.pathIdentity(join(sandboxPath, path));
   };
-  const carried = (path) => resolvedLanded(path) || targetEditCarried({
+  // The harness's own clean replay of landed work carries it by construction.
+  const replayed = (path) => replayCarriesLanded({
+    record: state.workspace, path,
+    targetIdentity: context.pathIdentity(join(context.root, path)),
+    sandboxIdentity: context.pathIdentity(join(sandboxPath, path))
+  });
+  const carried = (path) => resolvedLanded(path) || replayed(path) || targetEditCarried({
     root: context.root, sandboxPath, path, baseBytes: baseBlob(context, state, path) });
   // An untracked-only or mode-only projection has no Git patch, but the
   // transaction below still copies it and binds its bytes/mode. Patch-check
@@ -1226,6 +1243,11 @@ export function createApplyRuntime({
             // it, proves again, and continues, as it does for the root.
             if (error.details?.landedSync) {
               const stop = landedChangeSyncStop({ changeId: id, landedBy: error.details.landedBy });
+              return blockWithDecision(id, stop.code, stop.decision);
+            }
+            if (error.details?.landedConflict) {
+              const stop = landedConflictStop({ changeId: id, repository: error.details.repository,
+                paths: error.details.conflicts, landedBy: error.details.landedBy || {} });
               return blockWithDecision(id, stop.code, stop.decision);
             }
             fail(error.message, 1, { code: error.code, owner: error.owner,

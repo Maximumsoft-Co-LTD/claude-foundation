@@ -1432,6 +1432,7 @@ const sandboxRuntime = createSandboxRuntime({
   executionFingerprint,
   taskBlocks,
   proofPath,
+  proofAdvancePath: (id) => join(EVIDENCE_VAULT, id, "proof-advance.json"),
   relevantHash,
   now,
   fail: die

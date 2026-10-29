@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  isGeneratedArtifactPath, landAppliedOutput, landedChangeSyncStop, landedTargetPaths,
-  otherLandedOutput, parseRestoreTargetPaths, replayLandedEdit, resolutionKeepsLanded,
-  restorableTargetPaths,
+  isGeneratedArtifactPath, landAppliedOutput, landedChangeSyncStop, landedConflictStop,
+  landedTargetPaths, otherLandedOutput, parseRestoreTargetPaths, pendingLandedConflict,
+  replayCarriesLanded, replayLandedEdit, resolutionKeepsLanded, restorableTargetPaths,
   shellAuditCount, targetConflictStop, targetEditCarried, targetEditDigest, targetEditIssues,
   targetEditPaths, targetEditSyncStop
 } from "../runtime/workflow/target-edits.mjs";
@@ -299,4 +299,65 @@ test("non-overlapping target edits sync automatically and are never offered for 
   assert.equal(action.action, "REPAIR");
   assert.equal(action.actor, "harness");
   assert.equal(action.automaticRecovery.kind, "sandbox-sync");
+});
+
+// The harness's own clean replay is a carry: the sync produced the sandbox
+// bytes from the target bytes, so Land applying them drops nothing landed.
+// Any later edit to either side, or a pending conflict, voids it.
+test("a clean replay against unchanged bytes carries the landed work", () => {
+  const record = {
+    landedReplay: { "a.txt": "sandbox-1" },
+    landedSynced: { "a.txt": { target: "target-1", sandbox: "sandbox-1" } }
+  };
+  const current = { record, path: "a.txt", targetIdentity: "target-1", sandboxIdentity: "sandbox-1" };
+  assert.equal(replayCarriesLanded(current), true);
+  assert.equal(replayCarriesLanded({ ...current, targetIdentity: "target-2" }), false,
+    "a target edited after the sync is not what the replay merged");
+  assert.equal(replayCarriesLanded({ ...current, sandboxIdentity: "sandbox-2" }), false,
+    "a sandbox edited after the replay is the agent's work to carry");
+  assert.equal(replayCarriesLanded({ ...current, record: { landedReplay: record.landedReplay } }), false,
+    "a replay without the bytes it merged against proves nothing");
+  assert.equal(replayCarriesLanded({ ...current,
+    record: { ...record, landedConflicts: { "a.txt": { landedBy: "earlier" } } } }), false,
+    "a pending conflict on the path is never a carry");
+  assert.equal(replayCarriesLanded({ ...current, record: null }), false);
+});
+
+test("a pending landed conflict is reported only against the bytes the sync saw", () => {
+  const record = {
+    landedConflicts: { "a.txt": { landedBy: "earlier" } },
+    landedSynced: { "a.txt": { target: "target-1", sandbox: "sandbox-1" } }
+  };
+  const current = { record, path: "a.txt", targetIdentity: "target-1", sandboxIdentity: "sandbox-1" };
+  assert.equal(pendingLandedConflict(current), true);
+  assert.equal(pendingLandedConflict({ ...current, sandboxIdentity: "sandbox-2" }), false,
+    "an edited sandbox copy is a new merge the sync has not judged");
+  assert.equal(pendingLandedConflict({ ...current, path: "b.txt" }), false);
+  assert.equal(pendingLandedConflict({ ...current, record: {} }), false);
+});
+
+test("the landed-conflict stop names the sandbox copies and the resolve route", () => {
+  const stop = landedConflictStop({ changeId: "demo", repository: "backend",
+    paths: ["server.mjs", "store.mjs"], landedBy: { "server.mjs": "earlier" } });
+  assert.equal(stop.code, "landed-conflict");
+  assert.equal(stop.decision.kind, "landed-conflict");
+  assert.equal(stop.decision.repository, "backend");
+  assert.deepEqual(stop.decision.paths, ["server.mjs", "store.mjs"]);
+  assert.match(stop.decision.summary, /repository 'backend'/);
+  assert.match(stop.decision.options[0].outcome,
+    /sandbox sync demo --resolve server\.mjs,store\.mjs/);
+  assert.equal(stop.decision.automaticRecovery, undefined, "the harness never resolves intent");
+  const action = advanceFailureAction("demo",
+    Object.assign(new Error(stop.decision.summary), { decision: stop.decision }),
+    { stage: "land", through: "archived" });
+  assert.equal(action.action, "REPAIR");
+  assert.equal(action.legacyAction, "REPAIR_SYNC_CONFLICT");
+  assert.equal(action.actor, "agent");
+  assert.deepEqual(action.conflicts, [
+    { repository: "backend", path: "server.mjs" }, { repository: "backend", path: "store.mjs" }]);
+  assert.match(action.instruction, /sandbox sync --resolve/);
+  assert.equal(action.resolveCommand, "claude-foundation sandbox sync demo --resolve server.mjs,store.mjs");
+  assert.equal(action.resumeCommand, "claude-foundation advance demo --through archived");
+  const root = landedConflictStop({ changeId: "demo", paths: ["x.txt"] });
+  assert.doesNotMatch(root.decision.summary, /repository/);
 });

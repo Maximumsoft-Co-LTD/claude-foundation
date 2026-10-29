@@ -1455,13 +1455,23 @@ merges the two edits in the sandbox copy, and the next sync records that
 resolution bound to the exact target and sandbox bytes it was made against.
 Repository Land then accepts the sandbox file when it holds the target's edit
 (merging the base-to-target edit into it changes nothing, and the file mode
-matches) or when a recorded resolution still matches both files and keeps every
-landed edit outside the lines both changes rewrote; those conflicting lines are
-the agent's to decide. A stop on a path an earlier change landed routes to the
-harness's own sync first, as for the root. Any other uncommitted target edit,
-including one made after the landing or one whose resolution a later edit voided,
-stops Land naming the repository and path. A landed file the repository sandbox
-did not edit is neither replayed nor copied into it.
+matches), when the harness's own sync merged the landed edit into it cleanly
+and neither the target nor the sandbox file changed since (the replay produced
+those bytes from the target, so applying them drops nothing landed, even where
+merging the same hunks again would report a conflict), or when a recorded
+resolution still matches both files and keeps every landed edit outside the
+lines both changes rewrote; those conflicting lines are the agent's to decide.
+The same clean-replay rule applies to the root workspace. A stop on a path an
+earlier change landed routes to the harness's own sync first, as for the root;
+a target edited after that sync routes to it again. When the sync left a
+conflict on exactly the current bytes, Land returns the conflict with its
+`sandbox sync --resolve` route instead of a bare overwrite refusal. Any other
+uncommitted target edit, including one made after the landing or one whose
+resolution a later edit voided, stops Land naming the repository and path. A
+landed file the repository sandbox did not edit is neither replayed nor copied
+into it. A sync that invalidates proof also removes the proof-advance
+checkpoint, so `advance` runs proof again instead of reporting current proof
+while the lifecycle is back in Build.
 
 The projection is confined to Git-tracked files plus paths declared in
 `tasks.md`. An untracked path no task names is neither evidence surface nor a

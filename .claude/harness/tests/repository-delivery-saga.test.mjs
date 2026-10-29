@@ -476,3 +476,75 @@ test("a path an earlier delivery wrote that the sandbox dropped stops instead of
       `${repository.id}:new\n`);
   } finally { value.cleanup(); }
 });
+
+// The sync's own clean replay carries the landed work: once it recorded the
+// merged sandbox bytes and the target bytes it merged against, Land applies
+// them without re-merging (a second merge of adjacent hunks may conflict even
+// though nothing landed was dropped).
+test("a clean replay the sync recorded against the current bytes is carried", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    const landed = lines("landed", "l7");
+    const merged = lines("landed", "mine7");
+    writeFileSync(join(repository.target, "lines.txt"), landed);
+    writeFileSync(join(repository.sandbox, "lines.txt"), merged);
+    landedJournal(value, repository, "lines.txt", landed);
+    value.update((state) => {
+      state.repositories[repository.id].landedReplay = { "lines.txt": digest(merged) };
+      state.repositories[repository.id].landedSynced = {
+        "lines.txt": { target: digest(landed), sandbox: digest(merged) }
+      };
+    });
+    assert.doesNotThrow(() => value.saga.preflight("change-a"));
+    assert.equal(value.saga.apply("change-a").status, "PASS");
+    assert.equal(readFileSync(join(repository.target, "lines.txt"), "utf8"), merged);
+  } finally { value.cleanup(); }
+});
+
+test("a target edited after the replay routes back to the sync, never to a carry", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    const landed = lines("landed", "l7");
+    const merged = lines("landed", "mine7");
+    writeFileSync(join(repository.sandbox, "lines.txt"), merged);
+    landedJournal(value, repository, "lines.txt", landed);
+    value.update((state) => {
+      state.repositories[repository.id].landedReplay = { "lines.txt": digest(merged) };
+      state.repositories[repository.id].landedSynced = {
+        "lines.txt": { target: digest(landed), sandbox: digest(merged) }
+      };
+    });
+    // The target moved on since the sync: not what the replay merged.
+    const moved = lines("landed-again", "l7");
+    writeFileSync(join(repository.target, "lines.txt"), moved);
+    landedJournal(value, repository, "lines.txt", moved);
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.code === "REPOSITORY_DELIVERY_FAILED" && error.details.landedSync === true &&
+      error.details.landedConflict === undefined);
+  } finally { value.cleanup(); }
+});
+
+test("a conflict the sync left against the current bytes is refused with the resolve route", () => {
+  const value = fixture();
+  try {
+    const repository = value.repositories[0];
+    const landed = lines("landed", "l7");
+    const mine = lines("mine", "mine7");
+    writeFileSync(join(repository.target, "lines.txt"), landed);
+    writeFileSync(join(repository.sandbox, "lines.txt"), mine);
+    landedJournal(value, repository, "lines.txt", landed);
+    value.update((state) => {
+      state.repositories[repository.id].landedConflicts = { "lines.txt": { landedBy: "earlier-change" } };
+      state.repositories[repository.id].landedSynced = {
+        "lines.txt": { target: digest(landed), sandbox: digest(mine) }
+      };
+    });
+    assert.throws(() => value.saga.preflight("change-a"), (error) =>
+      error.code === "REPOSITORY_DELIVERY_FAILED" && error.details.landedConflict === true &&
+      error.details.landedSync === undefined &&
+      JSON.stringify(error.details.conflicts) === JSON.stringify(["lines.txt"]) &&
+      error.details.landedBy["lines.txt"] === "earlier-change");
+  } finally { value.cleanup(); }
+});

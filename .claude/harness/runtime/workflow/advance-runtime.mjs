@@ -283,6 +283,18 @@ function failureEnvelope(id, error, { stage = "build", through = null } = {}) {
       "files again and applies them once they carry the target edits.",
     recoveryType: "EDIT", resumeCommand: resume(id, "archived")
   });
+  if (automatic?.kind === "resolve-landed-conflict") return envelope(id, "REPAIR", {
+    legacyAction: "REPAIR_SYNC_CONFLICT", actor: "agent", owner: "agent",
+    boundary: "conflict", reason, decision: error.decision,
+    conflicts: automatic.paths.map((path) => ({ repository: automatic.repository, path })),
+    resolveCommand: error.decision?.resolveCommand || null,
+    command: resume(id, "archived"),
+    instruction: "The harness replay left these sandbox copies with conflicts against work an " +
+      "earlier change landed. Edit each listed sandbox file to the merge of both changes, keeping " +
+      "every landed edit, then record it with the sandbox sync --resolve command named in the " +
+      "decision and run the resume command; Land proves the merged files again before applying.",
+    recoveryType: "EDIT", resumeCommand: resume(id, "archived")
+  });
   if (automatic?.kind === "apply-recovery") return envelope(id, "REPAIR", {
     legacyAction: "RECOVER_APPLY_TRANSACTION", actor: "harness",
     boundary: "internal-recovery", reason,

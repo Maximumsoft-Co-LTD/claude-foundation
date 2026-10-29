@@ -59,3 +59,26 @@ test("three changes on one file at different lines each sync onto the moved targ
     assert.equal(w.operations.count, 12, "operations stay linear in the number of changes");
   } finally { cleanup(w); }
 });
+
+// Scenario: two changes edit lines two apart in one file. The sync merges the
+// landed line in cleanly and Land accepts that replay as carrying it; the
+// agent never reconciles by hand.
+test("a clean replay two lines from the landed edit lands without agent reconciliation", () => {
+  const w = world();
+  try {
+    for (const label of ["alpha", "bravo"]) startChange(w, label, ["src/shared.txt"]);
+    const sandboxes = {};
+    for (const [label, line] of [["alpha", 3], ["bravo", 5]]) {
+      sandboxes[label] = buildChange(w, label);
+      agentEdit(sandboxes[label], label, { "src/shared.txt": replaceLine(line, `${label}-edit`) });
+      proveChange(w, label);
+    }
+    assertArchived(w, "bravo", landTrail(w, "bravo"));
+    assertArchived(w, "alpha", landTrail(w, "alpha"));
+    assert.equal(tookLandedSync(w, "alpha"), true, "alpha replays bravo's landed line");
+    const final = w.read("src/shared.txt").split("\n");
+    assert.equal(final[2], "alpha-edit");
+    assert.equal(final[4], "bravo-edit");
+    assert.equal(final.length, SHARED_LINES + 1, "no line was lost or duplicated");
+  } finally { cleanup(w); }
+});

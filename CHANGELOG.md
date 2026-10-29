@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Land of a stacked change accepts a file the harness's own sandbox sync merged
+  cleanly with landed work while neither side changed since, in the root
+  workspace and in repository sandboxes, instead of re-merging and refusing it
+  as an overwrite. A conflict the sync left on the current bytes is returned
+  with its `sandbox sync --resolve` route (`REPAIR_SYNC_CONFLICT`) rather than
+  a bare refusal, and a target edited after the sync routes to the sync again.
+- A sandbox sync that invalidates proof also removes the proof-advance
+  checkpoint, so `advance --through proven` runs proof again instead of
+  reporting current proof while `--through archived` refuses the building
+  lifecycle.
+
 - User authority now binds the agreement's content, not the revision counter.
   A grounding reopen, the validate that re-locks it, a sandbox sync, or an
   authority grant no longer voids the spec approval, its lanes, revision-bound

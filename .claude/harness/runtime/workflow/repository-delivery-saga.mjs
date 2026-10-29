@@ -4,7 +4,9 @@ import { join, resolve } from "node:path";
 
 import { createLandJournal, landEntryNoOp } from "./land-journal.mjs";
 import { deliveryTreeEntries } from "./delivery-integrity.mjs";
-import { landedTargetPaths, otherLandedOutput, targetEditCarried } from "./target-edits.mjs";
+import {
+  landedTargetPaths, otherLandedOutput, pendingLandedConflict, replayCarriesLanded, targetEditCarried
+} from "./target-edits.mjs";
 
 export const REPOSITORY_DELIVERY_SAGA_VERSION = 1;
 
@@ -145,14 +147,19 @@ export function copyBaselineState(files, baseline = {}) {
 // journal still vouches for the refused target bytes. Such a stop is not a
 // user's edit in the way: the sandbox is replayed onto the landed work by the
 // harness's own sync (`landedSync`) unless that already ran for these bytes.
-function overwriteError(repository, overwrite, landedBy = null, sandboxState = null, files = null) {
+function overwriteError(repository, overwrite, landedBy = null, sandboxState = null, files = null,
+  conflicts = []) {
   const landedChange = landedBy?.[overwrite.path] || null;
   // A sync that already ran against exactly these target and sandbox bytes
   // (merged, found conflicting, resolved or carried) would change nothing, so
   // routing the refusal back to it again would never end.
   const synced = sandboxState?.landedSynced?.[overwrite.path];
+  // A target edited since that sync is new input: the replay's record no
+  // longer describes it, so the sync runs again.
+  const targetUnchanged = !synced || !files ||
+    synced.target === files.pathIdentity(files.safeRootPath(overwrite.path));
   const exhausted = Boolean(files && sandboxState?.path && (
-    (sandboxState.landedReplay?.[overwrite.path] &&
+    (targetUnchanged && sandboxState.landedReplay?.[overwrite.path] &&
       sandboxState.landedReplay[overwrite.path] ===
         files.pathIdentity(resolve(sandboxState.path, overwrite.path))) ||
     (synced && synced.target === files.pathIdentity(files.safeRootPath(overwrite.path)) &&
@@ -162,7 +169,10 @@ function overwriteError(repository, overwrite, landedBy = null, sandboxState = n
       repository.id}': ${overwrite.path}`,
     { repository: repository.id, path: overwrite.path,
       ...(landedChange ? { landedBy: { [overwrite.path]: landedChange } } : {}),
-      ...(landedChange && !exhausted ? { landedSync: true } : {}) });
+      ...(landedChange && !exhausted ? { landedSync: true } : {}),
+      // Conflicts the sync left against exactly these bytes: another sync
+      // would report them again, so the refusal carries the resolve route.
+      ...(conflicts.length ? { landedConflict: true, conflicts: [...conflicts].sort() } : {}) });
 }
 
 // A conflict the agent resolved in the sandbox copy is recorded by sandbox sync
@@ -205,15 +215,25 @@ function assertChildTargetCompatible({ git, journalRuntime, landedBy = () => ({}
         expectedHead: runtime.baseHead,
         observedHead: String(targetHead.stdout || "").trim() || null
       });
+  const identities = (path) => ({
+    targetIdentity: journalRuntime.pathIdentity(journalRuntime.safeRootPath(path)),
+    sandboxIdentity: runtime?.path ? journalRuntime.pathIdentity(resolve(runtime.path, path)) : null
+  });
   const refused = targetOverwrites({ git, files: journalRuntime }, repository.path,
     runtime.baseHead, entries, prior)
     // A path the base lacks (both changes created it) has no base bytes to
-    // prove a carry against, but a recorded resolution applies to it as well.
+    // prove a carry against, but a recorded resolution applies to it as well,
+    // as does the harness's own clean replay of the landed work.
     .filter((row) => !(resolvedLanded(journalRuntime, runtime, row.path) ||
+      replayCarriesLanded({ record: runtime, path: row.path, ...identities(row.path) }) ||
       (!row.untracked && childEditCarried(journalRuntime, repository, runtime, row.path))));
   const [overwrite] = refused;
-  if (overwrite) throw overwriteError(repository, overwrite,
-    landedBy(refused.map((row) => row.path)), runtime, journalRuntime);
+  if (overwrite) {
+    const conflicts = refused.map((row) => row.path).filter((path) =>
+      pendingLandedConflict({ record: runtime, path, ...identities(path) }));
+    throw overwriteError(repository, overwrite,
+      landedBy(refused.map((row) => row.path)), runtime, journalRuntime, conflicts);
+  }
 }
 
 export function createRepositoryDeliverySaga({

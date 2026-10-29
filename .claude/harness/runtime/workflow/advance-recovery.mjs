@@ -301,6 +301,16 @@ export function automaticRecoveryAction(id, decision) {
       reason: decision.summary,
       divergentPaths: Array.isArray(decision.divergentPaths) ? decision.divergentPaths : []
     };
+  // Landed-work conflicts the sync left are the agent's merge to make; the
+  // route names the sandbox copies and the resolve command. Not automatic.
+  if (decision?.kind === "landed-conflict")
+    return {
+      kind: "resolve-landed-conflict",
+      command: `claude-foundation advance ${id} --through archived`,
+      reason: decision.summary,
+      paths: Array.isArray(decision.paths) ? decision.paths : [],
+      repository: decision.repository || "root"
+    };
   // Target edits Land would overwrite are kept; the agent carries them into
   // the sandbox. Not a harness execution, so no command runs here.
   if (decision?.kind === "target-edit-conflict" && decision.automaticRecovery === "keep-target")

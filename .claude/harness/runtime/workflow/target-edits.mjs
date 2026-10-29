@@ -275,6 +275,60 @@ export function resolutionKeepsLanded({ root, sandboxPath, path, baseBytes, spaw
   return merged ? merged.equals(sandbox) : true;
 }
 
+// Whether the harness's own replay produced the current sandbox bytes of
+// `path` from the current target bytes: the sync recorded a clean 3-way merge
+// (`landedReplay`) and the target and sandbox bytes it left (`landedSynced`),
+// and both still match. A clean merge keeps every landed hunk by construction,
+// so Land applying those bytes drops nothing the target holds, even where a
+// second merge of the same hunks would report a conflict. A pending conflict
+// on the path, or any later edit to either side, voids it.
+export function replayCarriesLanded({ record, path, targetIdentity, sandboxIdentity }) {
+  if (!record || !targetIdentity || !sandboxIdentity) return false;
+  if (record.landedConflicts && Object.hasOwn(record.landedConflicts, path)) return false;
+  const synced = record.landedSynced?.[path];
+  return record.landedReplay?.[path] === sandboxIdentity &&
+    Boolean(synced) && synced.target === targetIdentity && synced.sandbox === sandboxIdentity;
+}
+
+// Whether the sync left an unresolved landed-work conflict on `path` against
+// exactly the current target and sandbox bytes: another sync would report the
+// same conflict, so the refusal must carry the resolve route, not the bare
+// overwrite.
+export function pendingLandedConflict({ record, path, targetIdentity, sandboxIdentity }) {
+  if (!record?.landedConflicts || !Object.hasOwn(record.landedConflicts, path)) return false;
+  const synced = record.landedSynced?.[path];
+  return Boolean(synced) && synced.target === targetIdentity && synced.sandbox === sandboxIdentity;
+}
+
+// Land's stop for landed-work conflicts the agent still has to resolve in the
+// sandbox copy. Not automatic: the harness cannot choose between two intents.
+export function landedConflictStop({ changeId, repository = null, paths, landedBy = {} }) {
+  const sorted = [...new Set(paths)].sort();
+  const where = repository && repository !== "root" ? ` of repository '${repository}'` : "";
+  return {
+    decision: {
+      kind: "landed-conflict",
+      summary: `the sandbox${where} still holds unresolved conflicts with landed work at: ${
+        listPaths(sorted)}; resolve each sandbox copy to the merge of both changes, keeping ` +
+        "every landed edit, then record the resolution.",
+      paths: sorted,
+      ...(repository ? { repository } : {}),
+      landedBy,
+      // Structured so hosts that rewrite prose commands to the advance route
+      // still carry the exact resolve primitive.
+      resolveCommand: `claude-foundation sandbox sync ${changeId} --resolve ${sorted.join(",")}`,
+      options: [
+        { id: "resolve", outcome: "Edit the sandbox copies to the intended merge, then record it: " +
+          `'claude-foundation sandbox sync ${changeId} --resolve ${sorted.join(",")}' and resume ` +
+          `'claude-foundation advance ${changeId} --through archived'.` },
+        { id: "pause", outcome: "Change nothing and leave both workspaces as they are." }
+      ],
+      recommended: "resolve"
+    },
+    code: "landed-conflict"
+  };
+}
+
 // Land leaves its projection uncommitted, so a change that branched before
 // another change landed meets that landed diff in the target. These are the
 // target bytes other changes' verified Land transactions wrote, keyed by path

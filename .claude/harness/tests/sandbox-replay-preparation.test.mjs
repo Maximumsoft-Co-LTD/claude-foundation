@@ -133,13 +133,18 @@ test("amended replay retains a verified packet across replacement failures", () 
     state.workspace = { mode: "worktree", path: original, baseHead: "old",
       amendmentReplay: { from: "old", to: "new", packetHash: expected } };
     let saves = 0;
+    const invalidated = [];
     const recovery = { root, fail, directoryHash, pathExists: existsSync,
       ownsWorktree: () => true, gitHead: () => "new",
       git: () => { renameSync(staging, original); return ok; },
-      saveRuntime: () => { saves++; } };
+      saveRuntime: () => { saves++; },
+      // The runtime's invalidateProof drops proof.json and the proof-advance
+      // checkpoint together; recovery must route through it like a sync.
+      invalidateProof: (id) => { invalidated.push(id); } };
     assert.throws(() => recoverAmendedReplay({ ...recovery, ownsWorktree: () => false },
       "amended", state), /cannot be verified/);
     assert.equal(recoverAmendedReplay(recovery, "amended", state), true);
+    assert.deepEqual(invalidated, ["amended"], "a recovered replay invalidates proof once");
     assert.equal(directoryHash(join(original, packet)), expected);
     assert.equal(state.workspace.baseHead, "new", "the restored replay must use its verified base");
     assert.equal(state.workspace.amendmentReplay, undefined);

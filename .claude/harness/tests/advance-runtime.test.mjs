@@ -1361,3 +1361,11 @@ test("spec approval carries authority gates the change already needs", async () 
   assert.equal(plain.action, "ASK_USER");
   assert.equal(plain.decision.alongside, undefined);
 });
+
+// After a sync that invalidated proof the checkpoint is gone: a building
+// change with no cursor is never offered Land authority.
+test("a building change without a proof cursor is not Land-ready", () => {
+  const value = coordinatorAction({ ...base, state: { status: "building" }, proofCursor: {} });
+  assert.notEqual(value.legacyAction, "LAND_READY");
+  assert.notEqual(value.action, "ASK_USER");
+});
