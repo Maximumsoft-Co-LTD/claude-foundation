@@ -726,3 +726,61 @@ test("a passing verify with no change in a behavior task's paths does not comple
   assert.deepEqual(runtime.settle("demo"), []);
   assert.equal(taskLineChecked(readFileSync(ledger, "utf8"), "T001"), false);
 });
+
+// An amendment that reopens or reshapes tasks moves the plan's graph or
+// contract. A session lease issued before it would hold resources a reopened
+// dependency now needs while its own task waits on that dependency, so settle
+// parks it (even when the agent already ticked that task: its result waits
+// with its dependency); a stale lease whose task can run is renewed in place;
+// a lease that still matches the plan, or one an outside agent holds, is left
+// alone.
+test("settle parks or renews a session lease whose graph or contract moved under it", (t) => {
+  // T002 is already ticked: parking must happen before any check or release.
+  const root = workspace(t, "T002");
+  // T002 now waits on the reopened T001; T003 is free to run.
+  const current = { graphRevision: 2, graphIdentity: "g2", contractRevision: 3, contractFingerprint: "fp-3",
+    tasks: [{ id: "T001", dependsOn: [] }, { id: "T002", dependsOn: ["T001"] }, { id: "T003", dependsOn: [] }] };
+  const owner = (taskId) => sessionLeaseOwner("demo", taskId, stableHash);
+  const leases = [
+    // Issued before the amendment: contract fingerprint differs.
+    { taskId: "T002", owner: owner("T002"), leaseId: "l-stale-contract",
+      graphRevision: 2, graphIdentity: "g2", contractRevision: 2, contractFingerprint: "fp-2" },
+    // Issued before the graph changed.
+    { taskId: "T003", owner: owner("T003"), leaseId: "l-stale-graph",
+      graphRevision: 1, graphIdentity: "g1", contractRevision: 3, contractFingerprint: "fp-3" },
+    // Current: kept (its task is not checked, so it is not settled either).
+    { taskId: "T001", owner: owner("T001"), leaseId: "l-current",
+      graphRevision: 2, graphIdentity: "g2", contractRevision: 3, contractFingerprint: "fp-3" },
+    // An outside agent's stale lease keeps its own re-acquire route.
+    { taskId: "T004", owner: "dispatch-t004-xyz", leaseId: "l-foreign",
+      graphRevision: 1, graphIdentity: "g1", contractRevision: 1 }
+  ];
+  const calls = [];
+  const runtime = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: root } }),
+    activeChangeLeases: () => leases,
+    agentPlanValue: () => current,
+    acquire: (id, taskId, flags) => { calls.push(["acquire", taskId, flags.owner]); return { leaseId: "x" }; },
+    park: (id, taskId, leaseOwner) => { calls.push(["park", taskId, leaseOwner]); },
+    discard: (id, taskId, leaseOwner) => { calls.push(["discard", taskId, leaseOwner]); },
+    release: (id, taskId, flags) => { calls.push(["release", taskId, flags["lease-id"]]); return { observedWrites: [] }; }
+  });
+  assert.deepEqual(runtime.settle("demo"), [], "a parked or renewed lease is not a completion");
+  assert.deepEqual(calls, [
+    // Waits on the reopened T001: parked, its resources freed for T001.
+    ["park", "T002", owner("T002")],
+    // Free to run: renewed under the current plan, baseline kept by own-prior.
+    ["acquire", "T003", owner("T003")]
+  ], "the current lease and the outside agent's lease are untouched");
+  // Without a plan accessor (or a plan that cannot be computed) nothing is judged stale.
+  const untouched = workspace(t);
+  const blind = createSessionLeaseRuntime({
+    stableHash, loadRuntime: () => ({ workspace: { path: untouched } }),
+    activeChangeLeases: () => leases, agentPlanValue: () => { throw new Error("packet mid-repair"); },
+    acquire: () => { calls.push(["acquire-blind"]); return { leaseId: "x" }; },
+    park: () => calls.push(["park-blind"]), discard: () => calls.push(["discard-blind"]),
+    release: () => ({ observedWrites: [] })
+  });
+  assert.deepEqual(blind.settle("demo"), []);
+  assert.equal(calls.some((row) => /-blind$/.test(row[0])), false);
+});

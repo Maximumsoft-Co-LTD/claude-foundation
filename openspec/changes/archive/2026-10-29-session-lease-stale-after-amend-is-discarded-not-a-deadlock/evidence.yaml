@@ -1,0 +1,76 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "stale-session-lease-discarded-advance-settle",
+      "requirementKey": "stale-session-lease-discarded",
+      "scenario": "lease stale ของ task ที่รอ dependency ถูก park",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "stale-session-lease-discarded-owner-acquire-t002-release",
+      "requirementKey": "stale-session-lease-discarded",
+      "scenario": "re-acquire หลัง park สืบทอด baseline",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "stale-session-lease-discarded-advance-settle-2",
+      "requirementKey": "stale-session-lease-discarded",
+      "scenario": "lease stale ของ task ที่รันได้ถูก renew",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "stale-session-lease-discarded-advance-settle-3",
+      "requirementKey": "stale-session-lease-discarded",
+      "scenario": "lease ที่ยังตรง plan ไม่ถูกแตะ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "stale-session-lease-discarded-advance-settle-4",
+      "requirementKey": "stale-session-lease-discarded",
+      "scenario": "lease ของ agent ภายนอกไม่ถูกแตะ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "stale-session-lease-discarded-active-leases",
+      "requirementKey": "stale-session-lease-discarded",
+      "scenario": "parked lease ไม่นับเป็น active",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/session-lease.test.mjs .claude/harness/tests/agent-dispatch.test.mjs .claude/harness/tests/advance-runtime.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/session-lease.test.mjs .claude/harness/tests/agent-dispatch.test.mjs .claude/harness/tests/advance-runtime.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ]
+    }
+  }
+}

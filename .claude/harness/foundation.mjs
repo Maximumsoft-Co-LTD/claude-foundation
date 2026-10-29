@@ -1248,6 +1248,7 @@ const {
   acquire: acquireAgentLease,
   release: releaseAgentLease,
   discard: discardAgentLease,
+  park: parkAgentLease,
   active: activeChangeLeases,
   cleanup: cleanupChangeLeases
 } = createLeaseRuntime({
@@ -2135,7 +2136,7 @@ async function runAdvanceQuietly(operation) {
   }
 }
 const sessionLeases = createSessionLeaseRuntime({
-  loadRuntime, activeChangeLeases, stableHash, saveRuntime,
+  loadRuntime, activeChangeLeases, stableHash, saveRuntime, agentPlanValue,
   // D5: advance runs the handed-off task's own verify check and ticks it.
   runCheck: (id, check) => commandPhaseRecorder.measure("build.task-check", () => {
     projectRootRepositories(id);
@@ -2156,7 +2157,8 @@ const sessionLeases = createSessionLeaseRuntime({
       });
     } catch { return null; }
   },
-  acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease
+  acquire: acquireAgentLease, release: releaseAgentLease, discard: discardAgentLease,
+  park: parkAgentLease
 });
 const { advanceValue, advanceThrough, showAdvance } = createAdvanceRuntime({
   approvalPackageLink,

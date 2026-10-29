@@ -493,15 +493,40 @@ export function createLeaseRuntime({
     });
   }
 
+  // Parks a session lease whose task can no longer run under the current
+  // plan (an amendment reopened a dependency it waits on): its resource
+  // descriptors are released so the reopened work can take them, but the task
+  // index stays, marked parked, with its write baseline. The owner's next
+  // acquire is an own-prior renewal and so keeps judging writes from the
+  // original baseline, exactly as a stale lease renewed through release does.
+  function park(id, taskId, owner) {
+    const index = join(leases, "tasks", id, `${String(taskId).toUpperCase()}.json`);
+    if (!existsSync(index)) return null;
+    return withAcquisitionLock(() => {
+      const taskLease = readJson(index, {});
+      if (taskLease.owner !== owner || taskLease.status === "taken-over") return null;
+      for (const resource of taskLease.resources || []) {
+        const path = leasePath(resource);
+        if (existsSync(path) && readJson(path, {}).leaseId === taskLease.leaseId) rmSync(path);
+      }
+      const parked = { ...taskLease, status: "parked", resources: [], parkedAt: now() };
+      writeJson(index, parked);
+      return parked;
+    });
+  }
+
   // `includeExpired` lists unreleased task leases past their TTL too, so the
   // harness can still settle a lease it holds for a long-running session task.
-  function active(id, { includeExpired = false } = {}) {
+  // A parked lease holds nothing and is not active; its index only carries
+  // the baseline into the owner's next acquire.
+  function active(id, { includeExpired = false, includeParked = false } = {}) {
     const root = join(leases, "tasks", id);
     if (!existsSync(root)) return [];
     return readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => readJson(join(root, entry.name), {}))
       .filter((lease) => lease.status !== "taken-over" &&
+        (includeParked || lease.status !== "parked") &&
         (includeExpired || Date.parse(lease.expiresAt || "") > Date.now()));
   }
 
@@ -511,5 +536,5 @@ export function createLeaseRuntime({
     readJson, remove: rmSync
   });
 
-  return { leasePath, acquire, release, discard, active, cleanup };
+  return { leasePath, acquire, release, discard, park, active, cleanup };
 }

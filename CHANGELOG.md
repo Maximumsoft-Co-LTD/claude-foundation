@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `advance` settles a harness-issued session lease whose graph or contract
+  moved since it was issued (an amendment reopened or reshaped tasks) before
+  dispatching: a lease whose task now waits on a pending dependency is parked
+  (resources released, index and write baseline kept for the re-issued lease),
+  any other is renewed in place. A reopened dependency no longer waits on a
+  resource its dependent's stale lease holds while that dependent waits on it.
+
 - A sandbox sync whose own clean replay of uncommitted work changes the
   change's diff identity (landed replay or carried target edit, no conflict
   left, no base move in the same sync) records the identity before and after

@@ -1067,7 +1067,15 @@ re-granted under a new fencing generation and keeps its original write
 baseline, so earlier writes are still judged against the widened scope. A
 lease past its TTL is released or taken over without `--force` or a decision
 reference; only a live lease held by another worker needs one. `advance` settles
-the session lease it holds even after its TTL. A shared `[resources:]` token
+the session lease it holds even after its TTL. A session lease whose graph or
+contract moved since it was issued (an amendment reopened or reshaped tasks)
+is settled before dispatching: when its task now waits on a pending
+dependency the lease is parked (its resources released for the reopened
+work, its index and write baseline kept, so the re-issued lease still judges
+earlier writes from the task's start); otherwise it is renewed in place. A
+reopened dependency therefore never waits on a resource its dependent's stale
+lease holds. An outside agent's stale lease keeps its re-acquire route. A
+shared `[resources:]` token
 another active change holds is queued, not a repair or a question: `advance`
 returns a harness-owned `WAIT` (`WAIT_RESOURCE`, code `LEASE_RESOURCE_HELD`)
 naming the holder, and resumes once it lands, is abandoned, or its lease

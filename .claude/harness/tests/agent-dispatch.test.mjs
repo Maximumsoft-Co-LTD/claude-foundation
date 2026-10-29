@@ -488,3 +488,37 @@ test("runtime router exposes the strict host dispatch command", async () => {
   });
   assert.deepEqual(call, { id: "dispatch-change", flags: { pretty: true } });
 });
+
+// A parked lease frees its resources for a reopened dependency but keeps its
+// index and write baseline: the owner's next acquire is an own-prior renewal,
+// so a write made before the amendment is still observed at release.
+test("park frees a stale session lease's resources and the re-acquire keeps its baseline", () => {
+  const { root, planValue, surface, runtime } = staleAuthorityFixture();
+  const owner = "session-t002";
+  runtime.acquire("stale-change", "T002", { owner }, { quiet: true });
+  const before = readJson(join(root, "tasks", "stale-change", "T002.json"));
+  assert.ok(existsSync(join(root, "resources", `${hash("path:root:T002")}.json`)) ||
+    runtime.active("stale-change").some((lease) => lease.taskId === "T002"), "the lease is held");
+  surface.set("src/t002/b.js", "v2");
+  Object.assign(planValue, { graphRevision: 2, graphIdentity: "graph-2", contractRevision: 2 });
+  const parked = runtime.park("stale-change", "T002", owner);
+  assert.equal(parked.status, "parked");
+  assert.deepEqual(parked.resources, []);
+  assert.deepEqual(parked.baselineSurface, before.baselineSurface, "the baseline survives the park");
+  assert.equal(runtime.active("stale-change").some((lease) => lease.taskId === "T002"), false,
+    "a parked lease is not active");
+  assert.equal(runtime.active("stale-change", { includeParked: true }).some((lease) => lease.taskId === "T002"), true);
+  // Another worker can take the resource the parked lease used to hold.
+  runtime.acquire("stale-change", "T001", { owner: "dispatch-t001" }, { quiet: true });
+  // The owner's re-acquire inherits the original baseline, so the pre-amendment
+  // write is still observed when the task is released.
+  const renewed = runtime.acquire("stale-change", "T002", { owner }, { quiet: true });
+  assert.deepEqual(renewed.baselineSurface, before.baselineSurface);
+  assert.equal(renewed.graphRevision, 2);
+  const released = runtime.release("stale-change", "T002", { owner, "lease-id": renewed.leaseId }, { quiet: true });
+  assert.deepEqual(released.observedWrites, ["src/t002/b.js"]);
+  // Parking a lease another owner holds, or one that does not exist, changes nothing.
+  assert.equal(runtime.park("stale-change", "T001", owner), null);
+  assert.equal(runtime.park("stale-change", "T009", owner), null);
+  assert.equal(runtime.active("stale-change").some((lease) => lease.taskId === "T001"), true);
+});

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { resumeThrough } from "../core/next-step.mjs";
+import { leaseAuthorityIsStale } from "./lease-runtime.mjs";
 
 // A session-mode Build task runs in the coordinating session itself, one task
 // at a time. The agent used to acquire the lease, implement, release it, and
@@ -76,9 +77,33 @@ export function createSessionLeaseRuntime({
   runCheck = null, saveRuntime = null,
   // (id, taskId) => reason | null. A behavior-changing task whose declared
   // paths have no diff did nothing: its verify passing proves nothing.
-  taskChangeIssue = null
+  taskChangeIssue = null,
+  // (id) => the current agent plan, so settle can tell a session lease whose
+  // graph or contract moved (an amendment reopened or reshaped tasks) from
+  // one that still describes the work it holds.
+  agentPlanValue = null,
+  // (id, taskId, owner) => releases a stale session lease's resources while
+  // keeping its index and write baseline for the owner's next acquire.
+  park = null
 }) {
   const failedChecks = new Map();
+
+  // The plan is read for its revision, identity, and contract fingerprint
+  // only; a plan that cannot be computed yet (the packet is mid-repair) means
+  // no lease is judged stale on this pass.
+  function safePlan(id) {
+    try { return agentPlanValue(id, { inspect: true }) || null; } catch { return null; }
+  }
+
+  // Whether the plan's task still waits on a pending task: the plan lists
+  // only pending tasks, so a dependency in that list is unfinished.
+  function blockedByPending(plan, taskId) {
+    const tasks = Array.isArray(plan?.tasks) ? plan.tasks : [];
+    const task = tasks.find((row) => row.id === taskId);
+    if (!task) return true;
+    const pending = new Set(tasks.map((row) => row.id));
+    return (task.dependsOn || []).some((dependency) => pending.has(dependency));
+  }
 
   // Completion needs a change: a verify that already passed on unchanged code
   // hands the task back (counted like any repeated verify failure) instead of
@@ -136,8 +161,32 @@ export function createSessionLeaseRuntime({
   // observed-write check.
   function settle(id) {
     const settled = [];
+    // A session lease whose graph or contract moved since it was issued (an
+    // amendment reopened or reshaped tasks) no longer describes the work it
+    // holds. When its task now waits on a pending dependency, the lease is
+    // parked: its resources are released for the reopened work, its index and
+    // write baseline stay so the re-issued lease still judges earlier writes
+    // from the task's start. Otherwise it is renewed in place, as release
+    // does for a completed task. Outside agents keep their re-acquire route.
+    const plan = typeof agentPlanValue === "function" ? safePlan(id) : null;
     for (const lease of activeChangeLeases(id, { includeExpired: true })) {
-      if (!isSessionOwner(lease.owner) || !completeByCheck(id, lease.taskId)) continue;
+      if (!isSessionOwner(lease.owner)) continue;
+      const stale = Boolean(plan) && leaseAuthorityIsStale(plan, lease);
+      // Parked before any check runs: a task that waits on a reopened
+      // dependency cannot be released now even if its verify passes (release
+      // would renew through acquire, which that dependency blocks), so its
+      // result waits with it and its baseline is kept for the re-issue.
+      if (stale && park && blockedByPending(plan, lease.taskId)) {
+        try { park(id, lease.taskId, lease.owner); } catch { /* the next advance reclaims it */ }
+        continue;
+      }
+      const complete = completeByCheck(id, lease.taskId);
+      if (stale && !complete) {
+        try { acquire(id, lease.taskId, { owner: lease.owner }, { quiet: true }); }
+        catch { /* the next advance renews or reclaims it */ }
+        continue;
+      }
+      if (!complete) continue;
       releaseOwned(id, lease.taskId, { owner: lease.owner, "lease-id": lease.leaseId });
       settled.push(lease.taskId);
     }
