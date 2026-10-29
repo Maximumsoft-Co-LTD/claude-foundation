@@ -1,4 +1,4 @@
-import { assertSpecApproval, agreementIdentity, approvalMatches, userDecisionError } from "../core/user-decisions.mjs";
+import { assertSpecApproval, agreementIdentity, amendedAgreementMatches, approvalMatches, userDecisionError } from "../core/user-decisions.mjs";
 import { spawnSync } from "node:child_process";
 import { resumeThrough } from "../core/next-step.mjs";
 import { createHash } from "node:crypto";
@@ -2356,9 +2356,8 @@ export function createSandboxRuntime({
   function activeSandboxAmendment(id, state) {
     const destination = state.workspace?.path &&
       join(state.workspace.path, "openspec", "changes", id);
-    return (state.amendments || []).some((entry) =>
-      Number(entry?.revision) === Number(state.contractRevision || 0)) &&
-      Boolean(destination && existsSync(destination)) &&
+    return Boolean(destination && existsSync(destination)) &&
+      amendedAgreementMatches(state, state.workspace.path, id) &&
       agreementIdentity(state.workspace.path, id) !== agreementIdentity(root, id);
   }
 

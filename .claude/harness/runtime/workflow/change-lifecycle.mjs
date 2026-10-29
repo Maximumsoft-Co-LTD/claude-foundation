@@ -1,6 +1,7 @@
 import {
-  agreementDriftError, agreementIdentity, agreementRestoredNotice, repairWhitespaceDrift,
-  restoreDriftedAgreement, userDecisionError
+  agreementDriftError, agreementIdentity, agreementRestoredNotice, amendedAgreementMatches,
+  amendedPacketSource, carryApprovalAcrossBookkeeping, packetIdentity, repairWhitespaceDrift,
+  restoreDriftedAgreement, snapshotAmendedPacket, userDecisionError
 } from "../core/user-decisions.mjs";
 import { createHash } from "node:crypto";
 import {
@@ -2171,6 +2172,10 @@ export function createChangeLifecycle({
       delete state.groundingDigest;
       delete state.groundingLockedAt;
       state.contractRevision = Number(state.contractRevision || 0) + 1;
+      // Reopening the ledger is the user's own decision; it changes no packet
+      // byte, so the consent already given follows it to the new revision.
+      carryApprovalAcrossBookkeeping(root, state.id || state.changeId, state,
+        `grounding-reopen: ${reason}`, now);
     } else if ((flags["decision-ref"] && !flags["ci-not-required"]) || flags["reopen-reason"])
       fail("--decision-ref and --reopen-reason require --reopen-grounding");
   }
@@ -2415,15 +2420,19 @@ export function createChangeLifecycle({
         const approvalRoot = current.workspace?.path &&
           existsSync(join(current.workspace.path, "openspec", "changes", id))
           ? current.workspace.path : root;
-        // Consent binds one identity; an unamended isolated packet that differs
-        // from the target could never satisfy the approval check.
-        const amended = (current.amendments || []).some((entry) =>
-          Number(entry?.revision) === Number(current.contractRevision || 0));
+        // Consent binds one identity; an isolated packet that matches neither
+        // the target nor the latest amendment could never satisfy the approval
+        // check. The amended packet stays the agreement whatever bookkeeping
+        // moved the revision counter after the amendment.
+        const amended = approvalRoot !== root &&
+          amendedAgreementMatches(current, approvalRoot, id);
+        const amendedSource = amendedPacketSource(root, current);
         if (approvalRoot !== root && !amended &&
             agreementIdentity(approvalRoot, id) !== agreementIdentity(root, id) &&
-            !repairWhitespaceDrift(root, approvalRoot, id)) {
-          const saved = restoreDriftedAgreement(root, approvalRoot, id);
-          if (saved) console.error(agreementRestoredNotice(id, saved));
+            (amendedSource || !repairWhitespaceDrift(root, approvalRoot, id))) {
+          const restored = restoreDriftedAgreement(root, approvalRoot, id, Date.now(),
+            amendedSource || undefined);
+          if (restored) console.error(agreementRestoredNotice(id, restored));
           else {
             const drift = agreementDriftError(id, approvalRoot);
             fail(drift.message, 1, { owner: drift.owner, boundary: drift.boundary, code: drift.code });
@@ -3349,9 +3358,18 @@ export function createChangeLifecycle({
       nextState.revision = Number(nextState.revision || 0) + 1;
       nextState.contractRevision = Number(nextState.contractRevision || 0) + 1;
       nextState.executionRevision = Number(nextState.executionRevision || 0) + 1;
+      // The amended packet lives only in the isolated workspace until Land.
+      // Its identity and a snapshot are kept so later gates recognise it as
+      // the agreement, whatever bookkeeping moves the revision afterwards.
+      const amendedWorkspace = nextState.workspace?.path &&
+        pathInside(nextState.workspace.path, basePath) ? nextState.workspace.path : null;
+      const amendedPacket = amendedWorkspace
+        ? snapshotAmendedPacket(root, amendedWorkspace, id, nextState.contractRevision)
+        : { identity: packetIdentity(basePath) };
       nextState.amendments = [...(nextState.amendments || []), {
         version: 1,
         revision: nextState.contractRevision,
+        ...amendedPacket,
         reason: String(amendment.reason || "Agreement expanded during Build"),
         requirementKeys: compiled.addedRequirementKeys,
         revisedRequirementKeys: compiled.revisedRequirementKeys,

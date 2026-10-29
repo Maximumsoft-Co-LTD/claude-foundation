@@ -797,7 +797,23 @@ contract. `AMENDED` then prints `decision required:` with the route, and
 `advance` returns the same command in its `ASK_USER` result: `change resolve
 <change> --reopen-grounding --decision-ref <ref> --reopen-reason <why>` for a
 grounding change, or `advance <change> --approve-spec --decision-ref <ref>`
-otherwise. A waiver does not satisfy this gate.
+otherwise. A waiver does not satisfy this gate. Only the agreement moves the
+contract fingerprint this gate compares: the review budget a user grants with
+`authority extend-review` is authority, not agreement, so granting the wave
+never makes that wave itself a contract change.
+
+User authority binds the agreement's content, never the revision counter.
+Harness bookkeeping that moves `contractRevision` without changing the packet
+bytes the user approved (a grounding reopen and the validate that re-locks it,
+a sandbox sync, an authority grant) carries the spec approval, its lanes,
+revision-bound waivers, and the compiled draft to the new revision with an
+`approvalCarries` audit row; task leases bind the contract fingerprint for the
+same reason. Changed content still asks again. An amendment records the
+identity of the packet it left and a snapshot under
+`.foundation/agreement-amended/<change>/<revision>/`; the isolated packet
+matching the latest amendment is the agreement at every later gate, whatever
+bookkeeping moved the revision since, and `advance --approve-spec` records
+consent on it instead of restoring the target packet over it.
 
 An unfinished task (unchecked, with no valid passing command receipt for its
 claims) may change its verify command, and optionally `paths`, through an
@@ -970,9 +986,11 @@ the project or a repository the change writes; after Prove, edits inside the
 isolated workspace only make the proof stale; during Land, read-only test
 commands may run but script runners still need the runtime transaction; and an
 isolated packet edited outside a semantic amendment is
-restored to the approved text by the harness (whitespace in place; any other
-edit saved under `.foundation/agreement-drift/<change>/` for an amendment), not
-reported as drift for the agent to undo. A
+restored to the agreed text by the harness (whitespace in place; any other
+edit saved under `.foundation/agreement-drift/<change>/` for an amendment),
+not reported as drift for the agent to undo. The agreed text is the latest
+amendment's snapshot when one exists, otherwise the target packet, and the
+restore notice names the files it put back and where the edit was saved. A
 workspace never borrows the checkout's dependencies. When no setup command is
 declared, the harness runs the workspace lockfile's pinned install itself
 (`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`,
@@ -1251,8 +1269,10 @@ to declare it. It remains visible as `user-waived`, preserves receipts already
 earned, and can be revoked. There is no route that turns failed evidence into a
 pass or lands it silently. Review may use the same explicit waiver route;
 acceptance retains its explicit withdrawal route. New waivers bind the current
-workspace and contract revision. Changed content expires them; original failed
-receipts remain available and proof names the accepted exceptions.
+workspace and contract revision. Changed content expires them, while
+bookkeeping that moves the revision without changing the agreement carries
+them; original failed receipts remain available and proof names the accepted
+exceptions.
 
 When executable wiring is absent, `evidence detect` reads project manifests
 without executing scripts, `evidence init` previews additions and writes only

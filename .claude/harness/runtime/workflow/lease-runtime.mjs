@@ -39,7 +39,16 @@ export function sameLeaseRenewalAuthority(
   return JSON.stringify(renewalKeys) === JSON.stringify(keys) &&
     prior.owner === owner && prior.graphRevision === plan.graphRevision &&
     prior.graphIdentity === plan.graphIdentity &&
-    Number(prior.contractRevision) === Number(plan.contractRevision);
+    !leaseContractChanged(plan, prior);
+}
+
+// A lease binds the agreement by content: bookkeeping that moves the revision
+// counter without changing the contract fingerprint keeps the lease valid.
+// Leases recorded before fingerprints were kept (3.6.8) compare revisions.
+export function leaseContractChanged(plan, lease) {
+  return lease?.contractFingerprint && plan?.contractFingerprint
+    ? lease.contractFingerprint !== plan.contractFingerprint
+    : Number(plan?.contractRevision) !== Number(lease?.contractRevision);
 }
 
 export function taskNodeOutputSchema(plan, taskId) {
@@ -176,6 +185,7 @@ export function acquireLeaseUnderLock(context) {
     fencingGeneration, executionAttempt,
     graphRevision: plan.graphRevision, graphIdentity: plan.graphIdentity,
     planDigest: plan.planDigest, contractRevision: plan.contractRevision,
+    ...(plan.contractFingerprint ? { contractFingerprint: plan.contractFingerprint } : {}),
     workspaceHash: plan.workspaceHash, repository: task.repository,
     paths: task.paths || [], claimIds: task.claims || [],
     outputSchema: taskNodeOutputSchema(plan, task.id),
@@ -263,7 +273,7 @@ export function leaseReleaseIdentity(context, id, taskId, flags) {
 export function leaseAuthorityIsStale(plan, taskLease) {
   return plan.graphRevision !== taskLease.graphRevision ||
     plan.graphIdentity !== taskLease.graphIdentity ||
-    Number(plan.contractRevision) !== Number(taskLease.contractRevision);
+    leaseContractChanged(plan, taskLease);
 }
 
 export function leasePathIsAllowed(path, allowed) {

@@ -1,4 +1,4 @@
-import { currentWaivers } from "../core/user-decisions.mjs";
+import { carryApprovalAcrossBookkeeping, currentWaivers } from "../core/user-decisions.mjs";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -1918,6 +1918,9 @@ export function createChangeValidationRuntime({
         lockValidatedGrounding(state, grounding, contractFingerprint(id, dir), now());
       else
         lockValidatedGrounding(state, grounding, null, null);
+      // Re-locking the ledger after a reopen is bookkeeping: consent given on
+      // these same packet bytes follows the revision it moved to.
+      carryApprovalAcrossBookkeeping(root, id, state, "validate: grounding re-locked", now);
       saveRuntime(state);
     }
     // A declared surface predicts capabilities that the *changed* surface will

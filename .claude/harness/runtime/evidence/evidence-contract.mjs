@@ -233,8 +233,14 @@ export function rapidEvidenceOnly({ state = {}, signals, riskRoute, signalled })
 // rapid exemption existed (risk-tiered was always `required: true`), so
 // upgrading never re-fingerprints an in-flight change. The exemption is a pure
 // function of fingerprinted inputs and is enforced live by requiredProviders.
+// Budget the user grants to finish review (`grantedAiWaveCap` from
+// `authority extend-review`) is authority, not agreement: it never moves the
+// fingerprint that receipts, plans, and review closure bind to.
 export function fingerprintedReviewPolicy(policy) {
-  return policy?.tier && policy.required === false ? { ...policy, required: true } : policy;
+  if (!policy || typeof policy !== "object") return policy;
+  const { grantedAiWaveCap: _grant, ...agreement } = policy;
+  return agreement.tier && agreement.required === false
+    ? { ...agreement, required: true } : agreement;
 }
 
 export function assembleReviewPolicy({

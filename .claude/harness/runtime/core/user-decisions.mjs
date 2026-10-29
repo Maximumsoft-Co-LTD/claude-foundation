@@ -55,8 +55,15 @@ function wiringBlindContent(name, content) {
 // still changes consent. `legacy` reproduces identities recorded before write
 // scope became bookkeeping, and `wiring` those recorded before provider wiring
 // became evidence configuration, so in-flight approvals survive an upgrade.
-export function agreementIdentity(root, id, { legacy = false, wiring = legacy } = {}) {
+export function agreementIdentity(root, id, options = {}) {
   const base = join(root, "openspec", "changes", id);
+  if (!existsSync(base)) throw new Error(`Agreement is missing: ${id}`);
+  return packetIdentity(base, options);
+}
+
+// The identity of one packet directory, wherever it lives (target, isolated
+// workspace, or a harness snapshot of an amended packet).
+export function packetIdentity(base, { legacy = false, wiring = legacy } = {}) {
   const hash = createHash("sha256");
   function visit(directory, prefix = "") {
     for (const entry of readdirSync(directory, { withFileTypes: true })
@@ -75,7 +82,6 @@ export function agreementIdentity(root, id, { legacy = false, wiring = legacy } 
       }
     }
   }
-  if (!existsSync(base)) throw new Error(`Agreement is missing: ${id}`);
   visit(base);
   return hash.digest("hex");
 }
@@ -95,11 +101,11 @@ export function userDecisionError(code, summary, options, recommended) {
   return error;
 }
 
-// A lane counts only for the current revision and the packet it was given on.
+// A lane counts for the packet it was given on: the same bytes are the same
+// consent, whatever bookkeeping moved the revision counter since.
 export function laneApproved(root, id, state, role) {
   const lane = state?.specApproval?.lanes?.[role];
   if (!lane?.identity || !lane.decisionRef) return false;
-  if (Number(lane.revision) !== Number(state.contractRevision || 0)) return false;
   return approvalMatches(lane.identity, root, id) ||
     Boolean(state.workspace?.path && existsSync(join(state.workspace.path, "openspec", "changes", id)) &&
       approvalMatches(lane.identity, state.workspace.path, id));
@@ -116,7 +122,9 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   const hasWorkspaceAgreement = state.workspace?.path && state.workspace.path !== root &&
     existsSync(join(state.workspace.path, "openspec", "changes", id));
   const workspaceAgreement = workspace && hasWorkspaceAgreement;
-  const revisionMatches = state.specApproval.revision === Number(state.contractRevision || 0);
+  // Consent binds the approved bytes, never the revision counter: harness
+  // bookkeeping (a grounding reopen, a sandbox sync, an authority grant) moves
+  // the counter without changing what the user agreed to.
   const approved = state.specApproval.identity;
   const rootApproved = approvalMatches(approved, root, id);
   // The same content under the current identity is the same consent, so a
@@ -124,25 +132,25 @@ export function assertSpecApproval(root, id, state, { workspace = true } = {}) {
   const workspaceApproved = hasWorkspaceAgreement &&
     (approvalMatches(approved, state.workspace.path, id) || rootApproved &&
       agreementIdentity(root, id) === agreementIdentity(state.workspace.path, id));
-  if (revisionMatches && rootApproved && (!workspaceAgreement || workspaceApproved)) return;
+  if (rootApproved && (!workspaceAgreement || workspaceApproved)) return;
   // A harness-owned semantic amendment is written to the isolated packet and
   // reaches the target only through Land. Its post-amendment approval therefore
-  // has a legitimate workspace-only identity at the matching amendment revision.
-  const currentAmendment = (state.amendments || []).some((entry) =>
-    Number(entry?.revision) === Number(state.contractRevision || 0));
-  if (revisionMatches && currentAmendment && workspaceApproved) return;
-  // Without an amendment the target packet is canonical, so an isolated packet
-  // that differs from it can never be approved: recording consent binds one
-  // identity that cannot equal both. The harness restores it (whitespace in
-  // place, any other edit saved aside for an amendment); only a restore that
-  // cannot reproduce consent is agent repair, never a user decision.
-  if (workspaceAgreement && !currentAmendment &&
+  // has a legitimate workspace-only identity: the packet the amendment left.
+  const amended = hasWorkspaceAgreement && amendedAgreementMatches(state, state.workspace.path, id);
+  if (amended && workspaceApproved) return;
+  // An isolated packet that matches neither the target nor the latest
+  // amendment can never be approved: recording consent binds one identity.
+  // The harness restores it from the latest agreed text (whitespace in place,
+  // any other edit saved aside for an amendment); only a restore that cannot
+  // reproduce consent is agent repair, never a user decision.
+  if (workspaceAgreement && !amended &&
       agreementIdentity(root, id) !== agreementIdentity(state.workspace.path, id)) {
-    if (repairWhitespaceDrift(root, state.workspace.path, id))
+    const source = amendedPacketSource(root, state);
+    if (!source && repairWhitespaceDrift(root, state.workspace.path, id))
       return assertSpecApproval(root, id, state, { workspace });
-    const saved = restoreDriftedAgreement(root, state.workspace.path, id);
-    if (saved) {
-      emitSignal("agreement-restored", agreementRestoredNotice(id, saved));
+    const restored = restoreDriftedAgreement(root, state.workspace.path, id, Date.now(), source);
+    if (restored) {
+      emitSignal("agreement-restored", agreementRestoredNotice(id, restored));
       return assertSpecApproval(root, id, state, { workspace });
     }
     throw agreementDriftError(id, state.workspace.path);
@@ -269,15 +277,24 @@ export function repairWhitespaceDrift(root, workspacePath, id) {
 // bookkeeping), and returns where the edit was saved so the agent can turn a
 // real change of intent into one amendment. Null when restoring could not
 // reproduce the approved identity; nothing is changed then.
-export function restoreDriftedAgreement(root, workspacePath, id, stamp = Date.now()) {
-  const target = join(root, "openspec", "changes", id);
+// `source` is the packet directory holding the agreed text: the target packet
+// by default, or the harness snapshot of the latest amendment when one exists.
+// Returns `{ saved, files }` (the drift copy and the packet files whose
+// content was put back) or null.
+export function restoreDriftedAgreement(root, workspacePath, id, stamp = Date.now(),
+  source = null) {
+  const target = source || join(root, "openspec", "changes", id);
   const isolated = join(workspacePath, "openspec", "changes", id);
   if (!existsSync(target) || !existsSync(isolated)) return null;
   const saved = join(root, ".foundation", "agreement-drift", id, String(stamp));
   mkdirSync(saved, { recursive: true });
   cpSync(isolated, saved, { recursive: true });
   const wanted = new Set(packetFiles(target));
-  for (const name of packetFiles(isolated)) if (!wanted.has(name)) rmSync(join(isolated, name), { force: true });
+  const files = [];
+  for (const name of packetFiles(isolated)) if (!wanted.has(name)) {
+    rmSync(join(isolated, name), { force: true });
+    files.push(name);
+  }
   for (const name of wanted) {
     let content = readFileSync(join(target, name), "utf8");
     const mine = join(isolated, name);
@@ -288,20 +305,108 @@ export function restoreDriftedAgreement(root, workspacePath, id, stamp = Date.no
         CHECKBOX.test(line) && bookkeeping.has(taskKey(line)) ? bookkeeping.get(taskKey(line)) : line)
         .join("\n");
     }
+    if (existsSync(mine) && readFileSync(mine, "utf8") === content) continue;
     mkdirSync(join(mine, ".."), { recursive: true });
     writeFileSync(mine, content);
+    files.push(name);
   }
-  if (agreementIdentity(root, id) === agreementIdentity(workspacePath, id)) return saved;
+  if (packetIdentity(target) === agreementIdentity(workspacePath, id))
+    return { saved, files: [...new Set(files)].sort() };
   rmSync(isolated, { recursive: true, force: true });
   cpSync(saved, isolated, { recursive: true });
   rmSync(saved, { recursive: true, force: true });
   return null;
 }
 
-export function agreementRestoredNotice(id, saved) {
+export function agreementRestoredNotice(id, restored) {
+  const saved = typeof restored === "string" ? restored : restored?.saved;
+  const files = typeof restored === "string" ? [] : restored?.files || [];
   return `NOTICE: the isolated agreement for '${id}' was edited outside a semantic amendment; ` +
-    `the harness restored the approved text and saved the edit at ${saved}. If that edit ` +
+    `the harness restored the approved text and saved the edit at ${saved}. ` +
+    `${files.length ? `Restored: ${files.join(", ")}. ` : ""}If that edit ` +
     `changes intent, express it with 'claude-foundation change amend ${id} <amendment.json>'.`;
+}
+
+// Harness snapshots of amended packets, keyed by the amendment's revision.
+// The isolated packet reaches the target only through Land, so this is the
+// only copy of the agreed text an amendment produced.
+export const AMENDED_PACKET_DIR = join(".foundation", "agreement-amended");
+
+export function amendedPacketPath(root, id, revision) {
+  return join(root, AMENDED_PACKET_DIR, id, String(revision));
+}
+
+export function snapshotAmendedPacket(root, workspacePath, id, revision) {
+  const isolated = join(workspacePath, "openspec", "changes", id);
+  const snapshot = amendedPacketPath(root, id, revision);
+  rmSync(snapshot, { recursive: true, force: true });
+  mkdirSync(snapshot, { recursive: true });
+  cpSync(isolated, snapshot, { recursive: true });
+  return { snapshot: join(AMENDED_PACKET_DIR, id, String(revision)),
+    identity: packetIdentity(snapshot) };
+}
+
+export function latestAmendment(state) {
+  const rows = Array.isArray(state?.amendments) ? state.amendments : [];
+  return rows.length ? rows[rows.length - 1] : null;
+}
+
+// Whether the isolated packet is the agreement the latest harness-recorded
+// amendment left. A revision bump by bookkeeping after the amendment does not
+// make the amended packet drift. Rows recorded before identities were kept
+// (3.6.8) keep their revision-bound rule.
+export function amendedAgreementMatches(state, workspacePath, id) {
+  const latest = latestAmendment(state);
+  if (!latest || !workspacePath ||
+      !existsSync(join(workspacePath, "openspec", "changes", id))) return false;
+  if (latest.identity) return latest.identity === agreementIdentity(workspacePath, id);
+  return Number(latest.revision) === Number(state.contractRevision || 0);
+}
+
+// The directory holding the latest amended text, or null when no amendment
+// snapshot exists (the target packet is then the agreed text).
+export function amendedPacketSource(root, state) {
+  const snapshot = latestAmendment(state)?.snapshot;
+  if (!snapshot) return null;
+  const path = join(root, snapshot);
+  return existsSync(path) ? path : null;
+}
+
+// Bookkeeping moved `contractRevision` (a grounding reopen, a sandbox sync, a
+// validate that re-locked grounding) while the packet bytes the user approved
+// are unchanged. Consent, lanes, revision-bound waivers, and the compiled draft
+// follow the unchanged agreement to the new revision with an audit row, so no
+// gate asks the user again for a decision they already made. Returns whether
+// anything was carried; the caller saves the state.
+export function carryApprovalAcrossBookkeeping(root, id, state, reason,
+  now = () => new Date().toISOString()) {
+  const revision = Number(state?.contractRevision || 0);
+  const approval = state?.specApproval;
+  const packetRoot = state?.workspace?.path &&
+    existsSync(join(state.workspace.path, "openspec", "changes", id))
+    ? state.workspace.path : root;
+  if (!approval?.identity || !approval.decisionRef ||
+      Number(approval.revision) === revision ||
+      !approvalMatches(approval.identity, packetRoot, id)) return false;
+  const from = Number(approval.revision);
+  const carriedAt = now();
+  const { carriedFrom: _prior, ...consent } = approval;
+  const lanes = consent.lanes ? Object.fromEntries(Object.entries(consent.lanes)
+    .map(([role, lane]) => [role, lane?.identity === approval.identity
+      ? { ...lane, revision } : lane])) : undefined;
+  state.specApproval = { ...consent, revision, ...(lanes ? { lanes } : {}),
+    carriedFrom: { revision: from, reason, carriedAt } };
+  state.approvalCarries = [...(state.approvalCarries || []), {
+    fromRevision: from, toRevision: revision, reason,
+    delta: { added: [], revised: [], removed: [] }, carriedAt
+  }];
+  if (Array.isArray(state.waivers))
+    state.waivers = state.waivers.map((row) => row?.binding &&
+      Number(row.binding.contractRevision) === from
+      ? { ...row, binding: { ...row.binding, contractRevision: revision } } : row);
+  if (state.draftSource && Number(state.draftSource.contractRevision) === from)
+    state.draftSource = { ...state.draftSource, contractRevision: revision };
+  return true;
 }
 
 export function agreementDriftError(id, workspacePath) {

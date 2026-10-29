@@ -757,14 +757,15 @@ listings elsewhere name this file as their source rather than restating it.
 | `.foundation/instruction-manifests/` | Instruction provenance per command |
 | `.foundation/recovery/` | Quarantined abandoned changes, undone Lands (`land-undone/`), and orphaned runtime state |
 | `.foundation/backups/` | Commit bundles, patches, and file copies of unlanded sandbox work, written before a sandbox is removed |
-| `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the approved text |
+| `.foundation/agreement-drift/` | Isolated-packet edits made outside an amendment, saved when the harness restores the agreed text |
+| `.foundation/agreement-amended/` | Snapshot of the isolated packet each semantic amendment left (`<change>/<revision>/`); the agreed text until Land, used to recognise and restore the amended packet |
 | `.foundation/prototypes/` | Disposable comparison prototypes, never admissible as evidence |
 | `.foundation/packages/` | Read-only approval packages (`<change>.html`), regenerated on demand |
 | `.foundation/previews/` | Optional pre-Build preview workspaces and `kind: "preview"` receipts, never admissible as evidence |
 | `.foundation/policy.json` | Optional project-authored rules mapping paths to required capabilities; not generated proof |
 | `.foundation/install-manifest.txt` | Installer-owned record of managed files |
 
-`intake/`, `repository-sandboxes/`, `prototypes/`, `packages/`, `previews/`, `recovery/`, `agreement-drift/`, and `policy.json` appear
+`intake/`, `repository-sandboxes/`, `prototypes/`, `packages/`, `previews/`, `recovery/`, `agreement-drift/`, `agreement-amended/`, and `policy.json` appear
 only once something creates them.
 
 Receipts are reusable only while their bound inputs remain unchanged. Every

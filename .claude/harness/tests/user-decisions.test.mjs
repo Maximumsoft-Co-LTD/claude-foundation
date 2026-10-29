@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agreementDriftError, agreementIdentity, assertSpecApproval, currentWaivers,
-  repairWhitespaceDrift, REVIEW_DISPATCH_TIMEOUT_MS } from "../runtime/core/user-decisions.mjs";
+import { agreementDriftError, agreementIdentity, agreementRestoredNotice, assertSpecApproval,
+  currentWaivers, repairWhitespaceDrift, restoreDriftedAgreement, REVIEW_DISPATCH_TIMEOUT_MS }
+  from "../runtime/core/user-decisions.mjs";
 import { advanceFailureAction, createAdvanceRuntime } from "../runtime/workflow/advance-runtime.mjs";
 import { drainSignals } from "../runtime/core/signals.mjs";
 import { workspaceCapabilityValue } from "../runtime/core/execution-contract.mjs";
@@ -195,4 +196,32 @@ test("whitespace drift is repaired in place and wording drift is restored with t
   try { assert.doesNotThrow(() => assertSpecApproval(root, "demo", state)); }
   finally { console.error = original; }
   assert.equal(readFileSync(join(packet, "proposal.md"), "utf8"), "# Greeting\n\nChange the greeting.\n");
+});
+
+// The restore names what it put back and where the edit went, so the agent
+// (and the user reading the envelope) see what was overwritten before acting.
+test("a restore names the restored files and the saved copy", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "spec-restore-notice-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const write = (base, files) => {
+    const packet = join(base, "openspec/changes/demo");
+    mkdirSync(packet, { recursive: true });
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(packet, name), content);
+    return packet;
+  };
+  write(root, { "proposal.md": "# Greeting\n", "design.md": "## Overview\n", "tasks.md": "- [ ] 1.1 Do\n" });
+  const workspace = join(root, "workspace");
+  write(workspace, { "proposal.md": "# Greeting\n", "design.md": "## Overview\n\nEdited.\n",
+    "tasks.md": "- [x] 1.1 Do\n- [ ] 1.2 Added by hand\n" });
+  const restored = restoreDriftedAgreement(root, workspace, "demo", 42);
+  assert.deepEqual(restored.files, ["design.md", "tasks.md"]);
+  assert.equal(restored.saved, join(root, ".foundation", "agreement-drift", "demo", "42"));
+  assert.equal(readFileSync(join(restored.saved, "design.md"), "utf8"), "## Overview\n\nEdited.\n");
+  assert.equal(readFileSync(join(workspace, "openspec/changes/demo/tasks.md"), "utf8"), "- [x] 1.1 Do\n");
+  const notice = agreementRestoredNotice("demo", restored);
+  assert.match(notice, /Restored: design\.md, tasks\.md\./);
+  assert.match(notice, /agreement-drift\/demo\/42/);
+  // Whitespace-only differences are repaired in place and never restored.
+  write(workspace, { "proposal.md": "# Greeting  \n", "design.md": "## Overview\n", "tasks.md": "- [ ] 1.1 Do\n" });
+  assert.equal(repairWhitespaceDrift(root, workspace, "demo"), true);
 });

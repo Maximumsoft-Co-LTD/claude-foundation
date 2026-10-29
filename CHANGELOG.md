@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- User authority now binds the agreement's content, not the revision counter.
+  A grounding reopen, the validate that re-locks it, a sandbox sync, or an
+  authority grant no longer voids the spec approval, its lanes, revision-bound
+  waivers, the compiled draft, or task leases when the packet bytes are
+  unchanged; each carry leaves an `approvalCarries` audit row.
+- `authority extend-review` no longer changes the contract fingerprint, so the
+  wave the user granted runs instead of returning `CONTRACT_DECISION_REQUIRED`.
+- A semantic amendment records the identity of the packet it left and a
+  snapshot under `.foundation/agreement-amended/`; `advance --approve-spec`
+  and every later gate recognise that packet as the agreement after bookkeeping
+  bumps instead of restoring the stale target packet over it. A hand edit after
+  the amendment is restored from the amended text, and the restore notice names
+  the files it put back.
+
 ## [3.6.8] - 2026-10-25
 
 ### Added

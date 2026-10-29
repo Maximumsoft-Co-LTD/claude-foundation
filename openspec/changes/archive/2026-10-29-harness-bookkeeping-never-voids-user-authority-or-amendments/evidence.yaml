@@ -1,0 +1,142 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "budget-outside-fingerprint-user-authority-extend-review-advance",
+      "requirementKey": "budget-outside-fingerprint",
+      "scenario": "grant หลัง final AI delta แล้วรัน wave ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "budget-outside-fingerprint-user-authority-extend-review",
+      "requirementKey": "budget-outside-fingerprint",
+      "scenario": "grant ไม่ทำให้ receipt provider อื่น stale",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "budget-outside-fingerprint-amendment-requirement-decision-revisi",
+      "requirementKey": "budget-outside-fingerprint",
+      "scenario": "ข้อตกลงเปลี่ยนจริงยังถูกจับได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-survives-approval-advance-approve-spec-decision-ref-re",
+      "requirementKey": "amendment-survives-approval",
+      "scenario": "amend แล้ว reopen grounding แล้ว approve",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-survives-approval-approve-spec-advance-approval",
+      "requirementKey": "amendment-survives-approval",
+      "scenario": "amendment หลายรอบคงรอบล่าสุด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "amendment-survives-approval-advance-approve-spec",
+      "requirementKey": "amendment-survives-approval",
+      "scenario": "แก้ packet นอก amendment ยังถูก restore",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-binds-to-content-change-resolve-reopen-grounding-chang",
+      "requirementKey": "authority-binds-to-content",
+      "scenario": "reopen grounding คง spec approval",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-binds-to-content-reopen-grounding-validate",
+      "requirementKey": "authority-binds-to-content",
+      "scenario": "reopen grounding คง waiver และ lease",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-binds-to-content-bookkeeping-bump-packet-identity",
+      "requirementKey": "authority-binds-to-content",
+      "scenario": "approval lane ตาม identity",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-binds-to-content-reopen-grounding-grounding-yaml-requi",
+      "requirementKey": "authority-binds-to-content",
+      "scenario": "เนื้อหาเปลี่ยนยังต้องขอใหม่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "authority-binds-to-content-advance-runtime",
+      "requirementKey": "authority-binds-to-content",
+      "scenario": "state เดิมที่ไม่มี field ใหม่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "restore-names-files-harness-restore",
+      "requirementKey": "restore-names-files",
+      "scenario": "notice ระบุไฟล์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "restore-names-files-harness-drift",
+      "requirementKey": "restore-names-files",
+      "scenario": "ไม่มีไฟล์ต่างกัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/authority-fingerprint.test.mjs .claude/harness/tests/review-repair-closure.test.mjs .claude/harness/tests/receipt-validity.test.mjs) && (node --test .claude/harness/tests/amendment-approval-survival.test.mjs .claude/harness/tests/user-decisions.test.mjs .claude/harness/tests/sandbox-runtime-sync.test.mjs) && (node --test .claude/harness/tests/authority-continuity.test.mjs .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/change-resolution.test.mjs .claude/harness/tests/review-closure-helpers.test.mjs) && (node --test .claude/harness/tests/user-decisions.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/authority-fingerprint.test.mjs .claude/harness/tests/review-repair-closure.test.mjs .claude/harness/tests/receipt-validity.test.mjs",
+        "node --test .claude/harness/tests/amendment-approval-survival.test.mjs .claude/harness/tests/user-decisions.test.mjs .claude/harness/tests/sandbox-runtime-sync.test.mjs",
+        "node --test .claude/harness/tests/authority-continuity.test.mjs .claude/harness/tests/approval-lanes.test.mjs .claude/harness/tests/change-resolution.test.mjs .claude/harness/tests/review-closure-helpers.test.mjs",
+        "node --test .claude/harness/tests/user-decisions.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}
