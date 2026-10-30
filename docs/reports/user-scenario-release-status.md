@@ -18,6 +18,26 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+### v3.6.9 — 2026-10-30 (published under an explicit exception, no paid smoke)
+
+Source is `095c9f16a`: the approval page is now written by the `prototype` skill
+and the harness prints approval data (`package` prints JSON, writes no file;
+`change start` and `advance` write no `.foundation/packages/` file). The
+maintainer authorized publication as an explicit exception to the all-lane
+checkpoint in [RELEASING.md](../../RELEASING.md). **No paid scenario was run for
+this candidate**, and the eight-lane smoke of `8913c2da9` below predates this
+behavior change, so it is not reused as a pass.
+
+What exists: the change reached `proven` and was landed through the harness; the
+`website/docs` build passed on the remote runner (job `20261030-175257-b84f75d5`).
+The remote full suite (job `20261030-175254-4803e176`) failed four suites when run
+in parallel (`concurrent repositories seam`, `openspec native benchmark`,
+`semantic acceptance seam`, `risk-tiered review contract`); the same four passed
+when run alone, locally and on the runner (job `20261030-193530-f3350517`). The
+cause of the parallel-run failures was not established, and no single full-suite
+run has passed. Unknown: effect on the paid scenarios, and cost and time against
+v3.6.8. The release workflow's own deterministic gates still run and fail closed.
+
 ### Candidate `8913c2da9` smoke — 2026-10-30 (exception recorded, no release decision)
 
 Evidence is the eight-lane, n=1
