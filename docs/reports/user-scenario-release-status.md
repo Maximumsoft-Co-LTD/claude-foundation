@@ -18,6 +18,23 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+### Candidate `8913c2da9` smoke — 2026-10-30 (exception recorded, no release decision)
+
+Evidence is the eight-lane, n=1
+[2026-10-30 smoke](scenario-smoke-candidate-8913c2da9-2026-10-30.md)
+([ภาษาไทย](scenario-smoke-candidate-8913c2da9-2026-10-30.th.md)) of the four
+authority-continuity fixes landed after v3.6.8. Seven small lanes are strict
+green (68/68 oracle; +5.2% cost and −11.8% time versus retained v3.6.8-era rows
+at n=1, within noise; 2.03× cost versus retained no-harness rows). The
+`order-inventory-lifecycle` lane is a recorded gap: three retained runs each
+stopped at a user decision the headless lane cannot answer (spec approval of a
+second amendment; `review-exhausted` after an oracle repair, twice, once after a
+granted extra wave), with the harness honoring and bounding each grant as the
+contract states. Deterministic gates, sentinel, preflight, and upgrade matrix
+pass. The maintainer authorized this eight-of-29-lane smoke as an explicit
+exception to the all-lane checkpoint in [RELEASING.md](../../RELEASING.md);
+US$11.68 measured. No release decision is recorded here.
+
 ### Candidate `497ab55fb` smoke — 2026-10-22 (no release decision)
 
 Evidence is the five-scenario, n=1, per-task
