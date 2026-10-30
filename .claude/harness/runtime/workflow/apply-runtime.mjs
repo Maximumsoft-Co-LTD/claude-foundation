@@ -17,7 +17,7 @@ import {
   copyBaselineState, createRepositoryDeliverySaga, RepositoryDeliveryError, targetOverwrites
 } from "./repository-delivery-saga.mjs";
 import { deliveryTreeEntries, assertDeliveryEntries } from "./delivery-integrity.mjs";
-import { approvalMatches } from "../core/user-decisions.mjs";
+import { amendedAgreementMatches, approvalMatches } from "../core/user-decisions.mjs";
 import { emitSignal } from "../core/signals.mjs";
 import { legacyRepositoryLandTransaction } from "./land-runtime.mjs";
 import { DEPENDENCY_LOCKFILES, rejectedPaths, workspaceSetupPlan } from "./sandbox-runtime.mjs";
@@ -611,6 +611,43 @@ export function syncChildOnlyTaskProgress({ repositories, rootTasksPath, sandbox
   if (merged === current) return false;
   writeFileSync(rootTasksPath, merged);
   return true;
+}
+
+// A composite Land without a writable root, for a change amended during
+// Build: the agreement the user approved and the agent implemented is the
+// sandbox packet (new tasks, revised requirements, spec delta, amendment
+// history), not the root packet an amendment never wrote. Archiving the root
+// packet would archive the pre-amendment agreement and merge the wrong spec
+// delta. The whole sandbox packet replaces the root packet before archive;
+// the root's own files absent from the sandbox are removed. Without an
+// amendment the tick-only merge above keeps every other root line.
+// Returns "replaced", true (ticks merged), or false (nothing to do).
+export function syncChildOnlyPacket({ repositories, rootPacketPath, sandboxPacketPath,
+  amended = false, mergeTaskProgress, pathExists = existsSync }) {
+  if (repositories.some((row) => row.id === "root" && row.mode === "write")) return false;
+  if (!amended)
+    return syncChildOnlyTaskProgress({ repositories, mergeTaskProgress, pathExists,
+      rootTasksPath: join(rootPacketPath, "tasks.md"),
+      sandboxTasksPath: join(sandboxPacketPath, "tasks.md") });
+  if (!pathExists(rootPacketPath) || !pathExists(sandboxPacketPath)) return false;
+  const files = (base, prefix = "") => {
+    const out = [];
+    for (const entry of readdirSync(join(base, prefix), { withFileTypes: true })) {
+      const name = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) out.push(...files(base, `${name}/`));
+      else if (entry.isFile()) out.push(name);
+    }
+    return out;
+  };
+  const wanted = files(sandboxPacketPath);
+  for (const name of files(rootPacketPath))
+    if (!wanted.includes(name)) rmSync(join(rootPacketPath, name), { force: true });
+  for (const name of wanted) {
+    const target = join(rootPacketPath, name);
+    mkdirSync(join(target, ".."), { recursive: true });
+    writeFileSync(target, readFileSync(join(sandboxPacketPath, name)));
+  }
+  return "replaced";
 }
 
 export function changeArtifactApplyEntry(context, id, sandboxPath) {
@@ -1503,10 +1540,13 @@ export function createApplyRuntime({
         // workspace-uncommitted delivery saga would misclassify those expected
         // child HEADs as target drift.
         if (!legacyRepositoryLandTransaction(readiness.state)) repositoryDelivery().apply(id);
-        if (typeof mergeTaskProgress === "function") syncChildOnlyTaskProgress({
+        if (typeof mergeTaskProgress === "function") syncChildOnlyPacket({
           repositories: selectedRepositories(id, readiness.state), mergeTaskProgress,
-          rootTasksPath: join(changePath(id), "tasks.md"),
-          sandboxTasksPath: join(readiness.state.workspace.path, currentChangeRelativePath(id), "tasks.md")
+          rootPacketPath: changePath(id),
+          sandboxPacketPath: join(readiness.state.workspace.path, currentChangeRelativePath(id)),
+          // Only the packet an amendment left is projected whole; a packet
+          // edited by hand after it is still drift for the approval gate.
+          amended: amendedAgreementMatches(readiness.state, readiness.state.workspace.path, id)
         });
       }
       else applySandbox(id, { controlPlane: true }, readiness);

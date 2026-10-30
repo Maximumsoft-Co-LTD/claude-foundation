@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { syncChildOnlyTaskProgress } from "../runtime/workflow/apply-runtime.mjs";
+import { syncChildOnlyPacket, syncChildOnlyTaskProgress } from "../runtime/workflow/apply-runtime.mjs";
 import { taskBlocks } from "../runtime/contracts/change-artifacts.mjs";
 import { createSandboxRuntime } from "../runtime/workflow/sandbox-runtime.mjs";
 
@@ -68,4 +68,63 @@ test("a read-only root still counts as child-only", (t) => {
   const repositories = [{ id: "root", mode: "read" }, ...CHILD_ONLY];
   assert.equal(syncChildOnlyTaskProgress({ repositories, mergeTaskProgress, ...paths }), true);
   assert.equal(readFileSync(paths.rootTasksPath, "utf8"), ticked(ROOT_LEDGER, ["T002"]));
+});
+
+// A change amended during Build keeps its agreement in the sandbox packet
+// (new task, revised requirement, spec delta, amendment history). A child-only
+// Land must archive that packet, so it replaces the root packet whole; without
+// an amendment only the ticks cross, as before.
+function packets(t, { root, sandbox }) {
+  const dir = mkdtempSync(join(tmpdir(), "child-only-packet-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const write = (base, files) => {
+    for (const [name, content] of Object.entries(files)) {
+      mkdirSync(join(base, name, ".."), { recursive: true });
+      writeFileSync(join(base, name), content);
+    }
+  };
+  write(join(dir, "root"), root);
+  write(join(dir, "sandbox"), sandbox);
+  return { rootPacketPath: join(dir, "root"), sandboxPacketPath: join(dir, "sandbox") };
+}
+
+const read = (base, name) => readFileSync(join(base, name), "utf8");
+
+test("an amended child-only Land replaces the root packet with the sandbox packet", (t) => {
+  const amendedLedger = ticked(ROOT_LEDGER, ["T001", "T002", "T003"]).replace(/\n$/, "") +
+    "\n- [x] **T004** Partial release [repo:backend] [depends:T001] — verify: `npm test`\n";
+  const paths = packets(t, {
+    root: { "tasks.md": ROOT_LEDGER, "proposal.md": "# Change\n\n## Why\n\nBefore.\n",
+      "specs/orders/spec.md": "## ADDED Requirements\n\n### Requirement: reservations\n",
+      "stale.md": "only in root\n" },
+    sandbox: { "tasks.md": amendedLedger,
+      "proposal.md": "# Change\n\n## Why\n\nBefore.\n\n## Appendix: Amendment history\n\n- rev 1: partial release\n",
+      "specs/orders/spec.md": "## ADDED Requirements\n\n### Requirement: reservations\n\n### Requirement: partial-release\n",
+      "design.md": "## Overview\n\nAdded by the amendment.\n" }
+  });
+  assert.equal(syncChildOnlyPacket({ repositories: CHILD_ONLY, mergeTaskProgress, amended: true, ...paths }),
+    "replaced");
+  for (const name of ["tasks.md", "proposal.md", "specs/orders/spec.md", "design.md"])
+    assert.equal(read(paths.rootPacketPath, name), read(paths.sandboxPacketPath, name), name);
+  assert.equal(existsSync(join(paths.rootPacketPath, "stale.md")), false, "a root-only file is removed");
+  assert.match(read(paths.rootPacketPath, "proposal.md"), /Amendment history/);
+  assert.equal(taskBlocks(read(paths.rootPacketPath, "tasks.md")).length, 4);
+});
+
+test("without an amendment a child-only Land still merges only the ticks", (t) => {
+  const paths = packets(t, {
+    root: { "tasks.md": ROOT_LEDGER, "proposal.md": "# Change\n" },
+    sandbox: { "tasks.md": ticked(ROOT_LEDGER, ["T001"]).replace("sole implementation ledger", "edited"),
+      "proposal.md": "# Change edited\n" }
+  });
+  assert.equal(syncChildOnlyPacket({ repositories: CHILD_ONLY, mergeTaskProgress, amended: false, ...paths }), true);
+  assert.equal(read(paths.rootPacketPath, "tasks.md"), ticked(ROOT_LEDGER, ["T001"]));
+  assert.equal(read(paths.rootPacketPath, "proposal.md"), "# Change\n", "prose never crosses without an amendment");
+});
+
+test("a writable root keeps its projection whether or not the change was amended", (t) => {
+  const paths = packets(t, { root: { "tasks.md": ROOT_LEDGER }, sandbox: { "tasks.md": ticked(ROOT_LEDGER, ["T001"]) } });
+  const repositories = [{ id: "root", mode: "write" }, ...CHILD_ONLY];
+  assert.equal(syncChildOnlyPacket({ repositories, mergeTaskProgress, amended: true, ...paths }), false);
+  assert.equal(read(paths.rootPacketPath, "tasks.md"), ROOT_LEDGER);
 });

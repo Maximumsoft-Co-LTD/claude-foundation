@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A child-only Land (no writable root) of a change amended during Build now
+  replaces the root packet with the sandbox packet before archive instead of
+  merging only task checkboxes, so the archive and synced specs carry the
+  amended tasks, requirements, and amendment history.
 - `advance` settles a harness-issued session lease whose graph or contract
   moved since it was issued (an amendment reopened or reshaped tasks) before
   dispatching: a lease whose task now waits on a pending dependency is parked

@@ -1,0 +1,67 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "child-only-ledger-land-apply-archive",
+      "requirementKey": "child-only-ledger",
+      "scenario": "ทุก task เสร็จ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "child-only-ledger-land-apply-archive-2",
+      "requirementKey": "child-only-ledger",
+      "scenario": "บรรทัดอื่นไม่เปลี่ยน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "child-only-ledger-land-apply",
+      "requirementKey": "child-only-ledger",
+      "scenario": "มี root",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "child-only-ledger-land-apply-archive-3",
+      "requirementKey": "child-only-ledger",
+      "scenario": "amendment ทำให้ packet ทั้งชุดถูกแทนที่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "child-only-ledger-land-apply-2",
+      "requirementKey": "child-only-ledger",
+      "scenario": "sandbox packet ไม่ตรง amendment",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/child-only-ledger.test.mjs .claude/harness/tests/concurrent-repositories.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/child-only-ledger.test.mjs .claude/harness/tests/concurrent-repositories.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

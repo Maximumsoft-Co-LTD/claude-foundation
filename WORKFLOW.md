@@ -1416,7 +1416,13 @@ Selected child repositories of a multi-repository change are not installed.
 A multi-repository change whose selection has no writable root has no root
 projection, so Land merges the tasks Build checked in the sandbox ledger into
 the root `tasks.md` before archive. Only those checkboxes change; every other
-line of the root packet stays the agreement as approved and amended.
+line of the root packet stays the agreement as approved. When the change was
+amended during Build and the sandbox packet still matches the recorded
+amendment, the agreement lives in the sandbox packet, so Land replaces the root
+packet with the sandbox packet whole (removing root-only files) before archive;
+the archive then carries the amended tasks, specs, and amendment history. A
+sandbox packet that drifted after the amendment is not projected and Land stops
+on drift as usual.
 
 An archived Land whose diff is still uncommitted is undone, on the user's
 decision, with `advance <change> --undo-land --decision-ref <user-decision>`.
