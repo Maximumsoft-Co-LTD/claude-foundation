@@ -1118,6 +1118,11 @@ export function oracleRepairPrompt(changeId, failedCases) {
     `claude-foundation advance ${changeId} --through proven so the harness re-proves the ` +
     "edited workspace. Finish with code changed, not a report that nothing was required. " +
     "Never run a test runner (npm test, node --test, pytest) directly; it is not pre-allowed. " +
+    "If that advance returns the review-exhausted decision (every AI review wave is delivered " +
+    "and the request still needs a verdict), the user reporting this defect grants exactly one " +
+    `more AI wave: run claude-foundation authority extend-review ${changeId} ` +
+    "--decision-ref user-prompt:oracle-repair-review-wave and rerun the same advance. Never " +
+    "record a human verdict yourself. " +
     "Do not Land; the backend owns the oracle and Land boundary.";
 }
 

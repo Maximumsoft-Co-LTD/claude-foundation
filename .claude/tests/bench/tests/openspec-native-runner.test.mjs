@@ -335,6 +335,12 @@ test("oracle repair verifies only through pre-allowed harness commands", () => {
   // "target reached" and no edit (observed three times on 2026-10-29).
   assert.match(prompt, /will report its target reached/);
   assert.match(prompt, /Do not stop there/);
+  // The oracle repair re-proves an edited workspace, which needs another AI
+  // review wave; a high-tier change that already spent both on Build and an
+  // amendment stops at the review-exhausted user decision (observed 2026-10-30).
+  // The lane is that user and grants exactly one wave under a recorded ref.
+  assert.match(prompt, /authority extend-review change-a --decision-ref user-prompt:oracle-repair-review-wave/);
+  assert.match(prompt, /Never record a human verdict yourself/);
   assert.match(prompt, /add a test that fails on the old code/);
   assert.match(prompt, /Finish with code changed/);
 });
