@@ -339,3 +339,22 @@ test("package still refuses an unknown change from the CLI", (t) => {
   assert.notEqual(result.status, 0);
   assert.equal(existsSync(join(root, ".foundation", "packages", "missing-change.html")), false);
 });
+
+test("the data lists each preview with its kept artifact only when that file stays inside the preview folder", (t) => {
+  const { id, root, runtime } = fixture(t, {
+    state: { impact: "high" },
+    providers: { shots: { capability: "browser" } },
+    previews: [
+      { kind: "preview", provider: "shots", capability: "browser", contractRevision: 1, status: "pass", artifact: "artifacts/shots.html" },
+      { kind: "preview", provider: "escape", capability: "browser", contractRevision: 1, status: "pass", artifact: "../../receipts/demo/x.json" },
+      { kind: "preview", provider: "gone", capability: "browser", contractRevision: 1, status: "pass", artifact: "artifacts/absent.html" }
+    ]
+  });
+  write(join(root, ".foundation", "previews", id, "artifacts", "shots.html"), "kept");
+  write(join(root, ".foundation", "receipts", id, "x.json"), "{}");
+  const rows = Object.fromEntries(runtime.packageData(id).previews.map((row) => [row.provider, row]));
+  assert.equal(rows.shots.artifact, ".foundation/previews/demo/artifacts/shots.html");
+  assert.equal(rows.shots.stale, false);
+  assert.equal(rows.escape.artifact, null, "a path leaving the preview folder is never named");
+  assert.equal(rows.gone.artifact, null, "a missing file is never named");
+});

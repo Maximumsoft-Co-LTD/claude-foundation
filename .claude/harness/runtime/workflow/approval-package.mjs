@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { routeChange } from "../contracts/scratch-router.mjs";
 import { missingApprovalLanes } from "../core/user-decisions.mjs";
@@ -67,6 +67,23 @@ export function previewReceipts(previewsDir, id, contractRevision) {
       return [{ ...value, stale: Number(value.contractRevision) !== Number(contractRevision || 0) }];
     } catch { return []; }
   });
+}
+
+// A preview artifact the data may name: an existing regular file whose real path
+// stays inside the change's preview folder, written relative to the project root.
+// Anything else is null, so a receipt cannot point the data outside the folder.
+export function confinedPreviewPath(root, base, path) {
+  const value = String(path ?? "").trim();
+  if (!value || isAbsolute(value) || /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  let real;
+  let realBase;
+  try {
+    real = realpathSync(resolve(base, value));
+    realBase = realpathSync(base);
+    if (real !== realBase && !real.startsWith(realBase + sep)) return null;
+    if (!statSync(real).isFile()) return null;
+  } catch { return null; }
+  return relative(realpathSync(root), real).split(sep).join("/");
 }
 
 function artifactLabel(capability, { proven, previews }) {
@@ -321,6 +338,13 @@ export function createApprovalPackageRuntime({
       diagrams: model.diagrams,
       suggestions: model.suggestions,
       results: model.results,
+      // Optional pre-Build runs: never proof; `artifact` is a kept copy inside the
+      // change's preview folder (null when absent or outside it).
+      previews: model.previews.map((row) => ({
+        provider: row.provider ?? null, capability: row.capability ?? null, status: row.status ?? null,
+        stale: Boolean(row.stale),
+        artifact: row.artifact ? confinedPreviewPath(root, join(previewsDir, id), row.artifact) : null
+      })),
       prototype: {
         // The page the draft names, if any; the skill writes it, the harness never does.
         page: sync.path ? { path: sync.path, status: sync.file } : null,

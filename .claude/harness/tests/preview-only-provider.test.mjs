@@ -122,8 +122,11 @@ test("the preview artifact is kept and linked; a path outside the workspace is r
   assert.equal(existsSync(join(root, ".foundation", "previews", "demo", "workspace", "ran")), false, "nothing ran");
   write(join(root, ".foundation", "runtime", "demo.json"),
     { id: "demo", status: "change", contractRevision: 0, impact: "high", draftSource: { contractRevision: 0, draft: { workType: ["ui"] } } });
-  assert.equal(run("package", "demo").status, 0);
+  const packaged = run("package", "demo");
+  assert.equal(packaged.status, 0, packaged.stderr || packaged.stdout);
   assert.ok(existsSync(join(root, ".foundation", "previews", "demo", "artifacts", "shots-prototype.html")));
-  assert.match(readFileSync(join(root, ".foundation", "packages", "demo.html"), "utf8"),
-    /href="\.\.\/previews\/demo\/artifacts\/shots-prototype\.html"/);
+  // `package` prints the kept copy as a path inside the preview folder and writes no page.
+  const listed = JSON.parse(packaged.stdout).previews.find((row) => row.provider === "shots");
+  assert.equal(listed.artifact, ".foundation/previews/demo/artifacts/shots-prototype.html");
+  assert.equal(existsSync(join(root, ".foundation", "packages")), false, "the harness writes no approval page");
 });
