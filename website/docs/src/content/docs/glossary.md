@@ -40,7 +40,7 @@ decisions, and the machinery.
 
 | Term | In plain words | Identifier | Where you meet it |
 |---|---|---|---|
-| **Approval package** | A read-only page that summarizes what you are asked to approve: risk, what changes, examples, and which evidence exists | `.foundation/packages/<change>.html` | [Human approval](/docs/approval/#approval-package-previews-and-role-lanes) |
+| **Approval page** | The page you read before approving: a clickable prototype of what you will get, a short strip of the harness's facts (risk, proof, roles), what it must show, before and after, failures with recovery. Written by the prototype skill, not the harness | `.foundation/previews/<change>/prototype.html` | [Human approval](/docs/approval/#approval-package-previews-and-role-lanes) |
 | **Decision Sheet** | One batched set of the consequential questions that only you can answer, asked together instead of one by one | Decision Sheet, `ASK_USER` | [Change](/docs/loop/change/) |
 | **Acceptance** | A named person saying the finished outcome is what they wanted. Required only when the change says so | acceptance, `change resolve --acceptance-required` | [Human approval](/docs/approval/#acceptance) |
 | **Review** | An independent read of the implementation by a different AI or a person, to judge whether it is sound | `review`, `workflow.reviewPolicy` | [Human approval](/docs/approval/#independent-review) |

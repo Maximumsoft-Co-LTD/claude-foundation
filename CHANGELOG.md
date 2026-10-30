@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The approval page is now written by the `prototype` skill, not the harness.
+  `claude-foundation package <change>` prints the change's data as JSON (risk
+  with reasons, proof labels, role lanes, scratch lines, required sections, the
+  surfaces the page must show and which the prototype declares covered, and
+  drift and facts-digest status) and writes no file; `change start` and
+  `advance` no longer write `.foundation/packages/`. The approval question names
+  the page at `.foundation/previews/<change>/prototype.html`, or gives the
+  summary as text when there is none. The harness HTML renderer, the A-G
+  decision cards, and their tests are removed; `vendor/mermaid.min.js` stays.
+- A `prototype` example may declare `covers`; a key outside the change's surfaces
+  is an intake `EDIT`. All 26 work types have prototype surfaces, and a test fails
+  when a work type is added without them.
+
+### Added
+
+- Advisory drift warnings: the harness records the page's digest and a facts
+  digest at start, revise, and amend, and warns (never blocks) when the page was
+  edited after the recorded revision or lacks the current facts digest.
+- `prototype` skill guidance for all 26 work types, the page contract, design
+  tokens and a design canvas when the host has one, and keeping the change in
+  step with page edits.
+
 ### Fixed
 
 - A child-only Land (no writable root) of a change amended during Build now

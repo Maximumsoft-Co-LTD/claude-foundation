@@ -20,7 +20,7 @@ when you want to know what the system will never ask of you.
 
 | Decision | When it happens | What you say or do | If you do not decide |
 |---|---|---|---|
-| **Approve the agreement** | End of Change, and again after an amendment that removes approved behavior | Read the approval package; reply "go ahead" or "approve", or correct it | Build does not start. Silence and urgency never count as approval |
+| **Approve the agreement** | End of Change, and again after an amendment that removes approved behavior | Read the approval page; reply "go ahead" or "approve", or correct it | Build does not start. Silence and urgency never count as approval |
 | **Settle a product trade-off** | Whenever the agreement cannot settle a meaning, a trade-off, or a wider scope | Answer the question in plain words | The flow waits on that one question; nothing is guessed |
 | **Accept the outcome** | After Prove, only if the change requires human acceptance | Say whether the outcome is the one you wanted, with your name | Required acceptance stays open and the change waits. An undecided standard change blocks validation |
 | **Waive a failed gate** | A check ran and failed, and you choose not to fix it | Give an explicit reason | The failure stays a failure and Land refuses it |
@@ -65,43 +65,48 @@ or `git push` from the main checkout does not run; it becomes a question, and
 your yes lets it run. "เปิด PR ให้เลย" or "open a PR" counts as `/deliver`. The
 full rule lives in `WORKFLOW.md` under "Authority from the user's words".
 
-## Approval package, previews, and role lanes
+<a id="approval-package-previews-and-role-lanes"></a>
 
-When a change starts, and again when `advance` asks for spec approval, the
-agent writes a read-only approval package at
-`.foundation/packages/<change>.html` and shows you its path. It summarizes the
-risk level (Low, Medium, High, or Critical, derived from impact and risk
-signals), the technical domains touched, and the approval artifacts grouped by
-approver role (product-owner, tech-lead, qa, devops, security). Each artifact
-is labeled: **proof** only when a valid passing receipt backs it, **preview**,
-or **no evidence yet**. The package never changes the change's state, and if
-it cannot be written, approval continues from the packet.
+## Approval page, previews, and role lanes
 
-**The page follows the decision.** From top to bottom: the change id with a
-risk level (a word, a symbol, and a four-step scale, never colour alone) and
-each reason for it in plain words; the four summary lines, with before and
-after side by side; a scope strip (files touched, open questions, failure
-cases; a count the draft cannot give reads **unknown**, never 0); the decision
-cards for your kind of work; a checklist of required sections; failure cases as
-cards (when it happens, what happens, how to recover); the examples, with a
-prototype first and open; the open questions in full; and a collapsed
-**Reviewer details** section (role tables, technical domains, suggested
-previews). Diagrams sit in the card they explain: the flow chart in card A, a
-sequence diagram in card D (else F), a state diagram in card F (else E); each
-is open, can be collapsed, and scrolls sideways when wide. If card A has no
-prototype it says so; that is a note, never a block. The page has no decision
-section, button, form, or script beyond the Mermaid loader and records
-nothing: you decide by replying in the chat. A quiet line under the risk level
-says when this revision is already approved, or names the approval lanes still
-missing. Text uses the Thai-capable sans fonts already on your machine and
-nothing is fetched.
+When a change starts, and again when `advance` asks for spec approval, you are
+pointed to the **approval page**: one file, `.foundation/previews/<change>/prototype.html`,
+that the prototype skill writes for this change. Open it. It leads with a
+clickable prototype in the look of your project, then a short strip of facts, then
+the rest in this order: what the prototype must show and how much of it does; the
+before and after; the path a user takes, including the one that fails; the
+failure cases with how to recover; how to undo the change and who it affects; and a
+closed **Reviewer details** section. Anything the agreement does not say reads
+**unknown**; nothing is guessed. The page has no approve button or form: you decide
+by replying in the chat.
 
-**Decision cards.** Each kind of work shows one card with the question you are
-deciding and the fields that answer it. A field the draft does not give reads
-**unknown**; nothing is guessed. If a change spans several kinds, each card
-appears once, hardest-to-undo first (E, G, F, D, A, B, C).
+The harness does not write that page. It computes the facts and checks the page:
 
-| Card | Kind of work | The question |
+- **Facts.** The risk level (Low, Medium, High, or Critical, derived from impact and
+  risk signals), the technical domains, and the approval artifacts grouped by
+  approver role (product-owner, tech-lead, qa, devops, security). Each artifact
+  is labeled **proof** only when a valid passing receipt backs it, otherwise
+  **preview** or **none**. The page copies these; it cannot raise a proof count by
+  saying tests passed.
+- **What it must show.** For every kind of work the harness lists what the page
+  owes (the table below), says which items the prototype declares it covers, and
+  which are missing or unknown. The declaration is the agent's claim, not proof.
+  `change start` mentions what is still owed in one advisory line.
+- **Warnings.** If the page was edited after the last revision, or no longer carries
+  the current facts, the approval question warns you. Warnings never block.
+
+If there is no page yet, the question gives you the four summary lines as plain text
+and the agent uses the skill; you can still approve from the packet. When you ask
+for a change on the page, the agent updates the agreement in the same turn, so the
+page and the agreement do not drift apart. If your tool has a design canvas, the
+agent builds the page there as numbered frames, one per screen or state, and also
+keeps the exported file. Agents read the same facts with `claude-foundation package
+<change>`, which prints them as JSON and writes nothing.
+
+**What the page must show.** Each kind of work owes its own surface, plus before
+and after and, where it can fail, the failure cases with recovery:
+
+| Group | Kind of work | The question |
 |---|---|---|
 | A | feature, ui, client-release, experiment | What will users see and do? |
 | B | bugfix | What is the problem, and how will we know it is fixed? |
@@ -111,15 +116,7 @@ appears once, hardest-to-undo first (E, G, F, D, A, B, C).
 | F | async, integration, infra, observability, performance, cicd | What happens when it breaks, and what does it cost? |
 | G | privacy, ml, security | Whose data is used, for how long, and what if it goes wrong? |
 
-Under the cards, two lines say how to undo the change and who it affects. They
-come from the author's `scratch.undo` and `scratch.who` when written, otherwise
-from fields the draft already has (named beside the answer), otherwise
-**unknown**. The checklist shows each required section as present or missing
-using the compiler's own rule; since a standard change cannot start without
-them, a missing section shows up mainly on rapid-lane or older drafts. A section
-that must answer fixed fields reads missing and names each field not yet
-answered. If a card or the checklist cannot be built, the page shows a warning
-for it and the rest still renders.
+A change that spans several kinds shows each surface once.
 
 **Three newer kinds of work, and answers that are always possible.** A one-off
 fix to production data (`data-fix`) shows its scope, snapshot, dry run, whether
@@ -131,32 +128,15 @@ learning work must say how the model is evaluated, an experiment must name
 guardrails and stop rules, and an infrastructure change must say what it costs.
 Nothing here ever blocks you or the agent: any of these answers can be
 **`none: <reason>`** or **`unknown: <reason>`** when the fact does not exist or is
-not yet known, and the page shows that word and the reason for you to weigh. A
+not yet known, and the page writes that word and the reason on the page for you to weigh. A
 High or Critical change must also say how to undo it, or say plainly that it
 cannot be and why. These rules apply to a draft that is being started or
 revised; a change already underway is never held up by them. If a file the
 change touches points at a risk the draft did not cover, `change start` prints one
 advisory note and carries on.
 
-**What to read first.** The summary at the top of the page answers
-three plain questions: what you get, what changes (before and after, with a
-count when known), and what happens if it fails. A medium or high change must
-have this summary (`scratch`) before it starts; for low it is optional, and the
-page warns when it is missing. Below that come concrete
-examples with real values, chosen for the kind of work: a clickable prototype,
-API requests and responses for each status, rules with numbers, rows before and
-after a migration, a permission table, and so on. Each example has an
-**After Build** tab: once Build and Prove have run it shows the real result
-(**proof** only from a valid passing receipt, **failed**, or a **preview**),
-and before that it says what will be compared. The page uses Thai or English to
-match the agreement. Diagrams are drawn by a copy of Mermaid shipped with the
-harness on your machine; nothing is fetched over the network, and the page
-shows the diagram text if that file is missing. Examples are optional:
-without them you get only the collapsed reviewer details.
-
 **Previews are optional.** Before Build, the agent may run one declared
-provider against a throwaway copy of the target to show early behavior. A
-High or Critical package lists suggested previews. A preview result is never
+provider against a throwaway copy of the target to show early behavior. For a High or Critical change the approval data lists suggested previews. A preview result is never
 proof: it cannot satisfy Prove or Land, never blocks approval or Build, and
 shows as stale once the spec changes. A provider marked `external: true`
 (for example a payment sandbox or staging) reaches outside your machine, so it

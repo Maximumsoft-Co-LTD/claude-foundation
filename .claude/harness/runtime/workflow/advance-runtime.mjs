@@ -1065,8 +1065,14 @@ export function createAdvanceRuntime({
     try { alongside = pendingApprovalDecisions(id) || []; } catch {}
     let link = null;
     try { link = approvalPackageLink(id); } catch {}
-    const packageNote = link?.path ? ` Approval package: ${link.path}.`
-      : link?.error ? ` Approval package not written (${link.error}); review the packet.` : "";
+    // The page is a file the prototype skill writes; the harness only names it.
+    const pageName = link?.language === "th" ? "หน้าอนุมัติ" : "Approval page";
+    const packageNote = link?.path
+      ? ` ${pageName}: ${link.path}.${(link.warnings || []).map((line) => ` Warning: ${line}.`).join("")}`
+      : link?.missing
+        ? ` No ${pageName} yet; the prototype skill writes it.${
+          link.summary?.length ? ` Summary: ${link.summary.join(" | ")}.` : ""}`
+        : link?.error ? ` ${pageName} not checked (${link.error}); review the packet.` : "";
     if (!alongside.length && !packageNote) return advanceFailureAction(id, error, options);
     const summary = `${error.decision.summary}${packageNote}${alongside.length ? ` Ask in the same question, before Build: ${
       alongside.map((item) => `${item.summary} (${item.next})`).join("; ")}` : ""}`;

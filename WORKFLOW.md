@@ -574,107 +574,97 @@ never approved, still waits for approval. During Build agreement edits go throug
 `change amend`, and a hand-edited isolated packet is agent-owned drift repair. Legacy
 primitive-created/in-flight changes retain their compatibility route.
 
-#### Approval package, preview, and role lanes
+<a id="approval-package-preview-and-role-lanes"></a>
 
-The approval question links a read-only approval package,
-`.foundation/packages/<change>.html`, which `change start`, the `advance`
-approval question, and `package <change>` write. The scratch router derives it
-from the agreement's existing `workType`, `riskSignals`, `impact`, `coupling`,
-`integrations`, and `securityTriggers`: a risk level (Critical when `impact` is
-high with `financial` or `access-control`; High when `impact` is high or a
-weight-3 signal is declared; Medium for any other signal or medium impact; Low
+#### Approval page, approval data, and role lanes
+
+The approval question names the **approval page**: the file
+`.foundation/previews/<change>/prototype.html` that the prototype skill writes
+and that the draft names as its `prototype` example. The harness writes no
+page. `change start`, `advance`, and `package <change>` write no HTML and no
+`.foundation/packages/` file; a package written by an earlier version stays
+readable and is not updated. With no page yet, the question gives the four
+`scratch` lines as text and says to use the skill; it never blocks. In a Thai
+draft the question calls the page `หน้าอนุมัติ` and does not ask the user to
+know the word package.
+
+`package <change> [--pretty]` prints the change's data as JSON and writes no
+file. The scratch router derives the risk from the agreement's existing
+`workType`, `riskSignals`, `impact`, `coupling`, `integrations`, and
+`securityTriggers`: a risk level (Critical when `impact` is high with
+`financial` or `access-control`; High when `impact` is high or a weight-3
+signal is declared; Medium for any other signal or medium impact; Low
 otherwise), up to 28 technical domains, and approval artifacts grouped by
 approver role, each deduplicated across domains. Every change shows its change
 impact and test map; Low shows nothing else, and runnable artifacts appear only
 from High upward. A `proof` label requires a valid passing receipt; other
-artifacts are `preview` or `no evidence yet`. A render failure is a warning and
-the user approves from the packet as before.
+artifacts are `preview` or `none`. The data also carries the `scratch` lines with
+undo and who, scope counts (a count the draft cannot give is `null`, never 0),
+failure scenarios with the recovery only when the draft states it, the status of
+each required section, whether this revision is approved and which
+`approval.roles` lanes are missing, and suggested previews. Evidence the
+harness cannot read becomes an entry in `warnings`; the rest is still printed.
 
-The page is decision-first, in this order: the change id with a risk level (a
-word, a symbol, and a four-step scale, never colour alone) and each reason for
-the level in plain words; the `scratch` lines, with before and after as paired
-cards; a scope strip of files touched, open questions, and failure cases (a
-count the draft cannot give reads `unknown`, never 0); the decision cards for
-the change's kind of work; the required-section checklist; failure cases as
-cards of trigger, what happens, and recovery (recovery appears only when the
-draft states it); the first two examples open, with a
-prototype always first, and the rest collapsed; the open questions in full; and one
-collapsed reviewer-details section holding the summary, technical domains, role
-tables, suggested previews, and any diagram no card took. The page has no
-decision section: it carries no form, button, handler, textarea, or script
-beyond the Mermaid loader, and records nothing; the user's reply in the chat is
-the decision. Under the risk block one quiet status line says the spec is
-approved for the page's revision, or names the `approval.roles` lanes still
-missing, and is absent when there is nothing to say. A change with no typed
-draft hides the scope strip, the cards, and the checklist. The page uses the
-installed Thai-capable sans fonts (Sukhumvit Set, Leelawadee UI, Noto Sans Thai,
-Thonburi, Tahoma) at a 17px base and loads nothing from the network.
+**What the page must show.** The data's `prototype.checklist` lists the surfaces
+the change owes, inferred only from its work types and the typed fields of its
+draft, each with its source field and whether the draft specifies it. Every one
+of the 26 catalog work types has at least one surface and always owes before and
+after; types that can fail also owe failure cases with recovery. A surface the
+draft does not specify is reported as such, never filled in. A test fails when a
+work type is added without a row. The `prototype` example may declare
+`covers`, the surface keys the page really shows; the checklist reports each
+surface as `covered`, `missing`, `unknown` (no `covers` declared), or `none`
+(no prototype). A `covers` key outside the change's surfaces is an intake
+`EDIT` naming its path. The declaration is the agent's claim, never evidence,
+and Prove and Land never read it. `change start` prints an advisory `NOTE:
+prototype` line naming what is still owed; it never blocks.
 
-**Diagrams and prototype on the cards.** Each diagram sits, open and
-collapsible and scrolling sideways when wide, in the card it explains, once: the
-`userFlow.source` flow chart in card A; a `sequenceDiagram` in card D, else F,
-else A; a `stateDiagram` in card F, else E, else A; any other diagram in card A.
-A diagram whose preferred cards are not shown goes to the first card shown, and
-with no cards at all stays in reviewer details. Card A says there is no
-prototype yet when it is shown without one; this is a note, never a gate.
+**Keeping the page honest.** The risk level, proof count, and role lanes come
+only from the harness's own computation; the harness never reads them from the
+page, so a page that says every test passed changes no count. At `change
+start`, `change revise`, and `change amend` the harness records the page file's
+digest and a `factsDigest` of the facts it computed. `package` and the approval
+question warn, and never block, when the file was edited after the recorded
+revision (`drift`) or does not contain the current `factsDigest` (`factsStale`),
+and a changed fact since the record is reported as `factsChanged`. The warnings
+are not evidence and do not affect Prove or Land.
 
-**Decision cards.** Each work type maps to one of seven kinds of decision, and
-the page shows the card of every kind the change's declared or inferred work
-types match, once each, in the order E, G, F, D, A, B, C (the choices hardest to
-undo first). A card shows the question the approver decides and the typed draft
-fields that answer it; a field the draft lacks reads `unknown`, and nothing is
-guessed.
-
-| Card | Work types | Question | Draft fields shown |
-|---|---|---|---|
-| A | feature, ui, client-release, experiment | What will users see and do? | `userFlow`, `uiStates`, `experimentDesign`, `releasePlan` |
-| B | bugfix | What is the problem, how will we know it is fixed? | `bugfix`, `bugfix.incident`, `bugfix.disclosure` |
-| C | refactor, dependency, config, docs, test, chore | Is it safe, what must stay the same? | `refactor`, `dependencyChange`, `configContract` |
-| D | api, library, deprecation | Who uses this contract and what happens to them? | `apiContracts`, `boundaries`, `libraryContract`, `deprecationPlan` |
-| E | data, migration, data-fix | Can data be damaged, can it be undone? | `dataModel`, `migrationPlan`, `rollout`, `dataFix` |
-| F | async, integration, infra, observability, performance, cicd | What happens when it breaks, what does it cost? | `infraPlan`, `nfr`, `performanceAnalysis`, `jobContract`, `integrations`, `observability`, `pipelinePlan` |
-| G | privacy, ml, security | Whose data, for how long, and if it goes wrong? | `privacyAssessment`, `threatModel`, `hardening`, `modelCard` |
-
-Below the cards, two lines answer how to undo the change and who it affects:
-the author's `scratch.undo` and `scratch.who` when present, otherwise a value
-read from fields the draft already has (the rollback fields listed above, `deprecationPlan`
-consumers, `userStories` actors) with its source named, otherwise `unknown`. A `none:` or
-`unknown:` answer shows the word and its reason.
-
-**Required-section checklist.** The checklist lists each section
-`requiredDevSections` names for the change's work types as present or missing,
-using the same rule the compiler enforces, so it defines no rule of its own.
-Because `change start` already refuses a standard-lane draft that lacks a
-required section, a missing section appears mainly for rapid-lane and older
-drafts. A section that must answer fixed fields reads missing, naming each field that is
-not answered. Sections that are only advised would be shown apart with a
-recommended label and never validated; none are defined today. A card or the
-checklist that cannot be built becomes a warning on the page and the rest still
-renders.
+**Who writes the page.** The prototype skill (`.claude/skills/prototype`) reads
+the compiled change, runs `package`, and writes the whole page: the header, a
+strip of the harness's facts copied verbatim with the `factsDigest`, the
+prototype as the main view, the checklist with its statuses, before and after,
+the path, failures with recovery, undo and who, and reviewer details closed by
+default. The page is one file, makes no network request, has no decision
+controls (the user's reply in chat is the decision), uses the draft's language,
+is usable by keyboard without relying on colour alone, and is labelled as not
+proof. Where the host has a design skill or an Artifact type for designs the skill
+builds on that canvas, one numbered frame per screen or state, and always exports
+the file because the harness checks the file. When the page is edited the skill
+revises or amends the change in the same turn, since the agreement stays the
+source of truth.
 
 `preview <change> --provider <name>` is optional at every risk level and never
 blocks approval or Build. Before Build only, it copies the target into
 `.foundation/previews/<change>/workspace` and runs one declared provider there,
-recording a `kind: "preview"` receipt bound to the contract revision; the
-package marks it stale after a revision. A provider marked `external: true`
+recording a `kind: "preview"` receipt bound to the contract revision;
+`package` marks it stale after a revision. A provider marked `external: true`
 reaches outside the machine and runs only with the user's `--decision-ref` for
 that run (otherwise `PREVIEW_AUTHORITY_REQUIRED`, and nothing runs). Preview
 receipts never satisfy Prove or Land ([evidence](.claude/harness/EVIDENCE.md)).
-For a High or Critical change the package suggests the matching provider and
+For a High or Critical change `package` suggests the matching provider and
 its command, or names the capability to declare. A provider with
 `"previewOnly": true` exists only for previews: Prove never selects it, so it
 needs only an `adapter` and a `command`. A provider's `previewArtifact` names a
 file inside the preview workspace, such as a prototype or screenshot; the
-preview keeps a copy under `.foundation/previews/<change>/artifacts/` and the
-package links to it. A path outside the workspace is refused before anything
-runs. The package also shows the agreement's content under each artifact and
-each preview's status and output, and for a change already applied or archived
-it labels proof from the receipts Land accepted.
+preview keeps a copy under `.foundation/previews/<change>/artifacts/` and
+`package` lists it. A path outside the workspace is refused before anything
+runs. `package` also reports each preview's status, and for a change already
+applied or archived it labels proof from the receipts Land accepted.
 
 The router also reads the paths the change's tasks touch. A migration, schema,
 or `.sql` path, an auth or permission path, a payment or billing path, a UI
 component path, an infrastructure path, or a webhook path adds the matching
-risk signal when the draft did not declare it, and the package names the path
+risk signal when the draft did not declare it, and `package` names the path
 that raised it. Path signals affect only the risk level, domains, artifacts,
 and approval lanes; discovery coverage and review still follow the declared
 signals. A `dataModel` whose every row declares `store: "browser"` (for
@@ -686,10 +676,10 @@ the Security domain and its threat model.
 
 The draft carries two fields for approvers. `scratch` holds four plain
 lines (`get`, `asIs`, `toBe`, `ifFail`, each at most 240 characters) that the
-package shows first, and two optional lines of the same shape, `undo` (how to
+approval page shows first, and two optional lines of the same shape, `undo` (how to
 undo the change) and `who` (who it affects), which are never required. It is required when the draft declares `impact` medium or
 high: `change start` and `change revise` return an intake `EDIT` naming each
-missing `scratch.<key>`. A low draft may omit it, and the package then shows the
+missing `scratch.<key>`. A low draft may omit it, and the approval page then shows the
 intent with a warning that the summary is missing. The rule applies to a draft
 being started or revised only; `advance`, `change amend`, and a change already
 started or approved are never blocked by it. `examples`, which stays optional, holds typed blocks with real values from the
@@ -698,21 +688,15 @@ request, code, or data, one of 29 types (`prototype`, `examples`, `api`,
 `snapshot`, `repro`, `perf`, `golden`, `adr`, `rollout`, `apiDiff`, `strings`,
 `alert`, `privacy`, `coverage`, `consumers`, `messages`, `terminal`, `doc`,
 `pipeline`, `search`, `report`, `diffSummary`); an unknown type or a missing
-required field is an intake `EDIT` naming the path. A `prototype` names a file
-the agent wrote under `.foundation/previews/<change>/` and opens in a sandboxed
-frame. Each example has an after-Build tab: with an optional `capability` it
-reads that provider's receipt (`proof` only when valid and passing, `failed`
-when it failed, with artifact links confined to the change's evidence folder)
-or preview (`preview` or stale), and otherwise says no result yet and shows the
-optional `postBuild` comparison. Page text is Thai when `language` is `th`,
-otherwise English. Switching tabs and API cases uses HTML only; the one script
-in a package loads the harness's own `.claude/harness/vendor/mermaid.min.js`
-by relative path, nothing is fetched over the network, and every draft value is
-escaped. Without that file, diagrams stay readable Mermaid text. `change start`
-prints `NOTE: scratch (advisory, approval page)` for a medium or high draft
-without examples, a performance change without a target number, or a defect,
-migration, or deprecation without a count in `scratch.asIs`; that note never
-blocks (the missing-`scratch` rule above is the only blocking check).
+required field is an intake `EDIT` naming the path. The harness validates these
+blocks and renders none of them; the skill may draw them on the page. A
+`prototype` names the page file the skill wrote under
+`.foundation/previews/<change>/`, a relative path without `..`, and may declare
+`covers`. `change start` prints `NOTE: scratch (advisory, approval page)` for a
+medium or high draft without examples, a performance change without a target
+number, or a defect, migration, or deprecation without a count in `scratch.asIs`;
+that note never blocks (the missing-`scratch` rule above is the only blocking
+check).
 
 With `approval.roles` set in `foundation.json`, spec approval has one lane per
 configured role the router selects for the change. Each role records

@@ -149,6 +149,15 @@
       "status": "not-run"
     },
     {
+      "id": "prototype",
+      "positive": "Build the clickable approval page for this drafted change from its requirements so the approver can see it before approving.",
+      "negative": "Decide the information hierarchy and interaction model before any page exists.",
+      "expectedSkill": "prototype",
+      "expectedNegativeSkill": "ux-ui-principles",
+      "expectedBehavior": "Follow the selected skill's scope, actual tool capabilities, and canonical harness ownership. Do not infer additional authority.",
+      "status": "not-run"
+    },
+    {
       "id": "git-workflow",
       "positive": "Prepare the explicitly authorized commit with only the scoped diff.",
       "negative": "Land the proven change uncommitted and archive it.",

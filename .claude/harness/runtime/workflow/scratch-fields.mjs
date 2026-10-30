@@ -3,7 +3,9 @@
 // must be well formed so the approval package can render every value escaped.
 // Each issue names the exact field so intake returns one batched EDIT.
 
-export const SCRATCH_KEYS = Object.freeze(["get", "asIs", "toBe", "ifFail"]);
+import { coversIssues } from "./prototype-checklist.mjs";
+
+export const SCRATCH_KEYS =Object.freeze(["get", "asIs", "toBe", "ifFail"]);
 // Accepted with the same one-line shape but never required: how to undo the
 // change and who it affects. The approval card derives or marks them unknown.
 export const OPTIONAL_SCRATCH_KEYS = Object.freeze(["undo", "who"]);
@@ -123,5 +125,7 @@ export function scratchFieldIssues(source) {
       if (issue) issues.push(issue);
     }
   });
+  // A prototype's own claim of what it shows; advisory, never proof.
+  issues.push(...coversIssues(source));
   return issues;
 }

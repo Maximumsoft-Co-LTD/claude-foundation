@@ -45,7 +45,7 @@ compatible primitive ด้านล่างสำหรับ operator แล�
 | `doctor [--stage change\|build\|prove] [--change <id>]` | วินิจฉัยความพร้อมของโปรเจกต์ provider และ lifecycle |
 | `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | อ่าน handoff ของ operation ปัจจุบัน |
 | `metrics <change>` | ดูการใช้งาน ประสิทธิผล semantic intake งบ ต้นทุน และเวลาการรันที่วัดได้ |
-| `package <change> [--pretty]` | เขียน approval package แบบอ่านอย่างเดียว `.foundation/packages/<change>.html` (ระดับความเสี่ยง technical domain, artifact แยกตามบทบาทผู้อนุมัติพร้อมป้าย proof/preview/ยังไม่มีหลักฐาน, Mermaid diagram ที่ฝังไว้ และ suggested preview สำหรับ High/Critical) รันซ้ำได้ผลเดิม เขียนเฉพาะไฟล์นั้น และไม่เปลี่ยนสถานะ lifecycle |
+| `package <change> [--pretty]` | พิมพ์ข้อมูลอนุมัติของ change เป็น JSON (ระดับความเสี่ยงพร้อมเหตุผล technical domain, artifact แยกตามบทบาทผู้อนุมัติพร้อมป้าย proof/preview/none, บรรทัดสรุป, สิ่งที่หน้าอนุมัติต้องแสดงและ prototype ครอบคลุมข้อไหน, หน้าถูกแก้หรือข้อเท็จจริงล้าสมัยหรือไม่ และ suggested preview สำหรับ High/Critical) ไม่เขียนไฟล์และไม่เปลี่ยนสถานะ lifecycle ตัวหน้าอนุมัติ skill prototype เป็นผู้เขียน |
 | `budget checkpoint <change>` | แสดงงบที่เหลือที่วัดได้ งานที่ยังไม่เสร็จ และ resume route ที่แน่นอน |
 | `feedback <change>` | อธิบายเวลา reviewer, repair ที่มีหลักฐาน, human wait และเวลาที่ยังระบุไม่ได้ พร้อม reuse และ action ถัดไป |
 | `change audit <change>` | ตรวจความเชื่อมโยงของ scenario claim task และ provider |

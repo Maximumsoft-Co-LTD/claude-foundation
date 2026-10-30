@@ -46,7 +46,7 @@ its own read-only HTML file.
 | `doctor [--stage change\|build\|prove] [--change <id>]` | Diagnose project, provider, and lifecycle readiness |
 | `packet <change> [--phase <phase>] [--repo <id>] [--task <id>]` | Read the bounded machine handoff for the current operation |
 | `metrics <change>` | Inspect measured usage, semantic-intake effectiveness, active budget, cost, and execution timing |
-| `package <change> [--pretty]` | Write the read-only approval package `.foundation/packages/<change>.html` (risk level, technical domains, artifacts by approver role with proof/preview/no-evidence labels, embedded Mermaid diagrams, suggested previews for High/Critical); idempotent, writes only that file, never changes lifecycle state |
+| `package <change> [--pretty]` | Print the change's approval data as JSON (risk level with reasons, technical domains, artifacts by approver role with proof/preview/none labels, the summary lines, the surfaces the approval page must show and which the prototype covers, whether the page was edited or its facts are stale, suggested previews for High/Critical); writes no file and never changes lifecycle state. The approval page itself is written by the prototype skill |
 | `budget checkpoint <change>` | Show measured remaining allowance, unfinished work, and the exact resume route |
 | `feedback <change>` | Explain reviewer, evidenced repair, human-wait, and unattributed timing; show reuse and the next action |
 | `change audit <change>` | Audit scenario, claim, task, and provider traceability |

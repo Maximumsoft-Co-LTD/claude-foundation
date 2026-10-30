@@ -1,0 +1,484 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "approval-data-claude-foundation-package-change",
+      "requirementKey": "approval-data",
+      "scenario": "พิมพ์ข้อมูลครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-data-package",
+      "requirementKey": "approval-data",
+      "scenario": "ค่าที่ไม่ทราบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-data-package-2",
+      "requirementKey": "approval-data",
+      "scenario": "อ่าน evidence บางส่วนไม่ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-data-package-3",
+      "requirementKey": "approval-data",
+      "scenario": "change ที่ไม่มี draft แบบ typed",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-authored-by-skill-advance",
+      "requirementKey": "approval-page-authored-by-skill",
+      "scenario": "มีหน้าแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-authored-by-skill-advance-2",
+      "requirementKey": "approval-page-authored-by-skill",
+      "scenario": "ยังไม่มีหน้า",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-authored-by-skill-3",
+      "requirementKey": "approval-page-authored-by-skill",
+      "scenario": "ไม่เขียนไฟล์หน้า",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-authored-by-skill-change-start",
+      "requirementKey": "approval-page-authored-by-skill",
+      "scenario": "ตัวอย่างใน draft ยังถูกตรวจ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-package",
+      "requirementKey": "prototype-checklist",
+      "scenario": "งาน API",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-package-2",
+      "requirementKey": "prototype-checklist",
+      "scenario": "งานข้อมูล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-package-3",
+      "requirementKey": "prototype-checklist",
+      "scenario": "งานหน้าจอ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-4",
+      "requirementKey": "prototype-checklist",
+      "scenario": "ครบทุก work type",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-package-4",
+      "requirementKey": "prototype-checklist",
+      "scenario": "หลายชนิดรวมกัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-package-5",
+      "requirementKey": "prototype-checklist",
+      "scenario": "ฟิลด์ไม่ระบุ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-package-6",
+      "requirementKey": "prototype-checklist",
+      "scenario": "งานที่ไม่ต้องมีภาพมาก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-harness",
+      "requirementKey": "prototype-checklist",
+      "scenario": "ชนิดใหม่ที่ยังไม่มีรายการ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-checklist-change-start",
+      "requirementKey": "prototype-checklist",
+      "scenario": "ไม่กั้นการเริ่ม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-coverage-declared-package",
+      "requirementKey": "prototype-coverage-declared",
+      "scenario": "ครอบคลุมครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-coverage-declared-package-2",
+      "requirementKey": "prototype-coverage-declared",
+      "scenario": "ยังขาด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-coverage-declared-package-3",
+      "requirementKey": "prototype-coverage-declared",
+      "scenario": "ไม่ประกาศ covers",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-coverage-declared-change-start",
+      "requirementKey": "prototype-coverage-declared",
+      "scenario": "key ที่ไม่รู้จัก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-coverage-declared-package-prove-land",
+      "requirementKey": "prototype-coverage-declared",
+      "scenario": "ประกาศไม่ใช่ proof",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "facts-from-harness-only-package",
+      "requirementKey": "facts-from-harness-only",
+      "scenario": "หน้าอ้าง proof เอง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "facts-from-harness-only-package-2",
+      "requirementKey": "facts-from-harness-only",
+      "scenario": "preview ไม่ใช่ proof",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "facts-from-harness-only-package-3",
+      "requirementKey": "facts-from-harness-only",
+      "scenario": "ค่าความเสี่ยงมาจาก draft",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-sync-package",
+      "requirementKey": "prototype-sync",
+      "scenario": "แก้ไฟล์แล้วเตือน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-sync-agent-draft-change-revise",
+      "requirementKey": "prototype-sync",
+      "scenario": "revise แล้วหายเตือน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-sync-package-2",
+      "requirementKey": "prototype-sync",
+      "scenario": "ข้อมูลของ harness ในหน้าล้าสมัย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-sync-advance-prove",
+      "requirementKey": "prototype-sync",
+      "scenario": "แก้ไฟล์แต่ไม่แก้ change",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-sync-package-3",
+      "requirementKey": "prototype-sync",
+      "scenario": "ไม่มีไฟล์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-sync-prove-land",
+      "requirementKey": "prototype-sync",
+      "scenario": "คำเตือนไม่ใช่หลักฐาน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "plain-approval-wording-advance",
+      "requirementKey": "plain-approval-wording",
+      "scenario": "คำถามอนุมัติ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "plain-approval-wording-claude-foundation-package-change",
+      "requirementKey": "plain-approval-wording",
+      "scenario": "ใช้คำสั่งเดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-contract-1",
+      "requirementKey": "approval-page-contract",
+      "scenario": "ลำดับของหน้า",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-contract-skill",
+      "requirementKey": "approval-page-contract",
+      "scenario": "แถบข้อเท็จจริงคัดลอกจากข้อมูล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-contract-skill-2",
+      "requirementKey": "approval-page-contract",
+      "scenario": "ค่าที่ไม่ทราบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-contract-4",
+      "requirementKey": "approval-page-contract",
+      "scenario": "ป้ายไม่ใช่ proof",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-contract-5",
+      "requirementKey": "approval-page-contract",
+      "scenario": "ไม่พึ่งเครือข่าย",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "approval-page-contract-6",
+      "requirementKey": "approval-page-contract",
+      "scenario": "ใช้คีย์บอร์ดและไม่พึ่งสี",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "อ่าน change ก่อนสร้าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-2",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "ยังไม่มี change",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-3",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "รู้เองว่าต้องแสดงอะไร",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-reference-skill",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "ทุก work type มีแนวทาง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-4",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "ใช้ design ของ project",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-5",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "แก้หน้าแล้วแก้ change",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-6",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "ขัดกับ agreement ที่อนุมัติแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-7",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "ใช้ canvas เมื่อมี design skill",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-8",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "แก้บน canvas แล้วส่งออกใหม่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-9",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "canvas ใช้ไม่ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-10",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "ไม่มีที่แสดงผลแบบ design",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-skill-contract-skill-11",
+      "requirementKey": "prototype-skill-contract",
+      "scenario": "ไม่แชร์เอง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/prototype-checklist.test.mjs .claude/harness/tests/scratch-draft-fields.test.mjs) && (node --test .claude/harness/tests/prototype-sync.test.mjs) && (node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/approval-lanes.test.mjs) && (node --test .claude/tests/docs/skill-catalog.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/prototype-checklist.test.mjs .claude/harness/tests/scratch-draft-fields.test.mjs",
+        "node --test .claude/harness/tests/prototype-sync.test.mjs",
+        "node --test .claude/harness/tests/approval-package.test.mjs .claude/harness/tests/approval-lanes.test.mjs",
+        "node --test .claude/tests/docs/skill-catalog.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

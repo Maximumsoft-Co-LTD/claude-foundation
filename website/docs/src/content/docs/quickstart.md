@@ -42,7 +42,7 @@ Approve the compiled agreement before Build. Tell the agent about corrections
 here; you do not have to write the internal draft or evidence configuration.
 
 **You should see:** a change ID, an approval question, and a link to a readable
-approval package with scope, scenarios, and risk.
+approval page (a prototype of what you will get, with scope, scenarios, and risk).
 
 ## 2. Build it in isolation
 

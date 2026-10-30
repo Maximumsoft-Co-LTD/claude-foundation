@@ -87,7 +87,7 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "description": "Write the read-only approval package .foundation/packages/<change>.html: risk level, technical domains, artifacts by approver role with proof/preview labels, the draft's plain-language scratch summary and typed examples with an after-Build tab each, optional suggested previews, and the change's Mermaid diagrams rendered by the shipped local Mermaid file, without changing lifecycle state."
+      "description": "Print the change's approval data as JSON and write no file: risk level with reasons, technical domains, artifacts by approver role with proof/preview labels, the plain-language scratch lines with undo and who, scope counts, failure cases, required-section status, the surfaces the approval page must show with which the prototype declares covered, the page's drift and facts-digest status, and optional suggested previews, without changing lifecycle state. The approval page itself is written by the prototype skill."
     },
     {
       "name": "preview",

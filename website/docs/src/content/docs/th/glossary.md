@@ -39,7 +39,7 @@ description: ความหมายของคำที่ Change Loop ใช
 
 | คำ | ความหมายแบบภาษาคน | Identifier | เจอที่ไหน |
 |---|---|---|---|
-| **Approval package** | หน้าอ่านอย่างเดียวที่สรุปสิ่งที่คุณถูกขอให้อนุมัติ: ความเสี่ยง อะไรเปลี่ยน ตัวอย่าง และมีหลักฐานอะไรแล้ว | `.foundation/packages/<change>.html` | [การอนุมัติโดยคน](/docs/th/approval/) |
+| **หน้าอนุมัติ** | หน้าที่คุณอ่านก่อนอนุมัติ: prototype ที่คลิกดูได้ของสิ่งที่จะได้ แถบข้อเท็จจริงสั้น ๆ ของ harness (ความเสี่ยง proof บทบาท) สิ่งที่ต้องแสดง ก่อนและหลัง และกรณีพลาดพร้อมวิธีกู้คืน skill prototype เป็นผู้เขียน ไม่ใช่ harness | `.foundation/previews/<change>/prototype.html` | [การอนุมัติโดยคน](/docs/th/approval/) |
 | **Decision Sheet** | ชุดคำถามสำคัญที่มีแต่คุณตอบได้ ถามรวมครั้งเดียวแทนที่จะถามทีละข้อ | Decision Sheet, `ASK_USER` | [Change](/docs/th/loop/change/) |
 | **Acceptance** | คนที่ระบุชื่อได้บอกว่าผลลัพธ์ที่เสร็จแล้วคือสิ่งที่ต้องการ จำเป็นเฉพาะเมื่อ change กำหนด | acceptance, `change resolve --acceptance-required` | [การอนุมัติโดยคน](/docs/th/approval/#acceptance) |
 | **Review** | การอ่าน implementation อย่างอิสระโดย AI ตัวอื่นหรือคน เพื่อตัดสินว่าดีพอไหม | `review`, `workflow.reviewPolicy` | [การอนุมัติโดยคน](/docs/th/approval/) |

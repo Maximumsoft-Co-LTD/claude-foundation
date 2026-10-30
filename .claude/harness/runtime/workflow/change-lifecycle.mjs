@@ -29,6 +29,7 @@ import {
   FIXES_DIMENSIONS, riskSignalDimensions, semanticIntakeAction, semanticIntakeIssues
 } from "./validation/semantic-intake.mjs";
 import { inferPathSignals } from "../contracts/scratch-router.mjs";
+import { TYPE_SURFACES, checklistNoteLine } from "./prototype-checklist.mjs";
 import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
 import {
   inspectRepositoryIntelligence, repositoryIntelligenceRequired, skippedRepositoryIntelligence
@@ -1129,11 +1130,16 @@ export function deriveDraftBookkeeping(input, slugify) {
   return draft;
 }
 
-// The approval package is a reading aid: a render failure becomes a warning
-// and the user approves from the packet as before.
+// The approval page is a file the prototype skill writes, never the harness.
+// The line names it in the draft's language, or, with no page yet, gives the
+// summary as text so the user can still approve from the packet.
 export function approvalPackageLine(link) {
-  if (link?.path) return `  approval package: ${link.path}\n`;
-  if (link?.error) return `  warning: approval package not written (${link.error}); review the packet, then run claude-foundation package <change>\n`;
+  const name = link?.language === "th" ? "หน้าอนุมัติ" : "approval page";
+  if (link?.path) return `  ${name}: ${link.path}\n` + (link.warnings || []).map((line) => `  warning: ${line}\n`).join("");
+  if (link?.missing)
+    return `  ${name}: none yet; the prototype skill writes it (summary below)\n` +
+      (link.summary || []).map((line) => `    ${line}\n`).join("");
+  if (link?.error) return `  warning: ${name} not checked (${link.error}); review the packet\n`;
   return "";
 }
 
@@ -1189,6 +1195,9 @@ export function createChangeLifecycle({
   root,
   policy,
   approvalPackageLink = () => null,
+  // Records the approval page's digest and the facts digest at start, revise,
+  // and amend; advisory, so a failure here never changes the command's result.
+  recordPrototypeSync = () => null,
   // { configured, required }: roles from approval.roles and the lanes this
   // change needs (configured roles the scratch router selects).
   approvalLanes = () => ({ configured: [], required: [] }),
@@ -2656,6 +2665,8 @@ export function createChangeLifecycle({
     if (coverage) console.log(`NOTE: ${coverage}`);
     const scratch = scratchNoteLine(draft);
     if (scratch) console.log(`NOTE: ${scratch}`);
+    const prototypeNote = checklistNoteLine(draft, { workTypes: inferWorkTypes(draft).filter((type) => TYPE_SURFACES[type]) });
+    if (prototypeNote) console.log(`NOTE: ${prototypeNote}`);
     const pathRisk = pathRiskNoteLine(draft);
     if (pathRisk) console.log(`NOTE: ${pathRisk}`);
     const filled = derivedByHarness(draft, { standard: !rapid });
@@ -2724,6 +2735,7 @@ export function createChangeLifecycle({
           pending.semanticIntakeEffectiveness = completedIntakeEffectiveness;
         saveRuntime(pending);
         const openQuestions = designOpenQuestions(id, root);
+        try { recordPrototypeSync(id); } catch { /* advisory */ }
         console.log(`AGREED ${id}\n  inspect: openspec/changes/${id}/\n` + packetFileLines(id) +
           "  awaiting user approval before Build\n" +
           approvalPackageLine(approvalPackageLink(id)) +
@@ -3086,6 +3098,7 @@ export function createChangeLifecycle({
     const state = loadRuntime(id);
     const pending = state.pendingApprovalDelta;
     const openQuestions = designOpenQuestions(id, root);
+    try { recordPrototypeSync(id); } catch { /* advisory */ }
     console.log(`REVISED ${id}\n  revision: ${state.contractRevision}\n` +
       (pending
         ? `  requirement delta awaiting approval:\n${formatApprovalDelta(pending)}\n`
@@ -3460,6 +3473,7 @@ export function createChangeLifecycle({
     }
     const amended = loadRuntime(id);
     const gate = decisionGateNotice(id);
+    try { recordPrototypeSync(id); } catch { /* advisory */ }
     console.log(`AMENDED ${id}\n  revision: ${amended.contractRevision}\n` +
       `  invalidated claims: ${[...compiled.invalidatedClaims, ...compiled.removedClaimIds.map((claim) =>
         `${claim} (removed)`)].join(", ") || "none"}\n` +

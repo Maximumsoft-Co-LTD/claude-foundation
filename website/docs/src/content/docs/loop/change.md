@@ -320,7 +320,7 @@ with real values, such as `api`, `examples`, `dataDiff`, `permission`, or a
 `prototype` file under `.foundation/previews/<change>/`). They never change the
 lane or the packet, a malformed block is an intake `EDIT`, and `change start`
 only advises (`NOTE: scratch`) when a medium or high change has none. See
-[Approval package, previews, and role lanes](/docs/approval/#approval-package-previews-and-role-lanes)
+[Approval page, previews, and role lanes](/docs/approval/#approval-package-previews-and-role-lanes)
 for what approvers see; `WORKFLOW.md` lists all 29 example types.
 
 At archive, Land appends the volatile records to the archived `proposal.md`

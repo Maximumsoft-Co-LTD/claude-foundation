@@ -424,11 +424,12 @@ and every claim is still proven by a Prove run. A provider declared with
 provider, never covers a claim, and is not subject to provider wiring rules
 beyond having an adapter and a command.
 
-The approval package's after-Build tab for a draft example only reads evidence;
-it never creates it. An example's `capability` selects the matching Prove
-provider: the tab says `proof` only for a valid passing receipt, `failed` for a
-failing one, and otherwise falls back to a matching preview receipt, labeled
-`preview` or stale, or to no result. Its links reach only artifacts under the
+The approval data (`package <change>`) only reads evidence; it never creates it.
+A `proof` label requires a valid passing Prove receipt, a matching preview
+receipt is labeled `preview` or stale, and anything else is `none`. The page the
+prototype skill writes copies these labels and can never raise one: a page that
+says tests passed changes no count, and its declared `covers` is the agent's claim,
+not evidence. Its links reach only artifacts under the
 change's `.foundation/evidence/<change>/` or `.foundation/previews/<change>/`
 folders, resolved without following a symlink out of them.
 

@@ -1533,10 +1533,10 @@ function rollbackAtomicStart(id) {
 const approvalPackage = createApprovalPackageRuntime({
   root: ROOT,
   runtimeDir: RUNTIME,
-  packagesDir: PACKAGES,
   previewsDir: PREVIEWS,
   receiptsDir: RECEIPTS,
   loadRuntime,
+  saveRuntime,
   activeChangePath,
   changeWorkTypes,
   evidence,
@@ -1545,7 +1545,10 @@ const approvalPackage = createApprovalPackageRuntime({
   fail: die,
   trap: trapFailures
 });
-const approvalPackageLink = (id) => trapFailures(() => approvalPackage.tryWritePackage(id));
+// The approval page is a file the prototype skill writes; the harness only
+// reads it (and records its digest), so the link never writes anything.
+const approvalPackageLink = (id) => trapFailures(() => approvalPackage.approvalPageLink(id));
+const recordPrototypeSync = (id) => trapFailures(() => approvalPackage.recordPrototypeSync(id));
 const preview = createPreviewRuntime({
   root: ROOT,
   runtimeDir: RUNTIME,
@@ -1585,6 +1588,7 @@ const {
   root: ROOT,
   policy: foundationPolicy,
   approvalPackageLink,
+  recordPrototypeSync,
   approvalLanes: (id, state) => {
     const configured = foundationPolicy().approval?.roles || [];
     if (!configured.length) return { configured, required: [] };

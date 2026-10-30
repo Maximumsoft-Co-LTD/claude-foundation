@@ -478,3 +478,32 @@ test("reference files link only to siblings and cross-bundle files that exist", 
     }
   }
 });
+
+test("the prototype skill covers every work type, in the checklist's own terms", async () => {
+  // A work type added to the catalog without guidance for the approval page fails here.
+  const { WORK_TYPES } = await import(join(root, ".claude/harness/runtime/contracts/work-types.mjs"));
+  const { TYPE_SURFACES } = await import(join(root, ".claude/harness/runtime/workflow/prototype-checklist.mjs"));
+  const guide = readFileSync(join(catalog, "prototype/references/by-work-type.md"), "utf8");
+  const headings = new Set([...guide.matchAll(/^### (\S+)$/gm)].map(match => match[1]));
+  const missing = WORK_TYPES.filter(type => !headings.has(type));
+  assert.deepEqual(missing, [], `prototype/references/by-work-type.md lacks: ${missing.join(", ")}`);
+  assert.deepEqual([...headings].filter(type => !WORK_TYPES.includes(type)), [], "a guide entry names no catalog work type");
+  assert.deepEqual(Object.keys(TYPE_SURFACES).sort(), [...WORK_TYPES].sort(), "the checklist and the guide cover the same types");
+  for (const type of WORK_TYPES) {
+    const entry = guide.split(new RegExp(`^### ${type}$`, "m"))[1].split(/^##/m)[0];
+    for (const label of ["**Show**", "**Form**", "**From**"])
+      assert.ok(entry.includes(label), `${type}: entry lacks ${label}`);
+  }
+});
+
+test("the prototype skill keeps the approval page honest: a copy of facts, no proof, no decision controls, a design surface when present", () => {
+  const read = name => readFileSync(join(catalog, "prototype", name), "utf8");
+  const contract = read("references/page-contract.md");
+  assert.match(contract, /factsDigest/);
+  assert.match(contract, /Not proof/);
+  assert.match(contract, /No decision controls/);
+  assert.match(contract, /Offline/);
+  assert.match(read("references/design-and-canvas.md"), /do not ask\s+the user\s+whether to/);
+  assert.match(read("references/sync.md"), /`change revise` before Build, `change amend` during Build/);
+  assert.match(read("SKILL.md"), /Read the change first/);
+});

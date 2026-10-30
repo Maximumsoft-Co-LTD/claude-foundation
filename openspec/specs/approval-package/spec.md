@@ -31,39 +31,6 @@
 - **WHEN** เรียก routeChange()
 - **THEN** ไม่ throw และคืนคำเตือนที่ระบุ unknown-kind
 
-### Requirement: package-render
-
-ระบบ SHALL สร้าง approval package HTML แบบอ่านอย่างเดียวจาก change ที่ compile แล้ว
-
-- อ่าน state.draftSource เมื่อ contractRevision ตรงกับ state เท่านั้น
-- HTML ไม่โหลดอะไรผ่านเครือข่าย ไฟล์เดียวที่โหลดคือ Mermaid ของ harness ในเครื่องแบบ relative และ diagram แสดง source ที่อ่านได้เมื่อโหลดไม่ได้
-- ไม่เขียน .foundation/runtime, receipts หรือ openspec
-
-#### Scenario: สร้าง package
-
-- **GIVEN** change ที่ compile แล้วและมี diagrams
-- **WHEN** รัน package <change>
-- **THEN** ไฟล์ .foundation/packages/<id>.html ถูกเขียน
-- **AND** มีส่วนของทุกบทบาทที่ routeChange() เลือก
-- **AND** มี pre.mermaid หนึ่งบล็อกต่อ diagram
-
-#### Scenario: ไม่แก้ state
-
-- **GIVEN** digest ของ .foundation/runtime/<id>.json ก่อนรัน
-- **WHEN** รัน package <change>
-- **THEN** digest หลังรันเท่าเดิม
-
-#### Scenario: draft v3 ไม่มี draftSource
-
-- **GIVEN** change เก่าที่ไม่มี draftSource
-- **WHEN** รัน package <change>
-- **THEN** package ถูกสร้างจาก packet พร้อมข้อความว่าข้อมูลมีจำกัด
-
-#### Scenario: ไม่พบ change
-
-- **WHEN** รัน package กับ id ที่ไม่มี
-- **THEN** exit ไม่เป็นศูนย์ ข้อความระบุ id และไม่เขียนไฟล์
-
 ### Requirement: package-labels
 
 ระบบ SHALL ติดป้ายทุก artifact ใน package ว่าเป็น preview, proof หรือยังไม่มีหลักฐาน
@@ -113,22 +80,6 @@
 - **WHEN** advance --through build
 - **THEN** Build เริ่มได้
 
-### Requirement: approval-links-package
-
-ระบบ SHALL แสดง path ของ package เมื่อ change รอการอนุมัติ spec
-
-#### Scenario: แนบ package
-
-- **GIVEN** change ที่ยังไม่อนุมัติ
-- **WHEN** change start ทำงานสำเร็จ
-- **THEN** ผลลัพธ์มี path ของ .foundation/packages/<id>.html
-
-#### Scenario: render ล้มเหลว
-
-- **GIVEN** renderer throw
-- **WHEN** change start ทำงานสำเร็จ
-- **THEN** ผลลัพธ์มีคำเตือนและยังรออนุมัติด้วย packet เดิม
-
 ### Requirement: package-tolerates-evidence
 
 ระบบ SHALL เขียน package ต่อพร้อมคำเตือนเมื่ออ่าน evidence หรือ receipt ไม่ได้
@@ -150,67 +101,6 @@
 - **WHEN** รัน package กับ id ที่ไม่มี
 - **THEN** exit ไม่เป็นศูนย์และไม่เขียนไฟล์
 
-### Requirement: package-content
-
-ระบบ SHALL แสดงเนื้อหาจริงของ agreement ใต้ artifact แต่ละรายการใน package
-
-- เนื้อหามาจาก typed draft ของ revision ปัจจุบันเท่านั้น
-- ทุกค่าถูก escape ก่อนใส่ HTML
-- artifact ที่ agreement ไม่ได้ประกาศแสดงว่าไม่ได้ประกาศ
-
-#### Scenario: API contract
-
-- **GIVEN** draft มี apiContracts POST /wallets/{account}/withdrawals ที่มี error 409
-- **WHEN** รัน package
-- **THEN** ส่วน Tech Lead แสดง method, path และ error 409
-
-#### Scenario: test matrix
-
-- **GIVEN** draft มี requirement 2 ข้อ รวม 3 scenario
-- **WHEN** รัน package
-- **THEN** ส่วน QA แสดง 3 แถวพร้อม given, when, then
-
-#### Scenario: permission matrix
-
-- **GIVEN** draft มี scenario access allow และ deny
-- **WHEN** รัน package
-- **THEN** ส่วน Security แสดงทั้ง allow และ deny
-
-#### Scenario: ไม่ได้ประกาศ
-
-- **GIVEN** change ระดับ High ที่ไม่มี dataModel
-- **WHEN** รัน package
-- **THEN** artifact ERD แสดงว่าไม่ได้ประกาศใน agreement
-
-#### Scenario: ค่าที่มี HTML
-
-- **GIVEN** scenario มีข้อความ <script>alert(1)</script>
-- **WHEN** รัน package
-- **THEN** ข้อความถูก escape
-- **AND** script element เดียวใน HTML คือไฟล์ Mermaid ของ harness
-
-### Requirement: package-preview-output
-
-ระบบ SHALL แสดงสถานะและ output ท้ายของ preview receipt ใต้ artifact ที่ตรง capability
-
-#### Scenario: preview ล้มเหลว
-
-- **GIVEN** preview concurrency ที่มี status fail และ output RACE pays out twice
-- **WHEN** รัน package
-- **THEN** artifact concurrency แสดงสถานะ fail และข้อความ RACE pays out twice
-
-#### Scenario: preview เก่า
-
-- **GIVEN** preview ของ revision ก่อนหน้า
-- **WHEN** รัน package
-- **THEN** output แสดงพร้อมระบุว่า stale
-
-#### Scenario: output มี HTML
-
-- **GIVEN** output ของ preview มี <img src=x onerror=alert(1)>
-- **WHEN** รัน package
-- **THEN** output ถูก escape และไม่มี img tag
-
 ### Requirement: archived-proof-labels
 
 ระบบ SHALL ติดป้าย proof จาก receipt ที่ผ่านของ change ที่ archive หรือ apply แล้ว โดยไม่ตรวจ sandbox ที่ถูกลบ
@@ -226,22 +116,6 @@
 - **GIVEN** change ที่ archived แต่ receipt test มี status fail
 - **WHEN** รัน package
 - **THEN** artifact test map ไม่ติดป้าย proof
-
-### Requirement: failure-table-filter
-
-ระบบ SHALL แสดงใต้ artifact concurrency และ retry เฉพาะ failure scenario ที่เกี่ยวกับการทำงานพร้อมกันหรือการลองใหม่
-
-#### Scenario: กรองตรง
-
-- **GIVEN** failure scenario 3 ข้อ ซึ่งมีข้อเดียวพูดถึงการส่งพร้อมกัน
-- **WHEN** รัน package
-- **THEN** artifact concurrency แสดงแถวเดียว
-
-#### Scenario: ไม่มีที่ตรง
-
-- **GIVEN** ไม่มี failure scenario ที่พูดถึงการทำงานพร้อมกัน
-- **WHEN** รัน package
-- **THEN** artifact concurrency บอกว่าไม่มี scenario ที่ตรง
 
 ### Requirement: router-path-signals
 
@@ -267,161 +141,6 @@
 - **GIVEN** approval.roles มี security และ task แตะ src/auth/session.js ที่ draft ไม่ประกาศ access-control
 - **WHEN** advance --through build โดยอนุมัติแค่ tech-lead
 - **THEN** advance ถามหา lane security
-
-### Requirement: scratch-summary
-
-ระบบ SHALL แสดงสรุป จะได้อะไร ของเดิม ของใหม่ และถ้าพลาด จาก draft.scratch บนสุดของ package
-
-- scratch มี get, asIs, toBe, ifFail เป็นข้อความบรรทัดเดียวไม่เกิน 240 ตัวอักษร
-- ทุกช่องไม่บังคับ
-
-#### Scenario: มี scratch ครบ
-
-- **GIVEN** draft.scratch มี get, asIs, toBe และ ifFail
-- **WHEN** รัน package <change>
-- **THEN** ส่วนบนสุดแสดงทั้ง 4 ข้อความตามลำดับ
-
-#### Scenario: ไม่มี scratch
-
-- **GIVEN** draft ไม่มี scratch
-- **WHEN** รัน package <change>
-- **THEN** ส่วนบนสุดแสดง intent และข้อความว่ายังไม่ได้เขียนสรุป
-
-#### Scenario: ข้อความยาวเกิน
-
-- **GIVEN** scratch.get ยาว 241 ตัวอักษร
-- **WHEN** รัน change start
-- **THEN** intake คืน EDIT ที่ระบุ scratch.get และขีดจำกัด 240
-
-#### Scenario: scratch ไม่ใช่ object
-
-- **GIVEN** scratch เป็นข้อความ
-- **WHEN** รัน change start
-- **THEN** intake คืน EDIT ที่ระบุ scratch ต้องเป็น object
-
-### Requirement: scratch-examples
-
-ระบบ SHALL render draft.examples เป็นบล็อกตามชนิดที่รองรับทั้ง 29 ชนิด
-
-- ชนิด: prototype examples api timeline dataDiff lineage mermaid failures permission plan snapshot repro perf golden adr rollout apiDiff strings alert privacy coverage consumers messages terminal doc pipeline search report diffSummary
-- ทุกค่าถูก escape ยกเว้นไม่มีช่องใดรับ HTML ดิบ
-- prototype อ้างไฟล์ใน .foundation/previews ของ change เท่านั้น
-
-#### Scenario: ตัวอย่าง API สองกรณี
-
-- **GIVEN** examples มี api ที่มี case 201 และ 409
-- **WHEN** รัน package
-- **THEN** บล็อกแสดง request และ response ของทั้งสอง case และเลือก case ได้โดยไม่ใช้ script
-
-#### Scenario: ชนิดไม่รู้จัก
-
-- **GIVEN** examples[0].type เป็น video
-- **WHEN** รัน change start
-- **THEN** intake คืน EDIT ที่ระบุ examples[0].type และรายชื่อชนิดที่รองรับ
-
-#### Scenario: ขาดช่องบังคับ
-
-- **GIVEN** examples[1] ชนิด api ไม่มี endpoints
-- **WHEN** รัน change start
-- **THEN** intake คืน EDIT ที่ระบุ examples[1].endpoints
-
-#### Scenario: ค่าที่มี HTML
-
-- **GIVEN** ตัวอย่างมีข้อความ <img src=x onerror=alert(1)>
-- **WHEN** รัน package
-- **THEN** ข้อความแสดงเป็นตัวอักษรและไม่มี element img จากข้อความนั้น
-
-#### Scenario: prototype ชี้นอก previews
-
-- **GIVEN** prototype.path เป็น ../../secret.html
-- **WHEN** รัน change start
-- **THEN** intake คืน EDIT ว่า path ต้องอยู่ใน .foundation/previews/<change>/
-
-#### Scenario: ครบ 29 ชนิด
-
-- **GIVEN** draft มีตัวอย่างหนึ่งบล็อกต่อชนิดครบ 29 ชนิด
-- **WHEN** รัน package
-- **THEN** มี 29 บล็อกและไม่มีบล็อกที่ว่าง
-
-### Requirement: example-actual
-
-ระบบ SHALL แสดงผลจริงหลัง Build ของแต่ละตัวอย่างจาก receipt หรือ preview ที่ capability ตรงกัน
-
-- example.capability ไม่บังคับ
-- proof เฉพาะ receipt ที่ valid และ pass
-- ไม่มีผลแสดงว่ายังไม่มีผลพร้อมสิ่งที่จะเทียบจาก postBuild
-
-#### Scenario: มี receipt ผ่าน
-
-- **GIVEN** ตัวอย่าง capability browser และ receipt ของ provider browser valid และ pass พร้อม artifact screenshot.png
-- **WHEN** รัน package หลัง Prove
-- **THEN** แท็บผลจริงติดป้าย proof และลิงก์ artifact
-
-#### Scenario: มีแค่ preview
-
-- **GIVEN** มี preview receipt capability browser ของ revision ปัจจุบัน
-- **WHEN** รัน package
-- **THEN** แท็บผลจริงติดป้าย preview แสดง outputTail และลิงก์ artifact
-
-#### Scenario: preview เก่า
-
-- **GIVEN** preview receipt มาจาก revision ก่อนหน้า
-- **WHEN** รัน package
-- **THEN** แท็บผลจริงติดป้าย preview เก่า
-
-#### Scenario: ยังไม่มีผล
-
-- **GIVEN** ไม่มี receipt หรือ preview ของ capability นั้น
-- **WHEN** รัน package
-- **THEN** แท็บผลจริงแสดง ยังไม่มีผล และข้อความ postBuild
-
-#### Scenario: receipt ล้ม
-
-- **GIVEN** receipt ของ capability นั้น status fail
-- **WHEN** รัน package
-- **THEN** แท็บผลจริงติดป้าย ไม่ผ่าน และไม่ติดป้าย proof
-
-### Requirement: package-language
-
-ระบบ SHALL แสดงหัวข้อและป้ายของ package เป็นภาษาไทยเมื่อ draft.language เป็น th และภาษาอังกฤษในกรณีอื่น
-
-#### Scenario: ภาษาไทย
-
-- **GIVEN** draft.language เป็น th
-- **WHEN** รัน package
-- **THEN** หัวข้อ จะได้อะไร และป้าย ยังไม่มีผล เป็นภาษาไทย และ html lang เป็น th
-
-#### Scenario: ภาษาอื่น
-
-- **GIVEN** draft.language เป็น ja
-- **WHEN** รัน package
-- **THEN** หัวข้อเป็นภาษาอังกฤษ
-
-### Requirement: package-offline-diagrams
-
-ระบบ SHALL render diagram ด้วย Mermaid ในเครื่องโดยไม่โหลดอะไรจากภายนอก
-
-- script element เดียวใน package โหลด .claude/harness/vendor/mermaid.min.js แบบ relative
-- ไม่มี inline script และไม่มี URL http หรือ https
-- เมื่อไม่มีไฟล์ vendor diagram ยังแสดงเป็นข้อความ Mermaid
-
-#### Scenario: มีไฟล์ vendor
-
-- **GIVEN** change มี diagram 2 อัน และไฟล์ vendor อยู่ครบ
-- **WHEN** เปิด package ในเบราว์เซอร์จากไฟล์ในเครื่อง
-- **THEN** diagram ทั้ง 2 อันแสดงเป็น svg
-
-#### Scenario: ไม่มีไฟล์ vendor
-
-- **GIVEN** ไฟล์ vendor ถูกลบ
-- **WHEN** เปิด package
-- **THEN** diagram แสดงเป็นข้อความ Mermaid ที่อ่านได้และหน้าไม่ error
-
-#### Scenario: ไม่มี script อื่น
-
-- **GIVEN** draft มีข้อความ <script>alert(1)</script> ในทุกช่องข้อความ
-- **WHEN** รัน package
-- **THEN** HTML มี script element เดียวที่ src ชี้ไฟล์ vendor และไม่มี http:// หรือ https://
 
 ### Requirement: scratch-nudges
 
@@ -498,43 +217,6 @@
 - **WHEN** เรียก routeChange()
 - **THEN** มี domain 23 และ artifact threat
 
-### Requirement: decision-first-page
-
-หน้า approval package SHALL แสดงสรุปและความเสี่ยงก่อนรายละเอียดเทคนิค
-
-#### Scenario: สรุปมาก่อน
-
-- **GIVEN** draft มี scratch ครบ 4 บรรทัด
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ลำดับในหน้าคือ หัว ความเสี่ยง สรุป 4 บรรทัด แถบขอบเขต ตัวอย่าง รายละเอียดผู้ตรวจ
-
-#### Scenario: ไม่มี scratch
-
-- **GIVEN** draft ไม่มี scratch
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงกรอบเตือนว่ายังไม่มีสรุปและแสดง intent แทน
-
-#### Scenario: ไม่ทราบตัวเลขขอบเขต
-
-- **GIVEN** draft ไม่มี tasks paths หรือ openQuestions ที่นับได้
-- **WHEN** เรนเดอร์แถบขอบเขต
-- **THEN** ตัวเลขนั้นแสดงว่า ไม่ทราบ ไม่ใช่ 0
-
-### Requirement: reviewer-details-collapsed
-
-หน้า package SHALL พับตาราง role โดเมน test map API diagram และ preview ไว้ในส่วนเดียวที่ปิดตั้งต้น
-
-#### Scenario: พับรายละเอียด
-
-- **WHEN** เรนเดอร์หน้า package ของ change ที่มี role tables และ diagram
-- **THEN** ทั้งหมดอยู่ใน details เดียวที่ไม่มี attribute open และ summary บอกจำนวนที่ซ่อน
-
-#### Scenario: ไม่มีไฟล์ mermaid
-
-- **GIVEN** ไฟล์ mermaid.min.js หาย
-- **WHEN** เรนเดอร์หน้าที่มี diagram
-- **THEN** diagram แสดงเป็นข้อความ Mermaid และหน้ายังเรนเดอร์ได้
-
 ### Requirement: scratch-required-medium
 
 change start SHALL คืน EDIT ที่ระบุ path scratch เมื่อ draft ระดับ medium หรือ high ไม่มี scratch ครบ 4 บรรทัด
@@ -571,368 +253,228 @@ change start SHALL คืน EDIT ที่ระบุ path scratch เมื�
 - **WHEN** ผู้ใช้ตอบ ลุยเลย หรือ approve
 - **THEN** ยังนับเป็นการอนุมัติตาม WORKFLOW.md โดยไม่ถามซ้ำ
 
-### Requirement: risk-meter
+### Requirement: approval-data
 
-หน้า package SHALL แสดงระดับความเสี่ยงเป็นแถบ 4 ระดับพร้อมคำกำกับ และเหตุผลของระดับนั้นเป็นรายการสั้น
+คำสั่ง package SHALL พิมพ์ข้อมูลของ change เป็น JSON ได้แก่ ระดับความเสี่ยงพร้อมเหตุผล domain artifact ตาม role พร้อมป้ายหลักฐาน คำแนะนำ preview บรรทัด scratch รวม undo และ who รายการตรวจ section ที่บังคับ บรรทัดสถานะการอนุมัติ รายการที่หน้าต้องแสดง สถานะ covers สถานะ drift และ factsDigest โดย SHALL NOT เขียนไฟล์ HTML
 
-#### Scenario: ระดับสูงสุด
+#### Scenario: พิมพ์ข้อมูลครบ
 
-- **GIVEN** route ได้ระดับ Critical พร้อมเหตุผล
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แถบเต็ม 4 ช่อง คำว่าวิกฤตถูกเน้น และเหตุผลแต่ละข้อเป็นรายการแยก
+- **GIVEN** change ระดับ Medium ที่มี draft และ receipt บางส่วน
+- **WHEN** รัน claude-foundation package <change>
+- **THEN** ได้ JSON ที่มีทุกหัวข้อข้างต้น และไม่มีไฟล์ HTML ถูกเขียนหรือเขียนทับใน .foundation/packages
 
-#### Scenario: ระดับต่ำ
+#### Scenario: ค่าที่ไม่ทราบ
 
-- **GIVEN** route ได้ระดับ Low
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แถบเต็ม 1 ช่อง และบอกระดับเป็นคำและสัญลักษณ์ ไม่ใช้สีอย่างเดียว
+- **GIVEN** draft ไม่มี tasks paths และไม่มี openQuestions ที่นับได้
+- **WHEN** รัน package
+- **THEN** ตัวเลขนั้นเป็น unknown ไม่ใช่ 0 และไม่มีค่าที่เดา
 
-#### Scenario: ไม่มีเหตุผล
+#### Scenario: อ่าน evidence บางส่วนไม่ได้
 
-- **GIVEN** route ไม่มีเหตุผลของระดับ
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงแถบและคำกำกับโดยไม่แสดงรายการเหตุผลว่าง
+- **GIVEN** receipt หนึ่งรายการอ่านไม่ได้
+- **WHEN** รัน package
+- **THEN** ได้ JSON ที่มี warnings ระบุรายการนั้นและข้อมูลส่วนอื่นยังอยู่
 
-### Requirement: before-after-and-questions
+#### Scenario: change ที่ไม่มี draft แบบ typed
 
-หน้า package SHALL แสดงก่อน-หลังเป็นการ์ดคู่ และแสดงตัวข้อความของคำถามที่ค้างอยู่ในกล่องเด่นก่อนรายละเอียดผู้ตรวจ
+- **GIVEN** change เก่าที่ไม่มี typed draft
+- **WHEN** รัน package
+- **THEN** ได้ JSON ที่ระบุว่าข้อมูลจำกัดและช่องที่ไม่มีเป็น unknown
 
-#### Scenario: มีคำถามค้าง
+### Requirement: approval-page-authored-by-skill
 
-- **GIVEN** draft มี openQuestions 1 ข้อ
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** กล่องคำถามแสดงข้อความของคำถามนั้นและจำนวนในหัวกล่อง
+harness SHALL NOT สร้างหรือเขียนทับหน้าอนุมัติ HTML ในทุกคำสั่ง และคำถามอนุมัติ SHALL ระบุ path ของหน้าที่ skill prototype เขียนไว้เมื่อไฟล์นั้นมีอยู่ มิฉะนั้น SHALL แสดงสรุปเป็นข้อความและบอกให้ใช้ skill prototype โดยไม่กั้น
 
-#### Scenario: ไม่มีคำถามค้าง
+#### Scenario: มีหน้าแล้ว
 
-- **GIVEN** draft ระบุ openQuestions เป็นรายการว่าง
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ไม่แสดงกล่องคำถาม
+- **GIVEN** มีไฟล์ .foundation/previews/<change>/prototype.html และ draft ชี้ไฟล์นั้นเป็น example ชนิด prototype
+- **WHEN** advance ถามเรื่องอนุมัติ
+- **THEN** ข้อความเรียก หน้าอนุมัติ พร้อม path ของไฟล์นั้น
 
-#### Scenario: คำถามเป็นข้อความอันตราย
+#### Scenario: ยังไม่มีหน้า
 
-- **GIVEN** ข้อความคำถามมีเครื่องหมาย HTML
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ข้อความถูก escape และแสดงเป็นตัวอักษร
+- **GIVEN** ไม่มีไฟล์หน้าอนุมัติของ change นี้
+- **WHEN** advance ถามเรื่องอนุมัติ
+- **THEN** ข้อความแสดงสรุป 4 บรรทัดเป็นข้อความและบอกว่ายังไม่มีหน้าอนุมัติให้ใช้ skill prototype และไม่หยุดการถาม
 
-#### Scenario: ไม่มีสรุปก่อน-หลัง
+#### Scenario: ไม่เขียนไฟล์หน้า
 
-- **GIVEN** scratch ไม่มี asIs และ toBe
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ไม่แสดงการ์ดก่อน-หลังที่ว่าง และคำเตือนเรื่องสรุปที่ขาดยังแสดง
+- **GIVEN** รัน change start advance หรือ package
+- **WHEN** คำสั่งทำงานจนเสร็จ
+- **THEN** ไม่มีไฟล์ HTML ถูกสร้างหรือเขียนทับใน .foundation/packages และไฟล์เก่าที่มีอยู่ไม่ถูกแก้
 
-### Requirement: failure-cards
+#### Scenario: ตัวอย่างใน draft ยังถูกตรวจ
 
-หน้า package SHALL แสดงกรณีพลาดจาก scenario ชนิด failure เป็นการ์ดที่มีสาเหตุ ผลที่เห็น และวิธีกู้คืน
+- **GIVEN** draft มี example ชนิดที่ไม่รู้จัก
+- **WHEN** รัน change start
+- **THEN** ได้ EDIT ที่ระบุ path ของ example นั้นตามเดิม และ harness ไม่เรนเดอร์ example ใด
 
-#### Scenario: มี failure scenario
+### Requirement: prototype-checklist
 
-- **GIVEN** requirements มี failure scenario 2 ข้อที่มี when then recovery
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงการ์ด 2 ใบ ใบละหนึ่ง scenario โดยมีสาเหตุ ผลที่เห็น และวิธีกู้คืน
+ข้อมูลของ package และผลของ change start SHALL บอกรายการสิ่งที่หน้าอนุมัติของ change นี้ต้องแสดง โดยอนุมานจาก work type และฟิลด์ใน draft เท่านั้น ครอบคลุมทุก work type ที่ catalog ประกาศ และ SHALL NOT กั้น change start Build Prove หรือ Land
 
-#### Scenario: ไม่มี recovery
+#### Scenario: งาน API
 
-- **GIVEN** failure scenario ไม่มี recovery
-- **WHEN** เรนเดอร์การ์ด
-- **THEN** ไม่แสดงช่องวิธีกู้คืนที่ว่าง
+- **GIVEN** workType เป็น api และ draft มี apiContracts ที่มี error 400 เมื่อ title ว่าง
+- **WHEN** รัน package
+- **THEN** รายการมี แผง API ที่แสดง request response และกรณี error 400 พร้อม เส้นทางผู้ใช้ กรณีพลาดพร้อม recovery และ ก่อน-หลัง
 
-#### Scenario: ไม่มี failure scenario
-
-- **GIVEN** requirements ไม่มี failure scenario
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ไม่แสดงส่วนกรณีพลาด และแถบขอบเขตแสดงจำนวนตามจริง
-
-### Requirement: type-cards
-
-หน้า package SHALL จับ work type ที่ draft ประกาศหรืออนุมานเป็นแบบ A ถึง G และแสดงการ์ดของแต่ละแบบที่ตรงกันพร้อมข้อมูลเฉพาะชนิดจาก draft
-
-#### Scenario: แบบข้อมูล
+#### Scenario: งานข้อมูล
 
 - **GIVEN** workType เป็น migration และ draft มี migrationPlan กับ rollout
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงการ์ดแบบ E ที่มี จาก ถึง cutover rollbackWindow และ rollback ของ rollout
+- **WHEN** รัน package
+- **THEN** รายการมี schema ก่อน-หลัง ลำดับปล่อย และ rollback
 
-#### Scenario: หลายชนิด
+#### Scenario: งานหน้าจอ
 
-- **GIVEN** workType เป็น feature และ api และ data
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงการ์ดแบบ E ก่อน แบบ D และแบบ A ตามลำดับคงที่ ไม่แสดงซ้ำ
+- **GIVEN** workType เป็น ui และ uiStates มี loading empty error success
+- **WHEN** รัน package
+- **THEN** รายการระบุว่าต้องแสดงครบทุกสถานะของทุกหน้าจอที่ draft ระบุ
 
-#### Scenario: ชนิดงานเบา
+#### Scenario: ครบทุก work type
 
-- **GIVEN** workType เป็น docs
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงการ์ดแบบ C ที่มีแต่สรุป และไม่แสดงรายการตรวจของส่วนที่ไม่บังคับ
+- **GIVEN** catalog ประกาศ work type ทั้ง 26 ชนิด
+- **WHEN** สร้างรายการของแต่ละชนิดแยกกัน
+- **THEN** ทุกชนิดมีรายการอย่างน้อย 1 ข้อ และทุกข้อระบุฟิลด์ใน draft ที่เป็นที่มา หรือเป็นข้อร่วมคือ ก่อน-หลัง
 
-#### Scenario: ข้อมูลเฉพาะชนิดหาย
+#### Scenario: หลายชนิดรวมกัน
 
-- **GIVEN** workType เป็น privacy แต่ draft ไม่มี privacyAssessment
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** การ์ดแบบ G แสดง ไม่ทราบ ที่ช่องที่ขาดและไม่ใส่ค่าที่เดาเอง
+- **GIVEN** workType เป็น feature, api และ data
+- **WHEN** รัน package
+- **THEN** รายการเป็นผลรวมเรียงลำดับคงที่ ไม่มีข้อซ้ำ และแต่ละข้อบอกที่มา
 
-### Requirement: required-checklist
+#### Scenario: ฟิลด์ไม่ระบุ
 
-หน้า package SHALL แสดงรายการตรวจของส่วนที่บังคับตาม requiredDevSections เป็น ✓ หรือ ✕ ต่อส่วน และแยกส่วนแนะนำที่ยังไม่บังคับด้วยป้ายต่างหาก
+- **GIVEN** workType เป็น api แต่ draft ไม่มี apiContracts
+- **WHEN** รัน package
+- **THEN** รายการมีแผง API ที่ต้องมี และระบุว่า draft ยังไม่ระบุ ไม่ประดิษฐ์ endpoint
 
-#### Scenario: ส่วนบังคับครบ
+#### Scenario: งานที่ไม่ต้องมีภาพมาก
 
-- **GIVEN** bugfix มี reproduction rootCause regression
-- **WHEN** เรนเดอร์รายการตรวจ
-- **THEN** ทุกส่วนบังคับเป็น ✓
+- **GIVEN** workType เป็น docs เท่านั้น
+- **WHEN** รัน package
+- **THEN** รายการมีเฉพาะ ก่อน-หลัง และไม่เตือนว่าขาดอย่างอื่น
 
-#### Scenario: ส่วนบังคับขาด
+#### Scenario: ชนิดใหม่ที่ยังไม่มีรายการ
 
-- **GIVEN** bugfix ไม่มี regression
-- **WHEN** เรนเดอร์รายการตรวจ
-- **THEN** ส่วน bugfix เป็น ✕ และระบุว่าขาดอะไร
-
-#### Scenario: ส่วนแนะนำ
-
-- **GIVEN** ml draft ไม่มี evaluation
-- **WHEN** เรนเดอร์รายการตรวจ
-- **THEN** evaluation แสดงด้วยป้าย แนะนำ ไม่ใช่ ✕ และไม่เปลี่ยนผลการ validate ของ draft
-
-#### Scenario: ไม่มีส่วนบังคับ
-
-- **GIVEN** draft ไม่ประกาศ workType และอนุมานไม่ได้
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ไม่แสดงรายการตรวจ
-
-### Requirement: scratch-undo-who
-
-draft SHALL รับ scratch.undo และ scratch.who เป็นฟิลด์เสริมหนึ่งบรรทัด และการ์ดแสดงสองบรรทัดนี้โดยไม่ทำให้ draft เดิมตก
-
-#### Scenario: ระบุครบ
-
-- **GIVEN** scratch มี undo และ who
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** การ์ดแสดงทั้งสองบรรทัดจากค่าที่ผู้เขียนระบุ
-
-#### Scenario: ไม่ระบุ
-
-- **GIVEN** draft เดิมไม่มี undo และ who
-- **WHEN** start หรือ revise draft ระดับ medium ที่มี scratch 4 บรรทัดเดิม
-- **THEN** ผ่านการตรวจเหมือนเดิม และการ์ดดึงค่าจาก rollout.rollback dataModel.rollback rollbackPin หรือ userStories.asA ถ้ามี ไม่เช่นนั้นแสดง ไม่ทราบ
-
-#### Scenario: รูปแบบผิด
-
-- **GIVEN** scratch.undo เป็นหลายบรรทัดหรือยาวเกิน 240 ตัวอักษร
-- **WHEN** รัน change start
-- **THEN** คืน EDIT ระบุ scratch.undo ตามกฎเดียวกับฟิลด์ scratch เดิม
-
-### Requirement: thai-readable
-
-หน้า package SHALL ใช้ฟอนต์ sans ที่มีอักษรไทยในเครื่องเรียงตามลำดับ Sukhumvit Set, Leelawadee UI, Noto Sans Thai, Thonburi, Tahoma ขนาดฐานอย่างน้อย 17px และไม่ใช้ฟอนต์ serif กับข้อความไทย
-
-#### Scenario: stack ฟอนต์
-
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** CSS ระบุ font-family ตามลำดับที่กำหนดและไม่มี @import url หรือ link ไปฟอนต์ภายนอก
-
-#### Scenario: ไม่มีฟอนต์ไทยในเครื่อง
-
-- **GIVEN** เครื่องไม่มีฟอนต์ไทยใดใน stack
-- **WHEN** เปิดหน้า package
-- **THEN** เบราว์เซอร์ใช้ฟอนต์ไทยสำรองของระบบและหน้ายังอ่านได้
-
-### Requirement: cards-new-types
-
-หน้า package SHALL แสดง data-fix ในการ์ดแบบ E, security ในแบบ G และ cicd ในแบบ F พร้อมข้อมูลเฉพาะชนิด และเลิกแสดงส่วนที่ถูกบังคับแล้วเป็น แนะนำ
-
-#### Scenario: การ์ดข้อมูล
-
-- **GIVEN** workType เป็น data-fix และมี dataFix
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงการ์ดแบบ E ที่มี scope snapshot dryRun rerunSafe rollback และ undo ดึงจาก dataFix.rollback
-
-#### Scenario: การ์ด pipeline
-
-- **GIVEN** workType เป็น cicd และมี pipelinePlan
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงการ์ดแบบ F ที่มี changes permissions blastRadius rollback
-
-#### Scenario: ไม่มีป้ายแนะนำแล้ว
-
-- **GIVEN** workType เป็น ml และ draft ไม่มี evaluation
-- **WHEN** เรนเดอร์รายการตรวจ
-- **THEN** evaluation แสดงเป็นส่วนบังคับที่ขาด ไม่ใช่ป้ายแนะนำ
-
-### Requirement: flow-in-card-a
-
-หน้า package SHALL วาด flow chart ของ userFlow.source ภายในการ์ดแบบ A ที่กางอยู่ และไม่แสดงซ้ำในส่วนรายละเอียดผู้ตรวจ
-
-#### Scenario: มี userFlow
-
-- **GIVEN** draft ประกาศ workType feature และมี userFlow.source เป็น Mermaid flowchart
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** การ์ด A มีบล็อก Mermaid ของ flowchart นั้นกางอยู่ และไม่มีบล็อกเดียวกันในส่วนรายละเอียดผู้ตรวจ
-
-#### Scenario: ไม่มี source
-
-- **GIVEN** userFlow มีแต่ purpose ไม่มี source
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** การ์ด A แสดงข้อความ purpose และไม่มีกรอบแผนภาพว่าง
-
-#### Scenario: วาดไม่ได้
-
-- **GIVEN** ไม่มีไฟล์ Mermaid ของ harness
-- **WHEN** เรนเดอร์หน้าที่มี userFlow.source
-- **THEN** การ์ด A แสดงข้อความ Mermaid ของแผนภาพนั้นเป็นข้อความที่อ่านได้
-
-### Requirement: sequence-in-cards
-
-หน้า package SHALL วางแผนภาพใน diagrams ลงการ์ดที่เกี่ยวข้องโดย sequenceDiagram ไปการ์ด D ก่อน แล้ว F แล้ว A และ stateDiagram ไปการ์ด F ก่อน แล้ว E แล้ว A และแผนภาพอื่นไปการ์ด A ก่อน และวางแต่ละแผนภาพที่เดียว
-
-#### Scenario: sequence กับ api
-
-- **GIVEN** workType เป็น api และ feature และ diagrams มี sequenceDiagram
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แผนภาพอยู่ในการ์ด D ไม่อยู่ในการ์ด A และไม่ซ้ำ
-
-#### Scenario: state กับ async
-
-- **GIVEN** workType เป็น async และ diagrams มี stateDiagram-v2
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แผนภาพอยู่ในการ์ด F
-
-#### Scenario: ไม่มีการ์ดที่ตรง
-
-- **GIVEN** workType เป็น docs ที่ได้การ์ด C เท่านั้นและ diagrams มี sequenceDiagram
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แผนภาพอยู่ในการ์ดแรกที่แสดง คือ C และไม่หายไป
-
-#### Scenario: ไม่มีการ์ดเลย
-
-- **GIVEN** draft ไม่มี workType ที่ให้การ์ดและมี diagrams
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แผนภาพยังแสดงในส่วนรายละเอียดผู้ตรวจ ไม่หาย
-
-### Requirement: prototype-visible
-
-หน้า package SHALL แสดงตัวอย่างชนิด prototype เป็นอันแรกของส่วนตัวอย่างและกางอยู่ และเมื่อการ์ด A แสดงโดยไม่มี prototype SHALL บอกว่ายังไม่มี prototype โดยไม่ทำให้ draft ตกหรือถามผู้ใช้
-
-#### Scenario: prototype ไม่ใช่ตัวแรก
-
-- **GIVEN** examples มี api เป็นตัวแรกและ prototype เป็นตัวที่สาม
-- **WHEN** เรนเดอร์ส่วนตัวอย่าง
-- **THEN** prototype ถูกวางเป็นอันแรกและกางอยู่ ตัวอื่นเรียงตามเดิมต่อจากนั้น
-
-#### Scenario: ไม่มี prototype
-
-- **GIVEN** workType เป็น ui และไม่มีตัวอย่างชนิด prototype
-- **WHEN** เรนเดอร์การ์ด A
-- **THEN** การ์ด A มีข้อความ ยังไม่มี prototype
-
-#### Scenario: งานที่ไม่ใช่แบบ A
-
-- **GIVEN** workType เป็น bugfix เท่านั้น
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ไม่มีข้อความยังไม่มี prototype
+- **GIVEN** มีคนเพิ่ม work type ใหม่ใน catalog โดยไม่เพิ่มรายการ
+- **WHEN** รันชุดทดสอบของ harness
+- **THEN** ชุดทดสอบล้มและระบุชื่อชนิดที่ไม่มีรายการ
 
 #### Scenario: ไม่กั้นการเริ่ม
 
-- **GIVEN** draft ประเภท ui ไม่มี prototype
+- **GIVEN** draft ประเภท ui ยังไม่มีหน้าอนุมัติ
 - **WHEN** รัน change start
-- **THEN** ไม่ได้ EDIT เรื่อง prototype และไม่ถามผู้ใช้
+- **THEN** พิมพ์ NOTE ที่ระบุรายการที่หน้าต้องแสดง โดยไม่ EDIT ไม่ถามผู้ใช้ และไม่หยุด
 
-### Requirement: diagram-layout
+### Requirement: prototype-coverage-declared
 
-หน้า package SHALL ใส่แต่ละแผนภาพในกรอบที่มีหัวข้อ กางอยู่ ย่อได้ และเลื่อนแนวนอนเมื่อกว้างเกินจอ โดยไม่เพิ่ม script นอกจากตัวโหลด Mermaid เดิม
+ตัวอย่างชนิด prototype SHALL ประกาศ covers เป็นรายการ key ของข้อที่ต้องแสดง และข้อมูลของ package SHALL รายงานข้อที่ประกาศครอบคลุม ข้อที่ยังขาด และข้อที่ไม่ทราบ โดยไม่ถือการประกาศเป็น proof
 
-#### Scenario: กรอบเลื่อนได้
+#### Scenario: ครอบคลุมครบ
 
-- **WHEN** เรนเดอร์หน้าที่มีแผนภาพในการ์ด
-- **THEN** แผนภาพอยู่ใน details ที่มี open และ summary เป็นหัวข้อ และ CSS ตั้ง overflow-x เป็น auto
+- **GIVEN** prototype ประกาศ covers ครบทุกข้อในรายการที่ต้องแสดง
+- **WHEN** รัน package
+- **THEN** ทุกข้อมีสถานะประกาศครอบคลุม และสรุปว่าประกาศครบ
 
-#### Scenario: ไม่มี script เพิ่ม
+#### Scenario: ยังขาด
 
-- **WHEN** เรนเดอร์หน้าที่ไม่มี diagram
-- **THEN** ไม่มี script form button หรือ event handler ในหน้า
+- **GIVEN** prototype ไม่ประกาศ covers ของแผง API
+- **WHEN** รัน package
+- **THEN** ข้อแผง API มีสถานะ ยังขาด พร้อมชื่อข้อ
 
-### Requirement: visual-fixes
+#### Scenario: ไม่ประกาศ covers
 
-ป้าย ก่อน และ หลัง ของการ์ดก่อน-หลัง SHALL แสดงเป็นป้ายคำกะทัดรัดไม่เป็นกรอบเต็มความกว้าง และการ์ดข้อมูลส่วนบุคคลสองใบ SHALL มีหัวข้อต่างกัน
+- **GIVEN** prototype ไม่มีฟิลด์ covers
+- **WHEN** รัน package
+- **THEN** ทุกข้อเป็น unknown และไม่นับว่าครบ
 
-#### Scenario: ป้ายกะทัดรัด
+#### Scenario: key ที่ไม่รู้จัก
 
-- **GIVEN** scratch มี asIs และ toBe
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ป้ายในการ์ดก่อน-หลังไม่ได้รับสไตล์กรอบของป้ายแนะนำ
+- **GIVEN** covers มี key ที่ไม่อยู่ในรายการของ change นี้
+- **WHEN** รัน change start
+- **THEN** ได้ EDIT ที่ระบุ path ของ key นั้น
 
-#### Scenario: หัวข้อต่างกัน
+#### Scenario: ประกาศไม่ใช่ proof
 
-- **GIVEN** workType เป็น privacy และมี privacyAssessment
-- **WHEN** เรนเดอร์การ์ด G
-- **THEN** การ์ดวัตถุประสงค์และการ์ดตารางฟิลด์มีหัวข้อไม่เหมือนกันทั้ง th และ en
+- **GIVEN** prototype ประกาศ covers ครบแต่ไม่มี receipt ใด
+- **WHEN** รัน package หรือ prove หรือ land
+- **THEN** ข้อมูลระบุว่าเป็นคำประกาศของ agent ไม่ใช่ proof และ Prove กับ Land ไม่ใช้คำประกาศนั้น
 
-### Requirement: no-decision-bar
+### Requirement: facts-from-harness-only
 
-หน้า package SHALL ไม่แสดงส่วนตัดสินใจท้ายหน้า ได้แก่หัวข้อ ข้อความผลของการอนุมัติ ประโยคตอบ และช่อง textarea และการตัดสินใจ SHALL ทำในแชท
+ระดับความเสี่ยง จำนวน proof และสถานะ role lane SHALL มาจากการคำนวณของ harness เท่านั้น และ harness SHALL NOT อ่านค่าเหล่านี้จากไฟล์หน้าอนุมัติหรือ prototype
 
-#### Scenario: ไม่มีส่วนตัดสินใจ
+#### Scenario: หน้าอ้าง proof เอง
 
-- **GIVEN** spec ยังไม่อนุมัติ
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ไม่มีหัวข้อ การตัดสินใจของคุณ ไม่มี textarea ไม่มีประโยคตอบ และไม่มีข้อความผลของการอนุมัติ
+- **GIVEN** ไฟล์หน้าอนุมัติมีข้อความว่าผ่านทุกการทดสอบ แต่ไม่มี receipt ที่ผ่านจริง
+- **WHEN** รัน package
+- **THEN** จำนวน proof ในข้อมูลไม่เพิ่ม และป้ายหลักฐานของ artifact นั้นเป็น none
 
-#### Scenario: ไม่มี form หรือ script
+#### Scenario: preview ไม่ใช่ proof
 
-- **WHEN** เรนเดอร์หน้า package ที่ไม่มี diagram
-- **THEN** ไม่มี script form button หรือ event handler ในหน้า
+- **GIVEN** มี receipt ชนิด preview ของ change นี้
+- **WHEN** รัน package
+- **THEN** ป้ายเป็น preview ไม่ใช่ proof และ Prove กับ Land ไม่ใช้ receipt นั้น
 
-#### Scenario: ถามในแชทเหมือนเดิม
+#### Scenario: ค่าความเสี่ยงมาจาก draft
 
-- **GIVEN** agent ถึงขั้นขออนุมัติ spec
-- **WHEN** ทำตาม commands/change.md
-- **THEN** ถามด้วยการ์ดในแชทและบันทึกด้วย advance --approve-spec เหมือนเดิม
+- **GIVEN** draft ประกาศ impact high และ riskSignals financial
+- **WHEN** รัน package
+- **THEN** ระดับและเหตุผลคำนวณจาก draft และ path ของ task เท่านั้น
 
-### Requirement: approval-status-line
+### Requirement: prototype-sync
 
-หน้า package SHALL แสดงบรรทัดสถานะใต้หัวหน้าเมื่อ revision นี้อนุมัติแล้ว หรือเมื่อยังรออนุมัติจาก role ที่ตั้งไว้ใน approval.roles และไม่แสดงเมื่อไม่มีอะไรต้องบอก
+harness SHALL บันทึก digest ของไฟล์หน้าอนุมัติและ factsDigest ของข้อมูลที่คำนวณทุกครั้งที่ change start revise หรือ amend และข้อมูลของ package กับคำถามอนุมัติ SHALL เตือนเมื่อไฟล์ถูกแก้หลังฉบับล่าสุด หรือเมื่อหน้าไม่มี factsDigest ล่าสุด โดย SHALL NOT กั้น change start Build Prove หรือ Land
 
-#### Scenario: อนุมัติแล้ว
+#### Scenario: แก้ไฟล์แล้วเตือน
 
-- **GIVEN** spec อนุมัติแล้วและ revision ไม่เปลี่ยน
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงบรรทัดว่าอนุมัติแล้วสำหรับฉบับนี้
+- **GIVEN** บันทึก digest ของ prototype.html ที่ฉบับ 2 แล้วไฟล์ถูกแก้
+- **WHEN** รัน package
+- **THEN** ข้อมูลมี drift true ระบุว่าถูกแก้หลังฉบับ 2 ให้ตรวจให้ตรงกับ change แล้ว change revise
 
-#### Scenario: lane ยังไม่ครบ
+#### Scenario: revise แล้วหายเตือน
 
-- **GIVEN** ตั้ง approval.roles และ qa กับ security ยังไม่อนุมัติ
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แสดงบรรทัดที่ระบุ qa และ security ว่ายังรออนุมัติ และไม่บอกว่าอนุมัติแล้ว
+- **GIVEN** ข้อมูลมี drift true
+- **WHEN** agent แก้ draft ให้ตรงแล้วรัน change revise
+- **THEN** digest ใหม่ถูกบันทึกและ drift เป็น false
 
-#### Scenario: ไม่มีอะไรต้องบอก
+#### Scenario: ข้อมูลของ harness ในหน้าล้าสมัย
 
-- **GIVEN** spec ยังไม่อนุมัติและไม่ได้ตั้ง approval.roles
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ไม่แสดงบรรทัดสถานะ
+- **GIVEN** หน้าอ้าง factsDigest เก่าเพราะมี receipt ใหม่หลังจากนั้น
+- **WHEN** รัน package
+- **THEN** ข้อมูลมี factsStale true และคำถามอนุมัติเตือนให้ skill อัปเดตแถบข้อเท็จจริงในหน้า
 
-### Requirement: visual-polish
+#### Scenario: แก้ไฟล์แต่ไม่แก้ change
 
-หน้า package SHALL ดูเรียบร้อยและอ่านง่ายขึ้นด้วย CSS ล้วน: แถบความเสี่ยงใช้สีตามระดับพร้อมป้ายข้อความ ชิปยาวตัดบรรทัดไม่ล้นจอ แท็กก่อน/หลังพอดีตัวอักษร และการ์ดมีระยะห่างและเงาบางสม่ำเสมอ ทั้งโหมดสว่างและมืด
+- **GIVEN** หน้าถูกแก้แต่ change ไม่ถูก revise
+- **WHEN** รัน advance หรือ prove
+- **THEN** คำเตือนยังอยู่ แต่ไม่ถูกนับเป็น EDIT และไม่หยุดการทำงาน
 
-#### Scenario: แถบความเสี่ยงมีสีตามระดับ
+#### Scenario: ไม่มีไฟล์
 
-- **GIVEN** ระดับความเสี่ยงเป็นวิกฤต
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** ช่องที่เติมใช้คลาสสีของระดับนั้น และป้ายข้อความระดับยังแสดง ไม่ใช้สีอย่างเดียวสื่อความหมาย
+- **GIVEN** example ชนิด prototype ชี้ไฟล์ที่ไม่มี
+- **WHEN** รัน package
+- **THEN** ข้อมูลระบุว่ายังไม่มีไฟล์ และไม่มีคำเตือนเรื่อง drift หรือ facts
 
-#### Scenario: ชิปยาวไม่ล้น
+#### Scenario: คำเตือนไม่ใช่หลักฐาน
 
-- **GIVEN** ชิปมีข้อความยาวเช่นชื่อ path
-- **WHEN** เรนเดอร์ที่ความกว้าง 360px
-- **THEN** ข้อความตัดบรรทัดภายในชิป ไม่เกิดแถบเลื่อนแนวนอนของหน้า
+- **GIVEN** มีหรือไม่มีคำเตือนเรื่อง drift หรือ facts
+- **WHEN** รัน prove หรือ land
+- **THEN** ผลของ Prove และ Land ไม่เปลี่ยนเพราะสถานะนั้น
 
-#### Scenario: แท็กก่อนหลังพอดีตัว
+### Requirement: plain-approval-wording
 
-- **GIVEN** มีการ์ดก่อน-หลัง
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** แท็กไม่ยืดเต็มความกว้างของการ์ด
+คำถามอนุมัติ SHALL เรียกหน้านี้ว่า หน้าอนุมัติ ด้วยภาษาธรรมดา และคำสั่ง package SHALL ยังใช้ได้ในฐานะคำสั่งพิมพ์ข้อมูล
 
-#### Scenario: โหมดมืด
+#### Scenario: คำถามอนุมัติ
 
-- **GIVEN** ระบบใช้ prefers-color-scheme dark
-- **WHEN** เรนเดอร์หน้า package
-- **THEN** สีของแถบความเสี่ยงและการ์ดกำหนดผ่านตัวแปรสีของโหมดมืด ไม่ใช้สีคงที่ที่อ่านไม่ออก
+- **GIVEN** draft ภาษา th ที่รอการอนุมัติและมีไฟล์หน้า
+- **WHEN** advance ถามเรื่องอนุมัติ
+- **THEN** ข้อความเรียก หน้าอนุมัติ พร้อม path ไฟล์ และไม่ใช้คำว่า package เป็นชื่อที่ผู้ใช้ต้องรู้
+
+#### Scenario: ใช้คำสั่งเดิม
+
+- **GIVEN** ผู้ใช้หรือ script เรียก package ของ change หนึ่ง
+- **WHEN** รัน claude-foundation package <change>
+- **THEN** คำสั่งไม่ error และพิมพ์ข้อมูลตาม approval-data
