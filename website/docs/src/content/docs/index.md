@@ -75,5 +75,5 @@ Later, as needed: [configure `foundation.json`](/docs/foundation-config/),
 lifecycle pages and the [CLI reference](/docs/cli/).
 
 :::note[Version]
-These docs track Change Loop **v3.6.8** — runtime API 42, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
+These docs track Change Loop **v3.6.9** — runtime API 42, provider protocol 13. Receipts recorded by earlier versions read as `provider-version-stale` and must be re-proven.
 :::
