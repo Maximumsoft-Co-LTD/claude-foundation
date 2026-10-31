@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `run-all.sh` no longer kills the installer suite at the default 300 seconds on
+  a loaded CI runner: `installer smoke` now has the same ten-minute watchdog as
+  the other long suites. A suite the watchdog does kill always counts as failed
+  and is reported as `(timed out after Ns)` in the failure list and tail header,
+  instead of leaving its last assertions to look like a bug in the code under
+  test.
+- `package` lists each preview with its kept artifact (only when the file stays
+  inside the change's preview folder).
 - A child-only Land (no writable root) of a change amended during Build now
   replaces the root packet with the sandbox packet before archive instead of
   merging only task checkboxes, so the archive and synced specs carry the

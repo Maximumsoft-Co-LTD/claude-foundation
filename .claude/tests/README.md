@@ -61,9 +61,15 @@ trees before injecting faults. They therefore run in the same pool without
 exposing the checkout or another suite to a mutant, and interrupted or
 overlapping runs remove only their temporary trees. Set `FOUNDATION_TEST_JOBS=1`
 to force fully serial execution when bisecting.
-The default watchdog is 300 seconds per suite, or 600 seconds for the combined
-topology/planning fixture and the real-Git pull request delivery suite.
-`FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides both.
+The default watchdog is 300 seconds per suite, or 600 seconds for the long
+suites: the combined topology/planning fixture, the real-Git pull request
+delivery suite, the proof loop, apply conflict, concurrent repositories, and
+the installer suite (about two minutes alone, over five on a loaded CI runner).
+`FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides all of them. A suite the watchdog
+kills always counts as failed and is reported as `(timed out after Ns)` in the
+failure list and the tail header; the kill stops the tree child first, so the
+suite's own last assertions and summary can otherwise read like an ordinary
+failure.
 
 ## Current suites
 
@@ -103,6 +109,7 @@ topology/planning fixture and the real-Git pull request delivery suite.
 | `.claude/harness/tests/scratch-router.test.mjs` | The 28-domain scratch router table is complete and consistent; risk levels follow impact and signal weight; the withdrawal example is Critical; shared artifacts are deduplicated; docs-only work is Low with only change impact and test map; unknown work types warn instead of throwing; runnable artifacts start at High; browser-only data skips the migration domain unless a migration path is touched; CRUD features are not reporting while report or search examples are; access control brings the threat model |
 | `.claude/harness/tests/scratch-draft-fields.test.mjs` | The draft's optional `scratch` summary and typed `examples` accept all 29 types, and each malformed field (over-long or multi-line line, non-object, unknown type, missing required field, prototype path leaving the change's previews folder, non-string optional text) returns an issue naming the exact path |
 | `.claude/harness/tests/prototype-checklist.test.mjs` | The surfaces an approval page owes, inferred from work types and draft fields: every one of the 26 catalog types has a non-empty row that always includes before and after (a type added without a row fails here, naming it), each surface names its source field and says when the draft does not specify it, several types give one fixed-order list with no duplicates, docs-only work owes only before and after, a prototype's `covers` is reported as none, unknown, complete, or incomplete and is marked advisory, an unknown or non-array `covers` returns one intake issue naming its path, and `change start` prints an advisory line that never blocks |
+| `.claude/harness/tests/run-all-timeout.test.mjs` | The runner's watchdog decisions through its hidden forms: `installer smoke` and the other long suites get 600 seconds and an ordinary suite 300, `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides every suite, a suite the watchdog killed is reported as `(timed out after Ns)` and counts as failed even when its own status is 0, an ordinary failure is not blamed on the watchdog, a suite with no recorded status counts as failed, and a missing argument is refused |
 | `.claude/harness/tests/prototype-sync.test.mjs` | The approval page stays honest without the harness owning it: the facts digest is stable across key order, a page edited after the recorded revision is advisory drift and recording again after a revise clears it, a page lacking the current facts digest is stale, changed facts are reported even when the page was not edited, a missing page or nothing recorded raises nothing, the page path stays inside the change's previews folder (absolute, URL, `..`, and symlink-out are refused), and the status only reports and exposes no gate |
 | `.claude/harness/tests/scratch-nudges.test.mjs` | `change start` advises once, without blocking, when a medium or high draft lacks a concrete example, a performance change lacks a target number, or a defect, migration, or deprecation lacks an affected count; low-impact and complete drafts get no scratch NOTE |
 | `.claude/harness/tests/approval-package.test.mjs` | `package` prints the change's data as JSON and writes no HTML or `packages/` folder: risk with reasons, domains, roles, artifact labels, scratch lines with undo and who, scope counts (unknown stays null, never zero), failures with recovery, required sections, the prototype checklist, sync status, and the facts digest; leaves lifecycle state byte-identical; marks legacy changes; fails on an unknown change; labels proof only from a valid passing receipt and previews as preview or stale; a page that claims everything passed changes neither the proof count nor the facts digest; suggests matching providers only for High/Critical; the approval question names the page the skill wrote in the draft's language or gives the summary as text when there is none; recording stores the page digest so an edit shows as drift until the next record; a page without the current facts digest is stale; and invalid evidence wiring becomes a warning from a real CLI run |

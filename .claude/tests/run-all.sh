@@ -264,6 +264,7 @@ waive gate|node --test "$ROOT/.claude/harness/tests/waive-gate.test.mjs"
 land check phases|node --test "$ROOT/.claude/harness/tests/land-check-phases.test.mjs"
 land repository plan|node --test "$ROOT/.claude/harness/tests/land-repository-plan.test.mjs"
 run-all process control|sh "$HERE/harness/run-run-all-control-tests.sh"
+run-all watchdog|node --test "$ROOT/.claude/harness/tests/run-all-timeout.test.mjs"
 affected test selection|node --test "$HERE/harness/affected-suite-selector.test.mjs"
 composition-root wiring|sh "$HERE/harness/run-wiring-tests.sh"
 architecture boundaries|node "$HERE/harness/run-architecture-tests.mjs"
@@ -339,6 +340,38 @@ kill_tree() {
   kill -TERM "$1" 2>/dev/null || true
 }
 
+# Seconds a suite may run before the watchdog ends it. Topology shares one
+# fixture across both domains, Deliver exercises dozens of real-Git publication
+# and recovery cases, the proof loop validates ~90 compiled rapid packets (each
+# linted by the real OpenSpec CLI, ~1.3s, when one is on PATH), and the installer
+# suite installs the whole harness dozens of times: about two minutes alone, and
+# over five on a loaded CI runner. All of these can exceed five minutes on the
+# macOS CI runner; keep a bounded watchdog without dropping cases.
+# `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides every suite.
+suite_timeout_seconds() {
+  case "$1" in
+    'harness contracts (topology planning)'|'pull request delivery'|'proof loop end to end'|'apply conflict'|'concurrent repositories seam'|'installer smoke')
+      echo "${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
+    *) echo "${FOUNDATION_SUITE_TIMEOUT_SECONDS:-300}" ;;
+  esac
+}
+
+# The watchdog records its limit in `<index>.timeout`. The tree is stopped child
+# first, so a killed suite can still print a few failed assertions and even its
+# own summary before it dies. A timeout therefore always counts as a failure and
+# is reported as the cause, never left to look like an ordinary assertion failure.
+suite_timed_out() {
+  [ -s "$1/$2.timeout" ]
+}
+suite_timeout_note() {
+  suite_timed_out "$1" "$2" || return 0
+  printf ' (timed out after %ss)' "$(cat "$1/$2.timeout")"
+}
+suite_failed() {
+  suite_timed_out "$1" "$2" && return 0
+  [ "$(cat "$1/$2.status" 2>/dev/null || echo 1)" -ne 0 ]
+}
+
 repository_status() {
   git -C "$1" status --porcelain=v1 --untracked-files=all
 }
@@ -357,6 +390,23 @@ assert_repository_unchanged() {
 if [ "${1:-}" = "--kill-tree" ]; then
   [ -n "${2:-}" ] || { echo "--kill-tree requires a PID" >&2; exit 2; }
   kill_tree "$2"
+  exit 0
+fi
+
+# Hidden forms the control tests call; nothing else uses them.
+if [ "${1:-}" = "--timeout-seconds" ]; then
+  [ -n "${2:-}" ] || { echo "--timeout-seconds requires a suite label" >&2; exit 2; }
+  suite_timeout_seconds "$2"
+  exit 0
+fi
+if [ "${1:-}" = "--timeout-note" ]; then
+  [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "--timeout-note requires a work directory and an index" >&2; exit 2; }
+  suite_timeout_note "$2" "$3"
+  exit 0
+fi
+if [ "${1:-}" = "--suite-failed" ]; then
+  [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "--suite-failed requires a work directory and an index" >&2; exit 2; }
+  if suite_failed "$2" "$3"; then echo failed; else echo passed; fi
   exit 0
 fi
 
@@ -388,20 +438,12 @@ if [ "${1:-}" = "--suite" ]; then
   else
     ( eval "${line#*|}" ) > "$work/$index.out" 2>&1 &
     child=$!
-    timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-300}"
-    # Topology shares one fixture across both domains. Deliver exercises dozens
-    # of real-Git publication/recovery cases. Both can exceed five minutes on
-    # the macOS CI runner; retain a bounded watchdog without dropping cases.
-    # The proof loop validates ~90 compiled rapid packets, each now linted by
-    # the real OpenSpec CLI (~1.3s) when one is on PATH.
-    case "${line%%|*}" in
-      'harness contracts (topology planning)'|'pull request delivery'|'proof loop end to end'|'apply conflict'|'concurrent repositories seam') timeout="${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
-    esac
+    timeout="$(suite_timeout_seconds "${line%%|*}")"
     (
       sleep "$timeout"
       if kill -0 "$child" 2>/dev/null; then
         printf 'suite exceeded %ss and was terminated\n' "$timeout" >> "$work/$index.out"
-        echo timeout > "$work/$index.timeout"
+        echo "$timeout" > "$work/$index.timeout"
         kill_tree "$child"
       fi
     ) &
@@ -548,10 +590,12 @@ for index in $selected; do
   duration="$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')"
   printf '▶ %s (%ss)\n' "$label" "$duration"
   [ -f "$WORK/$index.out" ] && cat "$WORK/$index.out"
-  if [ "$(cat "$WORK/$index.status" 2>/dev/null || echo 1)" -eq 0 ]
+  if ! suite_failed "$WORK" "$index"
   then printf '✓ %s\n\n' "$label"
-  else printf '✗ %s\n\n' "$label" >&2; failed=1
-    failed_labels="${failed_labels}  ✗ ${label}
+  else
+    note="$(suite_timeout_note "$WORK" "$index")"
+    printf '✗ %s%s\n\n' "$label" "$note" >&2; failed=1
+    failed_labels="${failed_labels}  ✗ ${label}${note}
 "
     failed_indexes="${failed_indexes:-} $index"
   fi
@@ -569,8 +613,9 @@ if [ "$failed" -eq 0 ]; then
 fi
 # Repeat the failures last: CI log viewers often show only the tail.
 for index in ${failed_indexes:-}; do
-  printf '── tail of %s (%ss) ──\n' "$(label_of "$(nth "$index")")" \
-    "$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')" >&2
+  printf '── tail of %s (%ss)%s ──\n' "$(label_of "$(nth "$index")")" \
+    "$(cat "$WORK/$index.duration" 2>/dev/null || echo '?')" \
+    "$(suite_timeout_note "$WORK" "$index")" >&2
   [ -f "$WORK/$index.out" ] && tail -n 40 "$WORK/$index.out" >&2
 done
 [ -z "$failed_labels" ] || printf 'failed suites:\n%s' "$failed_labels" >&2

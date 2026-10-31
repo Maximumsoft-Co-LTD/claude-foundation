@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "installer-smoke-timeout-timeout-suite-installer-smoke",
+      "requirementKey": "installer-smoke-timeout",
+      "scenario": "installer smoke ได้ 600 วินาที",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "installer-smoke-timeout-timeout-suite",
+      "requirementKey": "installer-smoke-timeout",
+      "scenario": "suite อื่นยังได้ 300 วินาที",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "installer-smoke-timeout-timeout-installer-smoke-suite",
+      "requirementKey": "installer-smoke-timeout",
+      "scenario": "ตัวแปรสภาพแวดล้อมครอบทุก suite",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "timeout-reported-as-cause-timeout-suite",
+      "requirementKey": "timeout-reported-as-cause",
+      "scenario": "suite ที่ถูกฆ่ารายงาน timed out",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "timeout-reported-as-cause-suite",
+      "requirementKey": "timeout-reported-as-cause",
+      "scenario": "suite ที่ถูกฆ่านับว่าล้มแม้สถานะเป็น 0",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "timeout-reported-as-cause-3",
+      "requirementKey": "timeout-reported-as-cause",
+      "scenario": "suite ปกติไม่มีหมายเหตุ",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "sh .claude/tests/harness/run-run-all-control-tests.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

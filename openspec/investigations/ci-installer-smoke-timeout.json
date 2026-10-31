@@ -1,0 +1,128 @@
+{
+  "version": 2,
+  "purpose": "research",
+  "language": "th",
+  "id": "ci-installer-smoke-timeout",
+  "activeChange": null,
+  "problem": "ทำไม suite `installer smoke` ล้มบน CI (workflow-tests และ gate ของ release.yml) ตรงข้อ allowlist opt-out ท้าย suite ทั้งที่ผ่านในเครื่อง และ CI ผ่านบางรอบที่โค้ดเหมือนกัน",
+  "mode": "analyze",
+  "intent": {
+    "goal": "หาสาเหตุจริงของ installer smoke ที่ล้มสลับกันบน CI",
+    "outcome": "รู้กลไกและมีทางแก้ที่เลือกได้ โดยไม่แก้โค้ดระหว่าง investigate",
+    "actors": ["maintainer ของ claude-foundation"],
+    "scope": ["install.sh", ".claude/tests/run-all.sh", ".claude/tests/harness/run-installer-tests.sh", "GitHub Actions workflow-tests และ release"]
+  },
+  "requirements": [],
+  "conversation": [],
+  "questions": [],
+  "experiments": [],
+  "work": [],
+  "historyGaps": [
+    "log ของ CI อ่านได้เฉพาะผ่าน gh run view ผลย่อ ไม่ได้เก็บไฟล์ log ดิบ และไม่มีเวลาจริงของแต่ละ assertion เพราะ output ของ suite ถูก buffer แล้วพิมพ์ครั้งเดียว",
+    "ไม่ได้ดูระยะเวลา installer smoke ของรอบที่ผ่าน เพราะ header ของระยะเวลาพิมพ์เฉพาะ suite ที่ล้ม"
+  ],
+  "sources": [
+    ".claude/tests/run-all.sh",
+    ".claude/tests/lib/assert.sh",
+    ".claude/tests/harness/run-installer-tests.sh",
+    "install.sh",
+    ".github/workflows/workflow-tests.yml"
+  ],
+  "facts": [
+    {
+      "key": "output-ends-after-plan",
+      "statement": "assert_cmd_zero พิมพ์ tail 40 บรรทัดของ stdout+stderr ของคำสั่งที่ล้ม ใน log ของ CI output ของ install.sh จบที่บรรทัดแผน (AGENTS.md) โดยไม่มีข้อความ error และไม่มี `INFO upgrade-context` ที่เครื่องผมพิมพ์ต่อจากแผน แปลว่า install.sh ตายเงียบหลังพิมพ์แผน ก่อนถึงขั้น update-advisory",
+      "sources": [".claude/tests/lib/assert.sh", "install.sh"]
+    },
+    {
+      "key": "opt-out-code-after-window",
+      "statement": "โค้ดที่เฉพาะกับ --no-permission-allowlist (jq del(.permissions.allow)) อยู่หลังขั้น update-advisory ซึ่งอยู่หลังจุดที่ตาย ดังนั้นการตายไม่ได้เกิดในโค้ด opt-out ข้อ opt-out ล้มเพราะเป็น install ครั้งสุดท้ายของ suite ไม่ใช่เพราะ flag",
+      "sources": ["install.sh", ".claude/tests/harness/run-installer-tests.sh"]
+    },
+    {
+      "key": "ci-reports-300s",
+      "statement": "ใน log ของรอบที่ installer smoke ล้ม (workflow-tests รัน 41075327217 และ 41029941609, release รัน 41075351226) มี header `── tail of installer smoke (300s) ──` และบรรทัด `suite exceeded 300s and was terminated` ใน output ของ suite เดียวกัน",
+      "sources": [".claude/tests/run-all.sh", ".github/workflows/workflow-tests.yml"]
+    },
+    {
+      "key": "watchdog-300s-kill-tree",
+      "statement": "run-all.sh ให้ทุก suite มี watchdog 300 วินาทีโดยปริยาย (600 วินาทีเฉพาะ topology planning, pull request delivery, proof loop end to end, apply conflict, concurrent repositories seam) เมื่อครบเวลา kill_tree ฆ่าลูกทุกตัวก่อนแล้วจึงฆ่าตัวแม่ด้วย SIGTERM `installer smoke` ไม่อยู่ในรายการ 600 วินาที",
+      "sources": [".claude/tests/run-all.sh"]
+    },
+    {
+      "key": "last-assertions-fail",
+      "statement": "assertion ที่ล้มเป็นสองถึงสามข้อท้ายสุดของ suite (ข้อ allowlist opt-out ก่อน finish ที่บรรทัด 1073) สอดคล้องกับการที่ kill_tree ฆ่า install.sh ซึ่งเป็นลูกก่อน ส่วน shell ของ suite รันต่ออีกเสี้ยววินาทีจนรัน assertion ที่เหลือและพิมพ์สรุป `installer: N/322 FAILED` ทันก่อนถูกฆ่า",
+      "sources": [".claude/tests/harness/run-installer-tests.sh", ".claude/tests/run-all.sh"]
+    },
+    {
+      "key": "same-code-different-result",
+      "statement": "CI ที่ commit 6005e473e ผ่านและที่ e88c34e44 ล้ม ต่างกันเฉพาะไฟล์รายงานใน docs/reports โค้ดเหมือนกัน และ e88c34e44 ล้มด้วย installer smoke ก่อนงานของผม ผลจึงขึ้นกับเวลาของ runner ไม่ใช่โค้ด",
+      "sources": [".github/workflows/workflow-tests.yml"]
+    },
+    {
+      "key": "local-margin",
+      "statement": "installer smoke รันเดี่ยวในเครื่องใช้ 108 วินาที ใต้ขีด 300 วินาทีราว 2.8 เท่า บน CI ที่รัน 24 suite ขนานบน runner 2 ถึง 4 แกน ใช้เวลาไม่เกิน 300 วินาทีในบางรอบและเกินในบางรอบ",
+      "sources": [".claude/tests/run-all.sh"]
+    },
+    {
+      "key": "not-reproduced-locally",
+      "statement": "รัน installer suite 12 ชุดพร้อมกันในเครื่องพร้อม xtrace ผ่านครบ 322/322 ทุกชุด จำลอง HOME สะอาด CI=true และ jq 1.7.1 ผ่านหมด และไม่มี suite ใดเขียน .claude/settings.json ของซอร์สจริง (ทุกที่เขียนลง temp target) จึงไม่พบ race บนไฟล์ settings",
+      "sources": [".claude/tests/harness/run-installer-tests.sh"]
+    },
+    {
+      "key": "release-gate-also-times-out",
+      "statement": "ในรอบ release ที่ล้ม (41075351226) `harness contracts (topology planning)` ก็ถูก watchdog 600 วินาทีฆ่าเช่นกัน และ run-all.sh มีคอมเมนต์เองว่า suite เหล่านี้อาจเกินห้านาทีบน macOS CI runner",
+      "sources": [".claude/tests/run-all.sh"]
+    }
+  ],
+  "hypotheses": [
+    {
+      "key": "h-watchdog-kills-install",
+      "statement": "installer smoke ใช้เวลาครบ 300 วินาทีบน CI ที่โหลดสูง watchdog ของ run-all.sh ฆ่า install.sh ที่กำลังรันก่อน จึงตายเงียบและ assertion ท้ายสุดล้ม",
+      "status": "supported",
+      "factKeys": ["output-ends-after-plan", "ci-reports-300s", "watchdog-300s-kill-tree", "last-assertions-fail", "same-code-different-result", "local-margin"]
+    },
+    {
+      "key": "h-opt-out-code-bug",
+      "statement": "โค้ด --no-permission-allowlist ใน install.sh มีบั๊กที่ทำให้ติดตั้งล้ม",
+      "status": "falsified",
+      "factKeys": ["opt-out-code-after-window", "not-reproduced-locally"]
+    },
+    {
+      "key": "h-settings-race",
+      "statement": "suite อื่นแก้ .claude/settings.json ของซอร์สระหว่างที่ installer อ่าน",
+      "status": "falsified",
+      "factKeys": ["not-reproduced-locally"]
+    },
+    {
+      "key": "h-jq-version",
+      "statement": "jq รุ่นเก่าบน CI (1.7.x) ทำให้ jq program ของ opt-out ล้ม",
+      "status": "falsified",
+      "factKeys": ["not-reproduced-locally", "opt-out-code-after-window"]
+    }
+  ],
+  "options": [],
+  "selection": null,
+  "decisions": [
+    {
+      "key": "which-fix",
+      "question": "จะแก้การที่ watchdog ของ run-all.sh ฆ่า installer smoke บน CI อย่างไร",
+      "status": "resolved",
+      "choice": "ก ร่วมกับ ค",
+      "reason": "ผู้ใช้เลือกตามคำแนะนำ: ขยาย timeout ของ installer smoke เป็น 600 วินาที และทำให้ผลล้มจาก timeout ชัดเจน",
+      "decidedBy": "user",
+      "alternatives": [
+        "ก: เพิ่ม installer smoke ในรายการที่ได้ timeout 600 วินาที (แก้บรรทัดเดียวใน run-all.sh)",
+        "ข: ลดจำนวนงานขนานบน CI ด้วย FOUNDATION_TEST_JOBS ใน workflow-tests.yml และ release.yml",
+        "ค: ทำให้การล้มจาก timeout ชัดเจน ให้ run-all.sh รายงานว่า suite ล้มเพราะ timeout แทนปล่อย assertion ท้ายสุดที่ทำให้เข้าใจผิด",
+        "ง: ลดเวลาของ installer suite เอง (เช่นลดจำนวนการติดตั้งที่คัดลอกไฟล์ทั้งชุดซ้ำ)"
+      ],
+      "recommended": "ก ร่วมกับ ค",
+      "recommendationFactKeys": ["watchdog-300s-kill-tree", "last-assertions-fail", "local-margin", "release-gate-also-times-out"]
+    }
+  ],
+  "conclusion": {
+    "summary": "สาเหตุ: installer smoke ใช้เวลาเกินขีด 300 วินาทีที่ run-all.sh ตั้งไว้เป็นค่าปริยายต่อ suite บน runner ของ CI ที่รัน 24 suite ขนาน watchdog จึงฆ่า install.sh ที่กำลังรันอยู่ (kill_tree ฆ่าลูกก่อนแม่) ทำให้ตายเงียบและ assertion ท้ายสุด (ข้อ allowlist opt-out) ล้ม ส่วน suite ยังพิมพ์สรุปทันก่อนถูกฆ่า ข้อ opt-out ไม่เกี่ยวกับโค้ดของ flag และปัญหานี้มีมาก่อนงาน approval page ที่ baseline e88c34e44 topology planning ก็ถูกฆ่าที่ 600 วินาทีในรอบ release ซึ่งเป็นกลไกเดียวกัน ทางแก้ที่เป็นไปได้ (ยังไม่ได้ทำ): (ก) ใส่ installer smoke ในรายการ 600 วินาทีของ run-all.sh (ข) ลดจำนวนงานขนานบน CI ด้วย FOUNDATION_TEST_JOBS (ค) ทำให้ผลล้มจาก timeout ชัดเจน เช่นเมื่อมี marker timeout ให้รายงานเป็นล้มด้วยสาเหตุ timeout แทน assertion ที่ทำให้เข้าใจผิด (ง) ลดเวลาของ installer suite เอง ข้อจำกัด: ไม่ได้ทำซ้ำเวลา CI ในเครื่อง สรุปจากหลักฐานใน log ของ CI และโค้ดของ watchdog เท่านั้น ไม่ได้ตรวจระยะเวลาของรอบที่ผ่าน"
+  },
+  "changeIntent": "ให้ run-all.sh ไม่ฆ่า installer smoke ที่ 300 วินาทีบน CI โดยใส่ในรายการ timeout 600 วินาที และให้ suite ที่ถูก watchdog ฆ่ารายงานเป็นล้มเพราะ timeout อย่างชัดเจน"
+}

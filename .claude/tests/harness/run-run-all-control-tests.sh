@@ -111,4 +111,8 @@ grep -q 'openspec native benchmark' "$WORK/missing-dependencies-list.out" || {
   exit 1
 }
 
+# The watchdog's limits and its timeout reporting are checked as structured
+# node:test cases, which is also the report Prove reads from this script.
+node --test "$HERE/../../harness/tests/run-all-timeout.test.mjs"
+
 echo "run-all process control: PASS"

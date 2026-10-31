@@ -1,0 +1,6 @@
+# Tasks
+
+> This is the sole implementation ledger.
+
+- [x] **T001** run-all.sh ให้ installer smoke 600 วินาที นับ suite ที่ถูกฆ่าว่าล้มพร้อมข้อความ timed out และมีเทสต์คุมทั้งสองข้อ [key:fix-suite-timeout] [kind:implementation] [paths:.claude/tests/run-all.sh,.claude/tests/harness/run-run-all-control-tests.sh,.claude/tests/README.md] [claims:installer-smoke-timeout-timeout-suite-installer-smoke,installer-smoke-timeout-timeout-suite,installer-smoke-timeout-timeout-installer-smoke-suite,timeout-reported-as-cause-timeout-suite,timeout-reported-as-cause-suite,timeout-reported-as-cause-3] — verify: `node --test .claude/harness/tests/run-all-timeout.test.mjs`
+- [x] **T002** เทสต์ node:test ตรวจ timeout ของ installer smoke ขีดอื่น ตัวแปรสภาพแวดล้อม และการรายงาน suite ที่ถูกฆ่า ให้ Prove ผูกผลกับ claim ได้ [key:timeout-node-test] [paths:.claude/harness/tests/run-all-timeout.test.mjs,.claude/tests/run-all.sh] [claims:installer-smoke-timeout-timeout-suite-installer-smoke,installer-smoke-timeout-timeout-suite,installer-smoke-timeout-timeout-installer-smoke-suite,timeout-reported-as-cause-timeout-suite,timeout-reported-as-cause-suite,timeout-reported-as-cause-3] — verify: `node --test .claude/harness/tests/run-all-timeout.test.mjs`
