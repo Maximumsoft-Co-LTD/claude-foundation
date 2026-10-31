@@ -61,10 +61,12 @@ trees before injecting faults. They therefore run in the same pool without
 exposing the checkout or another suite to a mutant, and interrupted or
 overlapping runs remove only their temporary trees. Set `FOUNDATION_TEST_JOBS=1`
 to force fully serial execution when bisecting.
-The default watchdog is 300 seconds per suite, or 600 seconds for the long
-suites: the combined topology/planning fixture, the real-Git pull request
-delivery suite, the proof loop, apply conflict, concurrent repositories, and
-the installer suite (about two minutes alone, over five on a loaded CI runner).
+The default watchdog is 300 seconds per suite, 600 seconds for the long
+suites (the real-Git pull request delivery suite, the proof loop, apply
+conflict, concurrent repositories, and the installer suite, about two minutes
+alone and over five on a loaded CI runner), and 1200 seconds for the combined
+topology/planning fixture (about 100 seconds alone, but only 110 of its 163
+assertions in 600 seconds on the macOS CI runner).
 `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides all of them. A suite the watchdog
 kills always counts as failed and is reported as `(timed out after Ns)` in the
 failure list and the tail header; the kill stops the tree child first, so the

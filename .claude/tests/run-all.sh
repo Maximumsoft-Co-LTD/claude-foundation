@@ -350,7 +350,11 @@ kill_tree() {
 # `FOUNDATION_SUITE_TIMEOUT_SECONDS` overrides every suite.
 suite_timeout_seconds() {
   case "$1" in
-    'harness contracts (topology planning)'|'pull request delivery'|'proof loop end to end'|'apply conflict'|'concurrent repositories seam'|'installer smoke')
+    # About 100s alone, but over 600s on the macOS CI runner: it made 110 of its
+    # 163 assertions in 600s before being killed in two release gates.
+    'harness contracts (topology planning)')
+      echo "${FOUNDATION_SUITE_TIMEOUT_SECONDS:-1200}" ;;
+    'pull request delivery'|'proof loop end to end'|'apply conflict'|'concurrent repositories seam'|'installer smoke')
       echo "${FOUNDATION_SUITE_TIMEOUT_SECONDS:-600}" ;;
     *) echo "${FOUNDATION_SUITE_TIMEOUT_SECONDS:-300}" ;;
   esac

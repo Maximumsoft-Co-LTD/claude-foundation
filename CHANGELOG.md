@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and is reported as `(timed out after Ns)` in the failure list and tail header,
   instead of leaving its last assertions to look like a bug in the code under
   test.
+- `harness contracts (topology planning)` now has a twenty-minute watchdog
+  (other long suites keep ten): it takes about 100 seconds alone but made only
+  110 of its 163 assertions in 600 seconds on the macOS CI runner, so both
+  release gates killed it.
 - `package` lists each preview with its kept artifact (only when the file stays
   inside the change's preview folder).
 - A child-only Land (no writable root) of a change amended during Build now

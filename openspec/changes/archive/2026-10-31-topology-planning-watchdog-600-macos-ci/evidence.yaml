@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "topology-planning-timeout-timeout-suite-harness-contracts-topolo",
+      "requirementKey": "topology-planning-timeout",
+      "scenario": "topology planning ได้ 1200 วินาที",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "topology-planning-timeout-timeout-installer-smoke-pull-request-d",
+      "requirementKey": "topology-planning-timeout",
+      "scenario": "suite ยาวอื่นยังได้ 600 วินาที",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "topology-planning-timeout-timeout-topology-planning-suite",
+      "requirementKey": "topology-planning-timeout",
+      "scenario": "ตัวแปรสภาพแวดล้อมยังครอบทุก suite",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "sh .claude/tests/harness/run-run-all-control-tests.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

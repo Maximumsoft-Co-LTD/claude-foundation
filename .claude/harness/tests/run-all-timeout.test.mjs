@@ -29,8 +29,13 @@ test("installer smoke ได้ 600 วินาที", () => {
   assert.equal(limitOf("installer smoke"), "600");
 });
 
-test("the other long suites keep their ten minutes", () => {
-  for (const label of ["harness contracts (topology planning)", "pull request delivery",
+test("topology planning ได้ 1200 วินาที", () => {
+  // It made 110 of its 163 assertions in 600s on the macOS CI runner before it was killed.
+  assert.equal(limitOf("harness contracts (topology planning)"), "1200");
+});
+
+test("suite ยาวอื่นยังได้ 600 วินาที", () => {
+  for (const label of ["installer smoke", "pull request delivery",
     "proof loop end to end", "apply conflict", "concurrent repositories seam"])
     assert.equal(limitOf(label), "600", label);
 });
@@ -42,6 +47,7 @@ test("suite อื่นยังได้ 300 วินาที", () => {
 
 test("ตัวแปรสภาพแวดล้อมครอบทุก suite", () => {
   const env = { FOUNDATION_SUITE_TIMEOUT_SECONDS: "45" };
+  assert.equal(limitOf("harness contracts (topology planning)", env), "45");
   assert.equal(limitOf("installer smoke", env), "45");
   assert.equal(limitOf("scratch router", env), "45");
 });
