@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- The `prototype` skill. It did not work in practice. Installed consumers lose
+  `.claude/skills/prototype/` on upgrade through the install manifest. The
+  harness approval-data command and drift checks are unchanged, so the approval
+  page is no longer written by any skill until a replacement ships.
+
 ## [3.6.9] - 2026-10-31
 
 ### Changed
