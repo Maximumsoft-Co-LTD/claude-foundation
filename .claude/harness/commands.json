@@ -87,7 +87,7 @@
       "audience": "agent",
       "kind": "read",
       "idempotent": true,
-      "description": "Print the change's approval data as JSON and write no file: risk level with reasons, technical domains, artifacts by approver role with proof/preview labels, the plain-language scratch lines with undo and who, scope counts, failure cases, required-section status, the surfaces the approval page must show with which the prototype declares covered, the page's drift and facts-digest status, and optional suggested previews, without changing lifecycle state. The approval page itself is written by the prototype skill."
+      "description": "Print the change's approval data as JSON and write no file: risk level with reasons, technical domains, artifacts by approver role with proof/preview labels, the plain-language scratch lines with undo and who, scope counts, failure cases, required-section status, the surfaces the approval page must show with which the prototype declares covered, the page's drift and facts-digest status, and optional suggested previews, without changing lifecycle state. The approval page itself is written by hand by the agent or the user; no skill ships for it."
     },
     {
       "name": "preview",

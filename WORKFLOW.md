@@ -579,9 +579,9 @@ primitive-created/in-flight changes retain their compatibility route.
 #### Approval page, approval data, and role lanes
 
 The approval question names the **approval page**: the file
-`.foundation/previews/<change>/prototype.html` that the prototype skill writes
-and that the draft names as its `prototype` example. The harness writes no
-page. `change start`, `advance`, and `package <change>` write no HTML and no
+`.foundation/previews/<change>/prototype.html` that the agent or the user
+writes by hand and that the draft names as its `prototype` example. No skill
+ships for it and the harness writes no page. `change start`, `advance`, and `package <change>` write no HTML and no
 `.foundation/packages/` file; a package written by an earlier version stays
 readable and is not updated. With no page yet, the question gives the four
 `scratch` lines as text and says to use the skill; it never blocks. In a Thai
@@ -629,17 +629,17 @@ revision (`drift`) or does not contain the current `factsDigest` (`factsStale`),
 and a changed fact since the record is reported as `factsChanged`. The warnings
 are not evidence and do not affect Prove or Land.
 
-**Who writes the page.** The prototype skill (`.claude/skills/prototype`) reads
-the compiled change, runs `package`, and writes the whole page: the header, a
+**Who writes the page.** No skill ships for it. The agent, when asked, or the
+user reads the compiled change, runs `package`, and writes the whole page: the header, a
 strip of the harness's facts copied verbatim with the `factsDigest`, the
 prototype as the main view, the checklist with its statuses, before and after,
 the path, failures with recovery, undo and who, and reviewer details closed by
 default. The page is one file, makes no network request, has no decision
 controls (the user's reply in chat is the decision), uses the draft's language,
 is usable by keyboard without relying on colour alone, and is labelled as not
-proof. Where the host has a design skill or an Artifact type for designs the skill
+proof. Where the host has a design skill or an Artifact type for designs the author
 builds on that canvas, one numbered frame per screen or state, and always exports
-the file because the harness checks the file. When the page is edited the skill
+the file because the harness checks the file. When the page is edited the agent
 revises or amends the change in the same turn, since the agreement stays the
 source of truth.
 

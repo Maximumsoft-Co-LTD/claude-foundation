@@ -71,7 +71,8 @@ full rule lives in `WORKFLOW.md` under "Authority from the user's words".
 
 When a change starts, and again when `advance` asks for spec approval, you are
 pointed to the **approval page**: one file, `.foundation/previews/<change>/prototype.html`,
-that the prototype skill writes for this change. Open it. It leads with a
+that the agent writes for this change when you ask, or that you write yourself.
+No skill ships for it. Open it. It leads with a
 clickable prototype in the look of your project, then a short strip of facts, then
 the rest in this order: what the prototype must show and how much of it does; the
 before and after; the path a user takes, including the one that fails; the

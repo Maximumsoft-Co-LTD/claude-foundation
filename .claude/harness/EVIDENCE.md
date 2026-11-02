@@ -426,8 +426,8 @@ beyond having an adapter and a command.
 
 The approval data (`package <change>`) only reads evidence; it never creates it.
 A `proof` label requires a valid passing Prove receipt, a matching preview
-receipt is labeled `preview` or stale, and anything else is `none`. The page the
-prototype skill writes copies these labels and can never raise one: a page that
+receipt is labeled `preview` or stale, and anything else is `none`. A hand-written
+approval page copies these labels and can never raise one: a page that
 says tests passed changes no count, and its declared `covers` is the agent's claim,
 not evidence. Its links reach only artifacts under the
 change's `.foundation/evidence/<change>/` or `.foundation/previews/<change>/`
