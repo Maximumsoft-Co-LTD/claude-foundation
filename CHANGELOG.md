@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Docs no longer say a `prototype` skill writes the approval page. It is written
+  by hand, by the agent when asked or by the user; the page contract in
+  `WORKFLOW.md` and the harness `package` data are unchanged.
+
 ## [3.6.10] - 2026-11-02
 
 ### Removed
