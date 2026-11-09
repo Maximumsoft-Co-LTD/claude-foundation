@@ -18,6 +18,20 @@ comparison: 2026-10-08, no-harness/v3.6.0/v3.6.1/v3.6.2.
 
 ## Current scenario checkpoint
 
+### v3.6.11 candidate `ca200a3` — 2026-11-09 (all-lane smoke, exception for one pre-existing failure)
+
+Source adds the prototype-bound visual check and its fixes. The all-lane paid
+smoke ran on `claude-sonnet-5-5`, one disposable consumer per lane
+([report](scenario-checkpoint-candidate-ca200a3-2026-11-09.md)): 30 of 31 lanes
+reached `archived` and passed the hidden oracle, clean install, and post-install
+command. `project-tracker-api` stopped at `proven` and failed only
+`CASE_TESTS_EXIST`, as it did at v3.6.8 and v3.6.9; the maintainer authorized
+publication as an explicit exception to that blocker. Measured cost on the 29
+lanes shared with v3.6.9 was US$20.48 against US$17.89 (n=1). Known issue: a
+long `advance` can exceed the host's Bash time limit and is killed without an
+operation record; it is scheduled for the next release. Repeated assurance is
+not claimed.
+
 ### v3.6.9 — 2026-10-30 (published under an explicit exception, no paid smoke)
 
 Source is `095c9f16a`: the approval page is now written by the `prototype` skill
