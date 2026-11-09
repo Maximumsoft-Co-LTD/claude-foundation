@@ -72,7 +72,9 @@ function semanticScenarios(requirement) {
       then: text(object.then) || text(object.outcome) || text(requirement.outcome),
       ...(and.length ? { and } : {}),
       ...(text(object.kind) ? { kind: text(object.kind).toLowerCase() } : {}),
-      ...(object.access !== undefined && object.access !== null ? { access: object.access } : {})
+      ...(object.access !== undefined && object.access !== null ? { access: object.access } : {}),
+      // A hotfix names the incident a scenario guards against recurring.
+      ...(text(object.regressionOf) ? { regressionOf: text(object.regressionOf) } : {})
     };
   });
 }
@@ -1642,6 +1644,8 @@ function whatChanges(row) {
 export function renderScenarioMarkdown(scenario) {
   return [
     `#### Scenario: ${scenario.name}`, "",
+    ...(text(scenario.regressionOf)
+      ? [`Regression of: ${text(scenario.regressionOf)}`, ""] : []),
     ...textList(scenario.given).map((value) => `- **GIVEN** ${value}`),
     `- **WHEN** ${scenario.when}`,
     `- **THEN** ${scenario.then}`,

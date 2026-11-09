@@ -85,6 +85,8 @@ openspec/
 │   ├── <change-id>/     one active change packet
 │   └── archive/         landed packets, dated
 ├── investigations/      durable findings from /investigate
+├── incidents/           one record per incident (README.md, _template.md)
+├── lessons.md           durable lessons, read as grounding by investigate and change
 └── schemas/             the two assurance profiles and their templates
 ```
 
@@ -97,6 +99,12 @@ overwrite:
 | `config.yaml` | your project | Copied only when missing, yours afterwards |
 | `repositories.yaml` | your project | Copied only when missing, yours afterwards |
 | `specs/`, `changes/`, `investigations/` | your project | Never touched by the installer |
+| `incidents/README.md`, `incidents/_template.md`, `lessons.md` | your project | Copied only when missing, yours afterwards; never overwritten |
+
+`lessons.md` is your project's list of durable lessons, each linked to an
+incident record. When it exists, investigation and change intake read it as a
+grounding source. It is unrelated to the `claude-foundation lessons` command,
+which groups recurring blocker and review codes.
 
 `foundation.json` sits at the repository root rather than in `openspec/`,
 because it holds project *policy* rather than intent: execution budgets, packet

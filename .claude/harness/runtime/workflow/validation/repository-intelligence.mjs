@@ -303,6 +303,19 @@ function blockedResult({ limits, terms, scan, findings }) {
  * A traversal/read error or exhausted hard limit invalidates the whole result so
  * callers cannot mistake a partial scan for complete repository coverage.
  */
+// A project's durable lessons ground every investigation and change intake:
+// the file joins the seed sources whenever it exists, so the agent reads it
+// and an edit to it refreshes source coverage like any other grounded file.
+export const PROJECT_LESSONS_PATH = "openspec/lessons.md";
+
+function projectLessonsSeed(projectRoot, fs) {
+  if (typeof projectRoot !== "string" || !projectRoot.trim()) return [];
+  try {
+    return fs.stat(resolve(projectRoot, PROJECT_LESSONS_PATH)).isFile()
+      ? [PROJECT_LESSONS_PATH] : [];
+  } catch { return []; }
+}
+
 export function inspectRepositoryIntelligence({
   projectRoot,
   query = [],
@@ -319,7 +332,7 @@ export function inspectRepositoryIntelligence({
     throw new TypeError("projectRoot must be a non-empty string");
   const limits = normalizeLimits(limitOverrides);
   const terms = queryTerms(query);
-  const seeds = normalizeSeedPaths(seedPaths);
+  const seeds = normalizeSeedPaths([...seedPaths, ...projectLessonsSeed(projectRoot, fs)]);
   const trackedFiles = normalizedPathSet(trackedPaths);
   const tracked = new Set([...trackedFiles, ...pathAncestors(trackedFiles)]);
   const included = includedPaths === null ? null : normalizedPathSet(includedPaths);

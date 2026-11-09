@@ -165,6 +165,9 @@ standard change ต้องมี ถ้าขาดจะเป็น `EDIT` �
 | ui | `userFlow`, `uiStates`, `componentMap` |
 
 งาน docs, test และ chore ต้องมีแค่ summary งานที่ผู้ใช้มองเห็นต้องมี `releaseNote` ด้วย
+hotfix ที่สร้างใหม่ (`bugfix.variant: "hotfix"`) ต้องมี regression ของ incident นั้นด้วย
+คือ scenario ที่ตั้ง `regressionOf` ตรงกับ `bugfix.incident.link` ใน requirement ที่รันการตรวจได้จริง
+เช่น `test` ถ้าไม่มี agent จะได้ `EDIT` และแก้ draft เอง ส่วน hotfix ที่สร้างก่อนอัปเกรดจะไม่ถูกบล็อก
 ชนิดงานยังเลือก evidence capability ด้วย ส่วน skill นั้น agent เลือกเองจากคำอธิบายของ
 skill ที่อ้างถึง `workType`, `riskSignals`, requirement และ scenario รายการครบทั้ง 23 ชนิดอยู่ใน
 `WORKFLOW.md` หัวข้อ "Work types and required sections" ส่วน capability อยู่ใน

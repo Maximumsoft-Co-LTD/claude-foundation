@@ -68,6 +68,9 @@ SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd -P)"
 for required in \
   .claude/orchestrator.md .claude/commands .claude/harness/foundation.mjs \
   .claude/harness/commands.json .claude/harness/templates/REVIEW.md \
+  .claude/harness/templates/incidents/README.md \
+  .claude/harness/templates/incidents/_template.md \
+  .claude/harness/templates/lessons.md \
   .claude/skills .claude/rules .claude/hooks .claude/settings.json \
   openspec/config.yaml openspec/repositories.yaml openspec/schemas \
   foundation.json .foundation/.gitignore .foundation/README.md WORKFLOW.md; do
@@ -129,11 +132,24 @@ LEGACY=(
   ".workflow/_templates"
 )
 
+# Project-owned records seeded once when absent (fresh install or upgrade) and
+# never rewritten: "<target path>|<template under .claude/harness/templates>".
+RECORD_SEEDS=(
+  "openspec/incidents/README.md|incidents/README.md"
+  "openspec/incidents/_template.md|incidents/_template.md"
+  "openspec/lessons.md|lessons.md"
+)
+
 info "Install plan"
 for rel in "${MANAGED[@]}"; do printf '  ~ %s\n' "$rel"; done
 [ -e "$TARGET_PATH/openspec/config.yaml" ] || printf '  + openspec/config.yaml\n'
 [ -e "$TARGET_PATH/REVIEW.md" ] || [ -L "$TARGET_PATH/REVIEW.md" ] ||
   printf '  + REVIEW.md (advisory review rules; edit freely)\n'
+for seed in "${RECORD_SEEDS[@]}"; do
+  rel="${seed%%|*}"
+  [ -e "$TARGET_PATH/$rel" ] || [ -L "$TARGET_PATH/$rel" ] ||
+    printf '  + %s (incident and lesson records; edit freely)\n' "$rel"
+done
 if [ "$PERMISSION_ALLOWLIST" = yes ]; then
   printf '  ~ .claude/settings.json (merge hooks and permission allowlist, preserve user settings)\n'
 else
@@ -163,6 +179,9 @@ PROJECT_MUTABLE=(
   "openspec/repositories.yaml"
   "foundation.json"
   "REVIEW.md"
+  "openspec/incidents/README.md"
+  "openspec/incidents/_template.md"
+  "openspec/lessons.md"
 )
 validate_managed_path() {
   case "$1" in
@@ -314,6 +333,15 @@ if [ ! -e "$TARGET_PATH/REVIEW.md" ] && [ ! -L "$TARGET_PATH/REVIEW.md" ]; then
   cp "$SOURCE_PATH/.claude/harness/templates/REVIEW.md" "$TARGET_PATH/REVIEW.md"
   REVIEW_SEEDED=yes
 fi
+RECORDS_SEEDED=()
+for seed in "${RECORD_SEEDS[@]}"; do
+  rel="${seed%%|*}"
+  if [ ! -e "$TARGET_PATH/$rel" ] && [ ! -L "$TARGET_PATH/$rel" ]; then
+    mkdir -p "$(dirname "$TARGET_PATH/$rel")"
+    cp "$SOURCE_PATH/.claude/harness/templates/${seed#*|}" "$TARGET_PATH/$rel"
+    RECORDS_SEEDED+=("$rel")
+  fi
+done
 if [ ! -e "$TARGET_PATH/foundation.json" ]; then
   cp "$SOURCE_PATH/foundation.json" "$TARGET_PATH/foundation.json"
 elif command -v jq >/dev/null 2>&1; then
@@ -589,6 +617,8 @@ if command -v git >/dev/null 2>&1 &&
   # Stage only a REVIEW.md this run created; a project's own edits stay unstaged.
   [ "$REVIEW_SEEDED" != yes ] ||
     git -C "$TARGET_PATH" add -- REVIEW.md >/dev/null 2>&1 || true
+  [ "${#RECORDS_SEEDED[@]}" -eq 0 ] ||
+    git -C "$TARGET_PATH" add -- "${RECORDS_SEEDED[@]}" >/dev/null 2>&1 || true
   if ! git -C "$TARGET_PATH" diff --cached --quiet 2>/dev/null; then
     printf '▸ Setup is complete, but the managed workflow files are only staged.\n'
     printf '  Commit them before the first Change Loop change so they are not mistaken for product work:\n'

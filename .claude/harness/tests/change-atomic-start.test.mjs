@@ -1694,3 +1694,111 @@ test("a risky path the draft does not cover prints a note and still starts", (t)
   assert.equal(notes.length, 1);
   assert.match(notes[0], /db\/migrations\/0042_orders\.sql suggests persisted-data-change/);
 });
+
+// A hotfix created from now on names the incident a scenario guards against
+// recurring, in a requirement proven by an executable capability.
+function hotfixV4({ regressionOf = "INC-212", capabilities = ["test"], variant = "hotfix" } = {}) {
+  const scenario = {
+    name: "Large cart checks out", kind: "failure",
+    when: "A 60-item cart checks out", then: "The order is created",
+    ...(regressionOf ? { regressionOf } : {})
+  };
+  return minimalRapidV4({
+    id: "checkout-hotfix",
+    intent: "Check out carts over fifty items",
+    workType: ["bugfix"],
+    bugfix: {
+      ...(variant ? { variant } : {}),
+      reproduction: "Checkout returns 500 for carts over 50 items",
+      rootCause: "The price batch exceeds the gateway limit",
+      regression: "A test checks out a 60-item cart",
+      ...(variant === "hotfix" ? {
+        incident: { link: "INC-212", mitigation: "Flag off", minimumScope: "Batch price calls",
+          followUp: "Full fix change" },
+        backport: ["release/2.4"]
+      } : {})
+    },
+    requirements: [{
+      key: "large-cart-checkout", capability: "checkout", operation: "added",
+      description: "Checkout SHALL create orders for carts over fifty items",
+      outcome: "Large carts check out", scenarios: [scenario]
+    }],
+    tasks: [{
+      key: "batch-price-calls", outcome: "Batch the gateway price calls",
+      covers: ["large-cart-checkout"], paths: ["src/**"], verify: "npm test"
+    }],
+    evidence: { "large-cart-checkout": { capabilities } }
+  });
+}
+
+function hotfixIssues(value, source) {
+  writeJson(value.draftPath, source);
+  const { result } = captureLog(() => value.lifecycle.inspectDraft(value.draftPath, { quiet: true }));
+  return JSON.stringify(result);
+}
+
+test("a new hotfix without a regression for its incident is sent back to the agent", (t) => {
+  const value = fixture(t);
+  const missing = hotfixIssues(value, hotfixV4({ regressionOf: null }));
+  assert.match(missing, /"action":"EDIT"/);
+  assert.match(missing, /hotfix requires a scenario with regressionOf: 'INC-212'/);
+  const mismatched = hotfixIssues(value, hotfixV4({ regressionOf: "INC-999" }));
+  assert.match(mismatched, /found regressionOf 'INC-999', which must equal 'INC-212'/);
+  const reviewOnly = hotfixIssues(value, hotfixV4({ capabilities: ["review"] }));
+  assert.match(reviewOnly, /needs an executable capability on requirement 'large-cart-checkout'/);
+  const security = hotfixIssues(value, hotfixV4({ regressionOf: null, variant: null }));
+  assert.doesNotMatch(security, /regressionOf/, "a non-hotfix bugfix owes no regression tag");
+});
+
+test("a hotfix with its incident regression starts, is marked, and shows the incident", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, hotfixV4());
+  const { output } = captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  assert.match(output, /^AGREED checkout-hotfix/m);
+  const state = JSON.parse(readFileSync(join(value.runtime, "checkout-hotfix.json"), "utf8"));
+  assert.equal(state.regressionRequired, true);
+  const spec = readFileSync(join(value.changes, "checkout-hotfix", "specs", "checkout", "spec.md"), "utf8");
+  assert.match(spec, /#### Scenario: Large cart checks out\n\nRegression of: INC-212\n/);
+});
+
+test("revise enforces the hotfix regression only for changes created under the rule", (t) => {
+  const value = fixture(t);
+  writeJson(value.draftPath, hotfixV4());
+  captureLog(() => value.lifecycle.startAtomic(value.draftPath));
+  const revision = join(value.root, "revision.json");
+  writeJson(revision, hotfixV4({ regressionOf: null }));
+  const marked = JSON.stringify(captureLog(() =>
+    value.lifecycle.inspectRevision("checkout-hotfix", revision, { quiet: true })).result);
+  assert.match(marked, /hotfix requires a scenario with regressionOf: 'INC-212'/);
+  const statePath = join(value.runtime, "checkout-hotfix.json");
+  const state = JSON.parse(readFileSync(statePath, "utf8"));
+  delete state.regressionRequired;
+  writeJson(statePath, state);
+  const legacy = JSON.stringify(captureLog(() =>
+    value.lifecycle.inspectRevision("checkout-hotfix", revision, { quiet: true })).result);
+  assert.doesNotMatch(legacy, /regressionOf/, "a pre-upgrade hotfix is never blocked by the rule");
+});
+
+test("the start template tells the agent how a hotfix names its regression", (t) => {
+  const template = fixture(t).lifecycle.rapidStartTemplate();
+  assert.match(template.minimalDraftHotfix, /regressionOf: "<that link>"/);
+});
+
+test("an edit to openspec/lessons.md after intake refreshes source coverage", (t) => {
+  const value = fixture(t);
+  const git = (...args) => spawnSync("git", ["-C", value.root, ...args], { encoding: "utf8" });
+  git("init", "-q");
+  const lessons = join(value.root, "openspec", "lessons.md");
+  writeFileSync(lessons, "# Lessons\n\n| Date | Lesson | Incident | Enforced by |\n|---|---|---|---|\n");
+  git("add", "-A");
+  writeJson(value.draftPath, minimalRapidV4());
+  const first = captureLog(() => value.lifecycle.inspectDraft(value.draftPath, { quiet: true })).result;
+  assert.equal(first.action, "DONE");
+  const intake = JSON.parse(readFileSync(join(value.root, first.intakeState.path), "utf8"));
+  assert.ok(JSON.stringify(intake.sourceInventory).includes("openspec/lessons.md"),
+    "the lessons file is part of the grounded sources");
+  writeFileSync(lessons, `${readFileSync(lessons, "utf8")}| 2026-11-09 | Run the suite | x | y |\n`);
+  const second = captureLog(() => value.lifecycle.inspectDraft(value.draftPath, { quiet: true })).result;
+  assert.equal(second.action, "EDIT");
+  assert.match(JSON.stringify(second), /refresh-source-coverage/);
+});

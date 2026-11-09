@@ -171,6 +171,13 @@ are preserved. A report failure preserves research and returns a regeneration
 route with no current report or handoff advertised; the persisted state records
 that route, never `DONE`. Reporting never starts Change.
 
+When the project has `openspec/lessons.md` (durable lessons linked to records in
+`openspec/incidents/`), investigation and change intake add it to their
+grounding seed sources, so the agent reads project lessons first; editing it
+while a change is in flight returns the usual `refresh-source-coverage` EDIT.
+This file is unrelated to `claude-foundation lessons`, which groups recurring
+blocker and review codes.
+
 Set the optional `activeChange` field to an existing change ID when the question
 arises during Build or Prove. The harness then reads the active isolated root
 and binds its workspace identity and base into state and handoff. If that
@@ -314,6 +321,17 @@ tells its failure story in its own section. Each type adds:
 User-visible work (feature, api, library, ui, deprecation, client-release) also
 owes a `releaseNote`. A missing section is one agent EDIT naming the field's
 shape and an example, never a user question.
+
+A hotfix also owes a regression for its incident: at least one scenario must set
+`regressionOf` to `bugfix.incident.link`, in a requirement with an executable
+capability (anything beyond `review`, `acceptance`, or `semantic-acceptance`
+alone; the default `test` qualifies). Otherwise `change start` returns an agent
+EDIT naming the missing regression. The created change records
+`regressionRequired: true`, and `change revise` enforces the rule only for a
+change carrying that marker, so a hotfix created before the upgrade is never
+blocked. The compiled spec shows the scenario's incident ("Regression of:
+<link>"); evidence claims and protocol pins are unchanged. Other bugfix variants
+are unaffected.
 
 `data-fix` is a one-off change to production data (`dataFix`: scope, snapshot,
 dryRun, rerunSafe, rollback); `security` is hardening with no single bug to

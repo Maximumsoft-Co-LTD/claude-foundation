@@ -240,7 +240,11 @@ shape and an example, never a user question. Some examples:
 | ui | `userFlow`, `uiStates`, `componentMap` |
 
 Docs, test, and chore work owes only a summary; user-visible work also owes a
-`releaseNote`. Work types also select evidence capabilities. Agents choose
+`releaseNote`. A new hotfix (`bugfix.variant: "hotfix"`) also owes a regression
+for its incident: a scenario with `regressionOf` set to `bugfix.incident.link`,
+in a requirement that runs an executable check such as `test`. Without it the
+agent gets an `EDIT` and repairs the draft; a hotfix created before the upgrade
+is not blocked. Work types also select evidence capabilities. Agents choose
 skills themselves from skill descriptions that name `workType`, `riskSignals`,
 requirements, and scenarios.
 The full catalog of 23 types is in `WORKFLOW.md` under "Work types and required

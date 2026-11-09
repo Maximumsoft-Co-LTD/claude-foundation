@@ -82,6 +82,8 @@ openspec/
 │   ├── <change-id>/     change packet ที่กำลังทำงานหนึ่งตัว
 │   └── archive/         packet ที่ land แล้ว เรียงตามวันที่
 ├── investigations/      สิ่งที่ค้นพบจาก /investigate ที่ต้องคงอยู่
+├── incidents/           บันทึก incident ตัวละไฟล์ (README.md, _template.md)
+├── lessons.md           บทเรียนถาวร investigate และ change อ่านเป็น grounding
 └── schemas/             assurance profile สองแบบพร้อม template
 ```
 
@@ -94,6 +96,11 @@ openspec/
 | `config.yaml` | โปรเจกต์ของคุณ | คัดลอกให้เฉพาะตอนที่ยังไม่มี หลังจากนั้นเป็นของคุณ |
 | `repositories.yaml` | โปรเจกต์ของคุณ | คัดลอกให้เฉพาะตอนที่ยังไม่มี หลังจากนั้นเป็นของคุณ |
 | `specs/`, `changes/`, `investigations/` | โปรเจกต์ของคุณ | installer ไม่แตะเลย |
+| `incidents/README.md`, `incidents/_template.md`, `lessons.md` | โปรเจกต์ของคุณ | คัดลอกให้เฉพาะตอนที่ยังไม่มี หลังจากนั้นเป็นของคุณ ไม่ถูกเขียนทับ |
+
+`lessons.md` คือรายการบทเรียนถาวรของโปรเจกต์ แต่ละข้อลิงก์ไปยังบันทึก incident
+เมื่อมีไฟล์นี้ investigation และ change intake จะอ่านเป็นแหล่งข้อมูลอ้างอิง (grounding)
+ไฟล์นี้ไม่เกี่ยวกับคำสั่ง `claude-foundation lessons` ซึ่งรวบรวมรหัส blocker และ review ที่เกิดซ้ำ
 
 `foundation.json` อยู่ที่ root ของ repository ไม่ได้อยู่ใน `openspec/`
 เพราะมันเก็บ *นโยบาย* ไม่ใช่เจตนา ได้แก่ budget การรัน เพดานขนาด packet
