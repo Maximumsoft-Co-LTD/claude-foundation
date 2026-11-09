@@ -132,6 +132,22 @@ test("review dispatch attempt normalizes identity, scope, defaults, and digest",
   assert.equal(minimal.packetDigest, null);
 });
 
+test("review dispatch attempt binds the advisory rules hash it was sent", () => {
+  const context = { now: () => "now", stableHash: (value) => JSON.stringify(value), fail };
+  const sent = reviewDispatchAttemptValue(context, "change-a",
+    attemptDetails({ reviewRulesHash: "rules-a" }), {}, "ai", "full");
+  assert.equal(sent.reviewRulesHash, "rules-a");
+  assert.match(sent.digest, /rules-a/, "the bound hash is part of the attempt digest");
+  const none = reviewDispatchAttemptValue(context, "change-a",
+    attemptDetails({ reviewRulesHash: undefined }), {}, "ai", "full");
+  assert.equal(Object.hasOwn(none, "reviewRulesHash"), true);
+  assert.equal(none.reviewRulesHash, null, "a dispatch with no usable rules binds null");
+  const legacy = reviewDispatchAttemptValue(context, "change-a", attemptDetails(),
+    {}, "ai", "full");
+  assert.equal(Object.hasOwn(legacy, "reviewRulesHash"), false,
+    "a caller that does not know review rules leaves the attempt shape unchanged");
+});
+
 test("review dispatch attempt requires identity, request, and workspace", () => {
   const context = { now: () => "now", stableHash: () => "digest", fail };
   for (const field of ["reviewerIdentity", "requestId", "workspaceHash"])

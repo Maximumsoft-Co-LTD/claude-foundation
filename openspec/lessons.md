@@ -11,3 +11,4 @@ the line as history.
 
 | Date | Lesson | Incident | Enforced by |
 |---|---|---|---|
+| 2026-11-09 | Run the full suite in the Build sandbox before Land; task verify commands alone miss other suites that construct the changed runtime. A new runtime factory dependency needs a safe default. | [2026-11-09-review-rules-callback-default](incidents/2026-11-09-review-rules-callback-default.md) | Maintainer practice (`CLAUDE.md` § Development workflow step 7); not automated |

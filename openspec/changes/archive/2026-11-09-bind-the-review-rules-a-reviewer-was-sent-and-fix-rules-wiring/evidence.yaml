@@ -1,0 +1,105 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "dispatched-review-binds-sent-rules-review-receipt-review-attempt",
+      "requirementKey": "dispatched-review-binds-sent-rules",
+      "scenario": "บันทึก hash ที่ส่งไป",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "dispatched-review-binds-sent-rules-receipt",
+      "requirementKey": "dispatched-review-binds-sent-rules",
+      "scenario": "แก้ REVIEW.md ระหว่างรีวิว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "dispatched-review-binds-sent-rules-receipt-review-attempt",
+      "requirementKey": "dispatched-review-binds-sent-rules",
+      "scenario": "dispatch ตอนไม่มีเกณฑ์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "dispatched-review-binds-sent-rules-receipt-review-attempt-attemp",
+      "requirementKey": "dispatched-review-binds-sent-rules",
+      "scenario": "attempt รุ่นเก่าไม่มีฟิลด์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "dispatched-review-binds-sent-rules-receipt-2",
+      "requirementKey": "dispatched-review-binds-sent-rules",
+      "scenario": "receipt ที่ไม่ผ่าน dispatch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "receipt-validity-without-rules-lookup-receipt",
+      "requirementKey": "receipt-validity-without-rules-lookup",
+      "scenario": "ไม่ส่ง callback และ receipt บันทึก null",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "receipt-validity-without-rules-lookup-receipt-2",
+      "requirementKey": "receipt-validity-without-rules-lookup",
+      "scenario": "ไม่ส่ง callback แต่ receipt มี hash",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "seeded-review-rules-staged-install-sh-stage",
+      "requirementKey": "seeded-review-rules-staged",
+      "scenario": "installer สร้างไฟล์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "seeded-review-rules-staged-install-sh-stage-2",
+      "requirementKey": "seeded-review-rules-staged",
+      "scenario": "ไฟล์ของโปรเจกต์ที่ยังไม่ commit",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node .claude/tests/harness/run-risk-tiered-review-tests.mjs) && (node --test .claude/harness/tests/review-dispatch-helpers.test.mjs .claude/harness/tests/review-repair-closure.test.mjs) && (bash .claude/tests/harness/run-installer-tests.sh) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node .claude/tests/harness/run-risk-tiered-review-tests.mjs",
+        "node --test .claude/harness/tests/review-dispatch-helpers.test.mjs .claude/harness/tests/review-repair-closure.test.mjs",
+        "bash .claude/tests/harness/run-installer-tests.sh",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

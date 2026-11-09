@@ -367,6 +367,24 @@ assert_cmd_zero "reinstall over custom review rules applies" \
   bash "$ROOT/install.sh" "$review_fresh" --source "$ROOT" --yes
 assert_cmd_zero "an existing REVIEW.md is kept byte for byte" \
   cmp -s "$TMP/review-custom.md" "$review_fresh/REVIEW.md"
+# In a git target the installer stages the REVIEW.md it seeded beside the other
+# installed files, and never stages a project's own uncommitted edits.
+review_git="$TMP/review-git"
+mkdir -p "$review_git"
+git -C "$review_git" init -q
+assert_cmd_zero "git install with review rules applies" \
+  bash "$ROOT/install.sh" "$review_git" --source "$ROOT" --yes
+assert_eq "a seeded REVIEW.md is staged" "REVIEW.md" \
+  "$(git -C "$review_git" diff --cached --name-only -- REVIEW.md)"
+git -C "$review_git" -c user.name=t -c user.email=t@example.invalid \
+  commit -q -m install --no-verify
+printf '# Edited by the project, not yet staged\n' >> "$review_git/REVIEW.md"
+assert_cmd_zero "git reinstall over edited review rules applies" \
+  bash "$ROOT/install.sh" "$review_git" --source "$ROOT" --yes
+assert_eq "a project's uncommitted REVIEW.md edit is not staged" "" \
+  "$(git -C "$review_git" diff --cached --name-only -- REVIEW.md)"
+assert_eq "the project's REVIEW.md edit is kept in the working tree" "REVIEW.md" \
+  "$(git -C "$review_git" diff --name-only -- REVIEW.md)"
 review_failed="$TMP/review-rollback"
 mkdir -p "$review_failed"
 printf '{ not json\n' > "$review_failed/foundation.json"

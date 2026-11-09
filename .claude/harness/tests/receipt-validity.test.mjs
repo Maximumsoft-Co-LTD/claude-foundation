@@ -86,7 +86,7 @@ const externalReceipt = () => {
 mkdirSync(join(evidenceVault, id, "review-attempts"), { recursive: true });
 writeFileSync(join(evidenceVault, id, "review-attempts", "attempt-123456789abc.json"), "{}\n");
 
-const { receiptValidity } = createReceiptValidity({
+const validityDependencies = {
   evidenceVault, providerProtocolVersion: "1", adapterProtocolVersion: "1",
   reviewProtocolVersion: "3", acceptanceProtocolVersion: "2",
   receiptPath: pathFor,
@@ -110,7 +110,8 @@ const { receiptValidity } = createReceiptValidity({
   relevantSnapshot: () => ({ packetReviewHash: world.packetReviewHash }),
   changeDiffIdentity: () => world.diffIdentity,
   currentReviewRulesHash: () => world.reviewRulesHash
-});
+};
+const { receiptValidity } = createReceiptValidity(validityDependencies);
 
 const validity = (provider, value) => {
   put(provider, value);
@@ -225,6 +226,18 @@ try {
   testWithField.review = { reviewRulesHash: "rules-a" };
   expect("test", testWithField, "valid");
   delete world.reviewRulesHash;
+
+  // An embedding runtime that supplies no rules lookup treats the project as
+  // having no REVIEW.md instead of throwing.
+  const { currentReviewRulesHash: _lookup, ...withoutLookup } = validityDependencies;
+  const { receiptValidity: noLookupValidity } = createReceiptValidity(withoutLookup);
+  put("review", rulesReview(null));
+  assert.equal(noLookupValidity(id, "review").validity, "valid",
+    "a null-rules receipt stays valid without a rules lookup");
+  put("review", rulesReview("rules-a"));
+  assert.deepEqual(noLookupValidity(id, "review").invalidation, {
+    reason: "review-rules-changed", from: "rules-a", to: null, reusable: false
+  }, "a rules-bound receipt expires when no rules can be found");
 
   const movedReview = reviewBase();
   movedReview.workspaceHash = "workspace-old";
