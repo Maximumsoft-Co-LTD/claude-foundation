@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "visual-multi-provider-one-round-prove",
+      "requirementKey": "visual-multi-provider-one-round",
+      "scenario": "สอง provider fail พร้อมกัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-multi-provider-one-round-resume-workspace",
+      "requirementKey": "visual-multi-provider-one-round",
+      "scenario": "agent ไม่แก้ทั้งรอบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-multi-provider-one-round-prove-2",
+      "requirementKey": "visual-multi-provider-one-round",
+      "scenario": "ครบงบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-multi-provider-one-round-prove-3",
+      "requirementKey": "visual-multi-provider-one-round",
+      "scenario": "provider เดียว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-multi-provider-one-round-advance",
+      "requirementKey": "visual-multi-provider-one-round",
+      "scenario": "state แบบเดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/visual-repair.test.mjs .claude/harness/tests/visual-drift-decision.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

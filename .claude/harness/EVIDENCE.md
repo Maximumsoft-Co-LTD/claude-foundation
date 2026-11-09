@@ -862,7 +862,10 @@ it is reused while neither changes and the reviewer is not asked again.
 Blocker and major findings feed a repair batch for at most two rounds; after
 that the remaining findings are visual drift for the user to decide. A result
 on the same workspace as the last batch means the agent declined it, so it
-becomes drift immediately; a user's "repair more" starts a fresh batch. A
+becomes drift immediately; a user's "repair more" starts a fresh batch. With
+several visual providers, one Prove pass is one round: their blocking findings
+form one batch (each tagged with its provider), the two-round budget is shared
+by the change, and their drift is one question. A
 `visual` waiver carries the accepted findings with its reason and decision
 reference, and proof shows `visual` as a mismatch the user accepted, never as
 passing evidence.

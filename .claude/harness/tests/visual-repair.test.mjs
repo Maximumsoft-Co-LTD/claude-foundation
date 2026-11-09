@@ -75,6 +75,70 @@ function fixture() {
   };
 }
 
+// Two visual providers (desktop and mobile screens) beside the test provider.
+function twoScreens() {
+  let state = { version: 2, id: "change-a", status: "building" };
+  let workspaceHash = "h1";
+  let proof = null;
+  const validity = { test: "valid", desktop: "valid", mobile: "valid" };
+  const receipts = {};
+  const runtime = createProofExecutionRuntime({
+    proofReadinessValue: () => ({
+      version: 1, changeId: "change-a", status: "READY", workspaceHash, issues: [],
+      externalProviders: [], unavailableProviders: [], pendingTasks: [], next: []
+    }),
+    relevantSnapshot: () => ({ id: `snapshot-${workspaceHash}`, workspaceHash }),
+    loadRuntime: () => state,
+    saveRuntime: (next) => { state = next; },
+    now: () => "2026-11-09T00:00:00.000Z",
+    requiredProviders: () => ["desktop", "mobile", "test"],
+    receiptValidity: (_id, provider) => ({ provider, validity: validity[provider] }),
+    rebindReusableReceipt: () => {},
+    rebindDiffBoundReceipt: () => {},
+    executionNodes: () => ({
+      nodes: Object.keys(validity).filter((provider) => validity[provider] !== "valid")
+        .map((provider) => ({ provider, covers: [provider], dependsOn: [] })),
+      unconfigured: [], unavailable: []
+    }),
+    collectableExecutionNodes: (_id, nodes) => ({ nodes, blocked: [] }),
+    startRequiredServices: async () => [],
+    runExecutionDag: async (_id, nodes) => {
+      for (const node of nodes) validity[node.provider] = "valid";
+      return nodes.map((node) => ({ provider: node.provider, status: "pass" }));
+    },
+    durableArtifact: () => null,
+    pendingTasks: () => [],
+    proofPreflight: () => {},
+    prove: () => {
+      proof = { version: 2, status: "pass", proofRunId: "proof-1", workspaceHash,
+        providers: ["desktop", "mobile", "test"] };
+    },
+    proofAudit: () => proof ? { valid: true, proof } : { valid: false, reason: "missing-proof" },
+    readJson: () => proof,
+    proofPath: () => "proof.json",
+    providerCapability: (provider) => provider === "test" ? "test" : "visual",
+    providerConfig: () => ({ adapter: "command" }),
+    visualReceipt: (_id, provider) => receipts[provider] || null,
+    die: (message) => { throw new Error(message); }
+  });
+  return {
+    advance: () => runtime.proofAdvance("change-a", { quiet: true }),
+    pass: ({ hash, desktop = [], mobile = [] }) => {
+      workspaceHash = hash;
+      for (const [provider, findings] of [["desktop", desktop], ["mobile", mobile]]) {
+        validity[provider] = findings.length ? "fail" : "valid";
+        receipts[provider] = { workspaceHash: hash, status: findings.length ? "fail" : "pass",
+          visual: { findings } };
+      }
+      proof = null;
+    },
+    state: () => state
+  };
+}
+
+const mobileMajor = { id: "M1", screen: "settings-mobile", difference: "Save overflows the card",
+  severity: "major", claimIds: ["C-b"] };
+
 async function quiet(operation) {
   const prior = process.exitCode;
   try { return await operation(); } finally { process.exitCode = prior; }
@@ -165,6 +229,46 @@ test("repair more after a declined drift gives a fresh batch on the same workspa
     receipt: { workspaceHash: "h1", visual: { findings: [major] } } });
   assert.equal(plan.action, "repair");
   assert.equal(plan.round, 2);
+});
+
+test("two visual providers failing together get one round and one batch, never drift", async () => {
+  const world = twoScreens();
+  world.pass({ hash: "h1", desktop: [major], mobile: [mobileMajor] });
+  const first = await quiet(world.advance);
+  assert.equal(first.status, "ACTION_REQUIRED");
+  assert.equal(first.repairGraph.kind, "visual-repair-graph");
+  assert.equal(first.repairGraph.round, 1);
+  assert.deepEqual(first.repairGraph.nodes.map((node) => node.screen).sort(),
+    ["settings", "settings-mobile"]);
+  assert.equal(world.state().visualRepair.rounds, 1);
+  assert.equal(world.state().visualRepair.drift, null);
+});
+
+test("declining a two-provider batch records one drift with both providers, asked once", async () => {
+  const world = twoScreens();
+  world.pass({ hash: "h1", desktop: [major], mobile: [mobileMajor] });
+  await quiet(world.advance);
+  world.pass({ hash: "h1", desktop: [major], mobile: [mobileMajor] });
+  const asked = await quiet(world.advance);
+  const drift = world.state().visualRepair.drift;
+  assert.equal(drift.declined, true);
+  assert.deepEqual(drift.findings.map((finding) => finding.provider).sort(), ["desktop", "mobile"]);
+  assert.equal(asked.status, "NEEDS_USER_DECISION");
+  assert.equal(asked.decision.kind, "visual-drift");
+  assert.match(asked.decision.summary, /desktop settings: Save sits in the header/);
+  assert.match(asked.decision.summary, /mobile settings-mobile: Save overflows the card/);
+});
+
+test("the shared budget ends after two rounds across providers", async () => {
+  const world = twoScreens();
+  world.pass({ hash: "h1", desktop: [major], mobile: [mobileMajor] });
+  assert.equal((await quiet(world.advance)).repairGraph.round, 1);
+  world.pass({ hash: "h2", mobile: [mobileMajor] });
+  assert.equal((await quiet(world.advance)).repairGraph.round, 2);
+  world.pass({ hash: "h3", mobile: [mobileMajor] });
+  const third = await quiet(world.advance);
+  assert.equal(third.status, "NEEDS_USER_DECISION");
+  assert.deepEqual(world.state().visualRepair.drift.findings, [mobileMajor]);
 });
 
 test("minor-only differences make no visual repair batch", () => {

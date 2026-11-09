@@ -419,7 +419,8 @@ export function visualBlockingFindings(findings = []) {
 export function visualDriftDecision(id, drift) {
   const findings = drift?.findings || [];
   const listed = findings.slice(0, 8).map((finding) =>
-    `${finding.screen}: ${finding.difference} [${finding.severity}]`).join("; ");
+    `${finding.provider ? `${finding.provider} ` : ""}${finding.screen}: ${finding.difference} [${
+      finding.severity}]`).join("; ");
   return {
     kind: "visual-drift",
     summary: `The UI still differs from the bound prototype after ${drift?.rounds ?? 0} visual repair round(s): ${

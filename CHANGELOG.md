@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Several visual providers failing in the same Prove pass now get one repair
+  round and one batch; the second provider is no longer recorded as drift
+  before it was ever repaired.
 - A visual repair the agent declines (for example, one the agreement forbids)
   no longer reissues the same batch forever. Resuming without editing records
   visual drift at once, and the user decides.

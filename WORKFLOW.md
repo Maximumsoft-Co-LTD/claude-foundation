@@ -964,7 +964,8 @@ recovery (restore the copy, or `change revise` before Build).
   every other gate keeps running and repairing; drift does not stop them. A
   difference the agreement forbids is not the agent's to apply: resuming a
   visual batch without editing records the drift at once instead of reissuing
-  the same batch.
+  the same batch. Several visual providers share one round per Prove pass and
+  one two-round budget.
 - **Decision.** When every other gate is done and drift remains, `advance`
   asks once, as a product-meaning decision of kind `visual-drift`: repair more
   (two further rounds, recorded with the user's decision reference), accept the

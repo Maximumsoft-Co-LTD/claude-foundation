@@ -803,21 +803,41 @@ export function createProofExecutionRuntime({
       repaired: [], findings: [], graph: null, drift: false };
     if (!failed.length) return result;
     const state = loadRuntime(id);
+    // One Prove pass is one round: every failed visual provider's blocking
+    // differences are planned together, so a second provider never reads
+    // the first one's fresh batch as a declined repair.
+    const blocking = [];
+    let workspaceHash = null;
     for (const failure of failed) {
       const receipt = visualReceipt(id, failure.provider);
-      const plan = planVisualRepair(state, { provider: failure.provider, receipt, now: now() });
-      state.visualRepair = plan.visualRepair;
-      if (plan.action === "drift") { result.drift = true; continue; }
-      if (plan.action === "none") { result.failures.push(failure); continue; }
-      result.repaired.push(failure);
-      result.findings.push(...plan.findings.map((finding) => ({
-        id: `visual:${finding.id}`, provider: failure.provider, classification: "product",
-        severity: finding.severity, rootCause: "visual-mismatch",
-        message: `${finding.screen}: ${finding.difference}`,
-        claimIds: finding.claimIds || [], criticalCaseIds: []
-      })));
-      result.graph = visualRepairGraph({ findings: plan.findings,
-        workspaceHash: receipt?.workspaceHash || null, round: plan.round }, stableHash);
+      workspaceHash ||= receipt?.workspaceHash || null;
+      const own = (receipt?.visual?.findings || [])
+        .filter((finding) => ["blocker", "major"].includes(finding?.severity));
+      if (!own.length) { result.failures.push(failure); continue; }
+      blocking.push({ failure, findings: own.map((finding) =>
+        failed.length > 1 ? { ...finding, provider: failure.provider } : finding) });
+    }
+    if (!blocking.length) return result;
+    const providers = blocking.map((row) => row.failure.provider);
+    const plan = planVisualRepair(state, {
+      provider: providers.length === 1 ? providers[0] : providers.join(","),
+      receipt: { workspaceHash, visual: { findings: blocking.flatMap((row) => row.findings) } },
+      now: now()
+    });
+    state.visualRepair = plan.visualRepair;
+    if (plan.action === "drift") result.drift = true;
+    else {
+      for (const row of blocking) {
+        result.repaired.push(row.failure);
+        result.findings.push(...row.findings.map((finding) => ({
+          id: `visual:${finding.id}`, provider: row.failure.provider, classification: "product",
+          severity: finding.severity, rootCause: "visual-mismatch",
+          message: `${finding.screen}: ${finding.difference}`,
+          claimIds: finding.claimIds || [], criticalCaseIds: []
+        })));
+      }
+      result.graph = visualRepairGraph({ findings: plan.findings, workspaceHash, round: plan.round },
+        stableHash);
     }
     saveRuntime(state);
     return result;
