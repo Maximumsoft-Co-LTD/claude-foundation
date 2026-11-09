@@ -2,6 +2,11 @@
 
 **English** | [ภาษาไทย](README.th.md)
 
+> **This project has moved.** Development, releases, and the Homebrew tap now live at
+> [hashtagf/changeloop](https://github.com/hashtagf/changeloop), and the docs at
+> [changeloop.ai](https://changeloop.ai). New releases are published there.
+> Install: `brew tap hashtagf/changeloop https://github.com/hashtagf/changeloop && brew install cloop`.
+
 Change Loop helps an AI coding agent agree on a change, build it in an isolated
 workspace, check it with your project's tools, and deliver it back for review.
 

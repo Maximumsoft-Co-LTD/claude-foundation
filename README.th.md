@@ -2,6 +2,11 @@
 
 [English](README.md) | **ภาษาไทย**
 
+> **โปรเจกต์นี้ย้ายแล้ว** การพัฒนา release และ Homebrew tap อยู่ที่
+> [hashtagf/changeloop](https://github.com/hashtagf/changeloop) ส่วนเอกสารอยู่ที่
+> [changeloop.ai](https://changeloop.ai) release ใหม่จะออกที่นั่น
+> ติดตั้ง: `brew tap hashtagf/changeloop https://github.com/hashtagf/changeloop && brew install cloop`
+
 Change Loop ช่วยให้ AI coding agent ตกลงขอบเขตงาน ลงมือในพื้นที่แยก
 ตรวจผลด้วยเครื่องมือของโปรเจกต์ แล้วนำงานกลับมาให้คุณตรวจทาน
 
