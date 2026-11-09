@@ -442,6 +442,25 @@ state product behavior only, so whether the agent declares risk signals or a
 workload suite proves each oracle against a reference repair and named wrong
 deliveries (`tests/fixtures/evidence-gate-repairs.mjs`).
 
+Two prototype-bound visual rows (tasks 42-43, `cost_usd: 10`) exercise the
+strict `visual` gate end to end. Each seed carries a Settings prototype under
+`.foundation/prototypes/settings/` and a dependency-free
+`scripts/screenshot.mjs` that serves the project on an ephemeral port and
+writes `test-results/settings.png` with headless Chromium (`CHROME_PATH`, the
+Playwright browser cache, an installed Chrome/Chromium, or `PATH`). The prompt
+names the `prototypeSelection`, the `browser` command provider, and the
+command-less `visual` provider. `visual-prototype-match` should archive with a
+passing `visual` receipt. In `visual-prototype-drift` the prototype shows a
+banner the issue forbids, so after two repair rounds `advance` asks the
+`visual-drift` decision; the runner stops there as `needs-user-decision`
+(kind `visual-drift`). Run it with `--keep-project`, answer with the printed
+`claude-foundation advance <change> --decision accept ...` command in the kept
+project, then continue with `--resume-project <path>`. Both rows set
+`baseline_arm: false`: their prompts are harness-specific and the no-harness
+arm refuses a seed containing `.foundation/`. The `visual` reviewer is a
+separate `claude` process, so its spend is outside the host's
+`--max-budget-usd` ceiling and the scorecard cost.
+
 Budget exhaustion is a resumable user-decision boundary in this manifest. It
 may not be converted into either completed work or a permanent blocked result.
 

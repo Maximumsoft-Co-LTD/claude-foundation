@@ -14,6 +14,9 @@ import {
   SPEED_UP_SEARCH_MUTANTS, repairIdempotentRefund, repairOwnerOnlyDelete,
   repairRegressionFix, repairSpeedUpSearch
 } from "./fixtures/evidence-gate-repairs.mjs";
+import {
+  BETA_BANNER_MUTANTS, SETTINGS_SCREEN_MUTANTS, repairSettingsScreen
+} from "./fixtures/visual-prototype-repairs.mjs";
 
 const TASKS = fileURLToPath(new URL("../tasks", import.meta.url));
 const MATRIX = JSON.parse(readFileSync(
@@ -1305,4 +1308,18 @@ test("search speedup preserves every hidden result and is measurably faster", ()
 test("regression fix closes both tier boundaries without collateral change", () => {
   verifyWorkload("28-regression-fix-with-fixes", repairRegressionFix);
   verifyMutants("28-regression-fix-with-fixes", "src/pricing.js", repairRegressionFix, REGRESSION_FIX_MUTANTS);
+});
+
+// Prototype-bound visual lanes: the oracle checks the delivered screen's
+// structure (the harness's visual receipt is the screenshot comparison); the
+// drift lane must also reject shipping the prototype's forbidden banner.
+test("prototype match oracle requires the bound Settings screen structure", () => {
+  verifyWorkload("42-visual-prototype-match", repairSettingsScreen);
+  verifyMutants("42-visual-prototype-match", "src/settings.js", repairSettingsScreen, SETTINGS_SCREEN_MUTANTS);
+});
+
+test("prototype drift oracle requires the screen and rejects the forbidden BETA banner", () => {
+  verifyWorkload("43-visual-prototype-drift", repairSettingsScreen);
+  verifyMutants("43-visual-prototype-drift", "src/settings.js", repairSettingsScreen,
+    [...SETTINGS_SCREEN_MUTANTS, ...BETA_BANNER_MUTANTS]);
 });

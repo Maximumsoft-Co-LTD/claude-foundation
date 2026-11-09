@@ -299,7 +299,32 @@ export function lifecycleOperationRows(project, run) {
   });
 }
 
+// Typed `advance` ASK_USER decisions only the user may answer. They carry no
+// external-authority budget, so readiness alone would not stop the host.
+const ADVANCE_USER_DECISIONS = { "visual-drift": "visual" };
+
+function advanceDecisionBoundary(value, detectionSource) {
+  const kind = value?.decision?.kind;
+  if (value?.action !== "ASK_USER" || !Object.hasOwn(ADVANCE_USER_DECISIONS, kind)) return null;
+  const options = Array.isArray(value.decision.options)
+    ? value.decision.options.map((option) => option?.id).filter(Boolean).sort() : [];
+  const provider = ADVANCE_USER_DECISIONS[kind];
+  return {
+    provider, kind,
+    fingerprint: digest({ action: "ASK_USER", provider, kind, options,
+      decision: value.decision.fingerprint || null }),
+    recommended: value.decision.recommended || null,
+    options,
+    reason: value.reason || value.decision.summary || null,
+    workflowStatus: null,
+    pendingTasks: null,
+    detectionSource
+  };
+}
+
 function boundaryFromReadiness(readiness, detectionSource = "readiness-json") {
+  const typed = advanceDecisionBoundary(readiness, detectionSource);
+  if (typed) return typed;
   if (readiness?.status !== "NEEDS_USER_DECISION") return null;
   const next = Array.isArray(readiness.next) ? readiness.next : [];
   const boundary = next.find((item) => item?.kind === "user-decision");

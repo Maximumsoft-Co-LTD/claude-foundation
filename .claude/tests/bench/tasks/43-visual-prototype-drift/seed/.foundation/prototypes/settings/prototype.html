@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Settings — approved prototype</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f3f4f6; color: #111827; }
+    .settings { max-width: 480px; margin: 48px auto; background: #ffffff;
+      border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px 28px; }
+    h1 { margin: 0 0 20px; font-size: 24px; font-weight: 600; }
+    .row { display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0; border-top: 1px solid #e5e7eb; font-size: 16px; }
+    .switch { width: 44px; height: 24px; border-radius: 12px; background: #d1d5db;
+      position: relative; }
+    .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px;
+      height: 20px; border-radius: 50%; background: #ffffff; }
+    .switch.on { background: #2563eb; }
+    .switch.on::after { left: 22px; }
+    .actions { display: flex; justify-content: flex-end; padding-top: 20px;
+      border-top: 1px solid #e5e7eb; }
+    button { background: #2563eb; color: #ffffff; border: 0; border-radius: 8px;
+      padding: 10px 24px; font-size: 16px; font-weight: 600; }
+    .beta-banner { background: #dc2626; color: #ffffff; text-align: center;
+      padding: 14px 16px; font-size: 18px; font-weight: 700; letter-spacing: 0.04em; }
+  </style>
+</head>
+<body>
+  <!-- Default state: Email notifications on, Dark mode off. -->
+  <div class="beta-banner">BETA — preview build, features may change</div>
+  <main class="settings">
+    <h1>Settings</h1>
+    <div class="row"><span>Email notifications</span><span class="switch on"></span></div>
+    <div class="row"><span>Dark mode</span><span class="switch"></span></div>
+    <div class="actions"><button>Save</button></div>
+  </main>
+</body>
+</html>

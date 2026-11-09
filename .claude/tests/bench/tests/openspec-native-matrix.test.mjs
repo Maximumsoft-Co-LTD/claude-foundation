@@ -6,7 +6,7 @@ import { readFileSync, statSync } from "node:fs";
 import { resolve, relative } from 'node:path';
 import { buildRepositoryCatalog } from '../../../harness/runtime/workflow/repository-topology.mjs';
 
-import { directoryDigest } from "../openspec-native/lab.mjs";
+import { directoryDigest, runScenarioLab } from "../openspec-native/lab.mjs";
 import { executionPlan, loadMatrix, matrixIssues } from "../openspec-native/matrix.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../../../..");
@@ -60,8 +60,8 @@ test("the versioned cross-domain matrix is valid and every workload is executabl
   const matrix = loadMatrix();
   assert.equal(matrix.protocol, "foundation-openspec-native-matrix-v2");
   assert.deepEqual(matrixIssues(matrix), []);
-  assert.equal(matrix.scenarios.length, 30);
-  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 30);
+  assert.equal(matrix.scenarios.length, 32);
+  assert.equal(matrix.scenarios.filter((scenario) => scenario.status === "ready").length, 32);
   assert.equal(matrix.scenarios.filter((scenario) => scenario.baseline !== null).length, 1);
 });
 
@@ -179,6 +179,38 @@ test("the large project-tracker scenario binds its hidden oracle and budget", ()
   assert.ok(plan.criticalCaseIds.length >= 30);
   assert.ok(plan.criticalCaseIds.includes("CASE_TESTS_EXIST"));
   assert.ok(plan.criticalCaseIds.includes("CASE_NO_LOST_UPDATE"));
+});
+
+test("the prototype-bound visual lanes bind a strict prototype, screenshots, and the drift decision", () => {
+  const matrix = loadMatrix();
+  for (const [id, task, wall, requests] of [
+    ["visual-prototype-match", "42-visual-prototype-match", 2400000, 200],
+    ["visual-prototype-drift", "43-visual-prototype-drift", 3000000, 250]
+  ]) {
+    const plan = executionPlan(matrix, id);
+    assert.equal(plan.execution, "paid");
+    assert.deepEqual(plan.budget,
+      { wall_ms: wall, cost_usd: 10, model_requests: requests, tool_calls: requests });
+    assert.match(plan.fixture, new RegExp(`${task}/seed$`));
+    assert.match(plan.oracle, new RegExp(`${task}/oracle/run\\.sh$`));
+    assert.match(plan.prompt, /^\/dev /);
+    assert.match(plan.prompt, /\.foundation\/prototypes\/settings\/prototype\.html/);
+    assert.match(plan.prompt, /"mode":"strict"/);
+    assert.match(plan.prompt, /scripts\/screenshot\.mjs/);
+    assert.match(plan.prompt, /"dependsOn":\["browser"\]/);
+    assert.match(plan.prompt, /approve the spec/);
+    assert.ok(statSync(resolve(ROOT, plan.fixture, ".foundation/prototypes/settings/prototype.html")).isFile());
+    assert.ok(statSync(resolve(ROOT, plan.fixture, "scripts/screenshot.mjs")).isFile());
+  }
+  const drift = matrix.scenarios.find(({ id }) => id === "visual-prototype-drift");
+  assert.equal(drift.expected_decision.kind, "visual-drift");
+  assert.equal(drift.expected_decision.operator_answer, "accept");
+  assert.ok(drift.critical_case_ids.includes("CASE_NO_BETA_BANNER"));
+  assert.match(drift.prompt, /never ship it/);
+  // Harness-feature lanes have no no-harness arm; the lab refuses before
+  // preparing any project.
+  assert.throws(() => runScenarioLab({ scenarioId: "visual-prototype-match", arm: "baseline",
+    dryRun: true }), /has no baseline arm/);
 });
 
 test("budget exhaustion pauses for a resumable user decision", () => {

@@ -48,6 +48,8 @@ digests are frozen by the deterministic sentinel.
 | `project-tracker-api` | Auth, permissions, persisted projects/tasks and concurrency | medium | Oracle 33/33 including discriminating tests, clean install, archived |
 | `order-inventory` | Brownfield backend/SDK/web state, multi-tenant SQLite transactions and cross-process concurrency | high | Oracle 19/19, per-surface discriminating tests, clean offline install, archived |
 | `order-inventory-lifecycle` | The order/inventory contract plus a mid-flight requirement update, a stacked second change, SIGKILL in Build and Land | high | Oracle 27/27 across scopes, lifecycle checks, both changes archived in order |
+| `visual-prototype-match` | Static Settings screen bound strictly to a prototype; headless-Chromium screenshot provider feeds the `visual` reviewer | standard | Oracle 7/7, passing `visual` receipt, clean npm install, archived |
+| `visual-prototype-drift` | Same screen, but the prototype shows a BETA banner the issue forbids | standard | Two visual repair rounds, `visual-drift` stop as `needs-user-decision`; after the operator's `accept`, a `visual` waiver, oracle 8/8 (banner absent), archived |
 
 Twelve lanes use paid model execution. The budget/resume lane is
 deterministic and must not spend model budget.

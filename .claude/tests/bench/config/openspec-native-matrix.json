@@ -1041,6 +1041,77 @@
       "budget": { "wall_ms": 1800000, "cost_usd": 3, "model_requests": 150, "tool_calls": 150 },
       "expected_terminal": "completed",
       "baseline": null
+    },
+    {
+      "id": "visual-prototype-match",
+      "status": "ready",
+      "execution": "paid",
+      "workload": "prototype-visual-match",
+      "stack": "static-web",
+      "size": "small",
+      "fixture": ".claude/tests/bench/tasks/42-visual-prototype-match/seed",
+      "fixture_digest": "sha256:331bf5d63f227f8fd707f7bc0566bd8bf4a19074a341d2f525702a88eec67319",
+      "prompt": "/dev build the Settings screen in ISSUE.md so it matches the approved prototype .foundation/prototypes/settings/prototype.html, with tests. I approve the spec as compiled (decision ref user-prompt:approve-settings-spec); do not stop for spec approval. In the draft, bind the prototype strictly: prototypeSelection {\"reference\":\".foundation/prototypes/settings/prototype.html\",\"selected\":\"settings prototype\",\"reason\":\"approved design\",\"covers\":[<the Settings screen requirement key>],\"mode\":\"strict\"}, and give that requirement evidence capabilities test and browser. Wire the change's execution.yaml with a browser provider that runs the project's screenshot script, {\"adapter\":\"command\",\"command\":[\"node\",\"scripts/screenshot.mjs\"],\"inputMode\":\"browser-automation\"} (it writes test-results/settings.png), and the visual provider without a command, {\"capability\":\"visual\",\"screenshots\":[\"test-results/**\"],\"dependsOn\":[\"browser\"]}. If advance returns a visual-drift decision, stop and report it; never answer it yourself.",
+      "host": "claude-code",
+      "risk": "standard",
+      "project_command": "node --test",
+      "clean_install_command": "npm install --ignore-scripts",
+      "critical_case_ids": [
+        "CASE_HEADING",
+        "CASE_EMAIL_TOGGLE",
+        "CASE_DARK_MODE_TOGGLE",
+        "CASE_SAVE_BUTTON",
+        "CASE_STATE_REFLECTED",
+        "CASE_PAGE_MOUNTS",
+        "CASE_TESTS_PASS"
+      ],
+      "oracle": { "required": true, "path": ".claude/tests/bench/tasks/42-visual-prototype-match/oracle/run.sh" },
+      "baseline_arm": false,
+      "baseline_arm_reason": "the prompt binds a Change Loop prototype and execution wiring, and the seed carries .foundation/prototypes, which the no-harness arm refuses",
+      "quality_required": true,
+      "budget": { "wall_ms": 2400000, "cost_usd": 10, "model_requests": 200, "tool_calls": 200 },
+      "expected_terminal": "completed",
+      "expected_evidence": { "visual": "pass" },
+      "baseline": null
+    },
+    {
+      "id": "visual-prototype-drift",
+      "status": "ready",
+      "execution": "paid",
+      "workload": "prototype-visual-drift",
+      "stack": "static-web",
+      "size": "small",
+      "fixture": ".claude/tests/bench/tasks/43-visual-prototype-drift/seed",
+      "fixture_digest": "sha256:574182bf0807d0ff2883bf9614f1b1ed166a83ec242dd80d85eb9465bdb6ccb8",
+      "prompt": "/dev build the Settings screen in ISSUE.md so it matches the approved prototype .foundation/prototypes/settings/prototype.html, with tests. I approve the spec as compiled (decision ref user-prompt:approve-settings-spec); do not stop for spec approval. In the draft, bind the prototype strictly: prototypeSelection {\"reference\":\".foundation/prototypes/settings/prototype.html\",\"selected\":\"settings prototype\",\"reason\":\"approved design\",\"covers\":[<the Settings screen requirement key>],\"mode\":\"strict\"}, and give that requirement evidence capabilities test and browser. Wire the change's execution.yaml with a browser provider that runs the project's screenshot script, {\"adapter\":\"command\",\"command\":[\"node\",\"scripts/screenshot.mjs\"],\"inputMode\":\"browser-automation\"} (it writes test-results/settings.png), and the visual provider without a command, {\"capability\":\"visual\",\"screenshots\":[\"test-results/**\"],\"dependsOn\":[\"browser\"]}. Legal forbids the prototype's BETA banner (ISSUE.md): never ship it, even when the visual check reports it missing. If advance returns a visual-drift decision, stop and report it; never answer it yourself.",
+      "host": "claude-code",
+      "risk": "standard",
+      "project_command": "node --test",
+      "clean_install_command": "npm install --ignore-scripts",
+      "critical_case_ids": [
+        "CASE_HEADING",
+        "CASE_EMAIL_TOGGLE",
+        "CASE_DARK_MODE_TOGGLE",
+        "CASE_SAVE_BUTTON",
+        "CASE_STATE_REFLECTED",
+        "CASE_PAGE_MOUNTS",
+        "CASE_NO_BETA_BANNER",
+        "CASE_TESTS_PASS"
+      ],
+      "oracle": { "required": true, "path": ".claude/tests/bench/tasks/43-visual-prototype-drift/oracle/run.sh" },
+      "baseline_arm": false,
+      "baseline_arm_reason": "the prompt binds a Change Loop prototype and execution wiring, and the seed carries .foundation/prototypes, which the no-harness arm refuses",
+      "quality_required": true,
+      "budget": { "wall_ms": 3000000, "cost_usd": 10, "model_requests": 250, "tool_calls": 250 },
+      "expected_terminal": "completed",
+      "expected_decision": {
+        "kind": "visual-drift",
+        "first_session_status": "needs-user-decision",
+        "operator_answer": "accept",
+        "resume": "--resume-project"
+      },
+      "expected_evidence": { "visual": "waived-accepted-drift" },
+      "baseline": null
     }
   ]
 }

@@ -345,6 +345,8 @@ export function runScenarioLab({ matrixPath, scenarioId, outputRoot = DEFAULT_RE
   const scenario = matrix.scenarios.find((row) => row.id === scenarioId);
   if (baseline && scenario.execution !== "paid")
     throw new Error(`baseline arm needs a paid host scenario: ${scenarioId}`);
+  if (baseline && scenario.baseline_arm === false)
+    throw new Error(`${scenarioId} has no baseline arm: ${scenario.baseline_arm_reason || "Change Loop only"}`);
   if (baseline && resumeProject)
     throw new Error("baseline arm has no lifecycle to resume; start a fresh project");
   const prepared = resumeProject

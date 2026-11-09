@@ -1045,6 +1045,28 @@ test("external-authority parser accepts command prefixes and typed summaries onl
   }), null, "a status string without a typed user-decision is not an authority boundary");
 });
 
+test("a visual-drift ASK_USER in a tool result stops the host as a user decision", () => {
+  const ask = {
+    action: "ASK_USER", actor: "user", legacyAction: "DECIDE_VISUAL_DRIFT",
+    reason: "2 visual differences remain after 2 repair rounds",
+    decision: { kind: "visual-drift", fingerprint: "sha256:abc", recommended: "repair-more",
+      options: [{ id: "accept" }, { id: "repair-more" }, { id: "amend-agreement" }, { id: "pause" }] }
+  };
+  const boundary = externalAuthorityBoundary({
+    type: "user", message: { content: [{ type: "tool_result", content: JSON.stringify(ask) }] }
+  });
+  assert.equal(boundary.kind, "visual-drift");
+  assert.equal(boundary.provider, "visual");
+  assert.deepEqual(boundary.options, ["accept", "amend-agreement", "pause", "repair-more"]);
+  assert.equal(externalAuthorityBoundary({
+    type: "user", message: { content: [{ type: "tool_result", content:
+      JSON.stringify({ ...ask, decision: { ...ask.decision, kind: "repair-no-progress" } }) }] }
+  }), null, "only typed user-only advance decisions stop the host");
+  assert.equal(externalAuthorityBoundary({
+    type: "assistant", message: { content: [{ type: "text", text: JSON.stringify(ask) }] }
+  }), null, "assistant prose must not stop the host");
+});
+
 test("external-authority readiness stops before host dispatch and repeats deterministically", () => {
   const project = projectFixture();
   const outputDir = mkdtempSync(join(tmpdir(), "foundation-native-authority-stub-"));
@@ -1274,8 +1296,14 @@ test("baseline guard keeps the disposable marker and refuses every Change Loop f
 
 test("baseline prompt carries every scenario task but no Change Loop instruction", () => {
   const lifecycle = /\/dev|\badvance\b|archiv|\bLand\b|self-review|Before Prove|openspec|claude-foundation|change start|\.foundation|harness/;
-  const scenarios = loadMatrix().scenarios.filter((row) =>
+  const paid = loadMatrix().scenarios.filter((row) =>
     row.status === "ready" && row.execution === "paid");
+  // Only harness-feature lanes opt out of the no-harness arm, and say why.
+  const changeLoopOnly = paid.filter((row) => row.baseline_arm === false);
+  assert.deepEqual(changeLoopOnly.map(({ id }) => id),
+    ["visual-prototype-match", "visual-prototype-drift"]);
+  assert.ok(changeLoopOnly.every((row) => row.baseline_arm_reason));
+  const scenarios = paid.filter((row) => row.baseline_arm !== false);
   for (const id of ["bare-node-boundary", "typescript-react-state", "python-api-validation",
     "database-migration-rollback", "refactor-no-reproduction", "multi-service-event-flow",
     "tiny-feature", "notes-api", "cart-coupons", "project-tracker-api", "owner-only-delete",
