@@ -1,0 +1,30 @@
+# Ownership map for claude-foundation. Later lines take precedence.
+# One maintainer currently holds every role; each section names the role so it
+# can move to another owner without changing the workflow.
+# Takes effect only when branch protection on `main` requires code-owner review.
+
+# Default: tech lead
+*                                   @hashtagf
+
+# Review rules: tech lead
+/REVIEW.md                          @hashtagf
+
+# Runtime and shipping boundary: platform
+/.claude/harness/                   @hashtagf
+/install.sh                         @hashtagf
+/cli.sh                             @hashtagf
+/openspec/schemas/                  @hashtagf
+
+# Agent policy (skills, rules, hooks): policy owner
+/.claude/skills/                    @hashtagf
+/.claude/rules/                     @hashtagf
+/.claude/hooks/                     @hashtagf
+
+# Incidents and lessons: service owner
+/openspec/incidents/                @hashtagf
+/openspec/lessons.md                @hashtagf
+
+# Release machinery: release manager
+/RELEASING.md                       @hashtagf
+/.github/workflows/                 @hashtagf
+/Formula/                           @hashtagf

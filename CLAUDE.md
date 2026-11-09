@@ -68,6 +68,9 @@ stale evidence. Change Loop makes completion content-bound and resumable:
 | Current scenario/release status | `docs/reports/user-scenario-release-status.md` |
 | Scenario acceptance portfolio | `docs/reports/user-scenario-test-plan.md` |
 | Release procedure | `RELEASING.md` |
+| Advisory review rules and severity | `REVIEW.md` |
+| Code and policy owners | `.github/CODEOWNERS` |
+| Incidents and durable lessons | `openspec/incidents/`, `openspec/lessons.md` |
 
 Do not copy a detailed contract into several documents. Update its canonical
 source and link to it from summaries. Dated reports are historical evidence and
@@ -105,6 +108,9 @@ the explicit contracts they test, not every claim's truth.
 | `website/docs/astro.config.mjs` | Navigation and locale routing | Pages are added, moved, or regrouped | Links to nonexistent or untranslated pages |
 | `openspec/changes/**` | Change-specific agreement and implementation ledger | That change is approved, amended, implemented, or archived | General product manuals or a second implementation ledger |
 | `openspec/investigations/**` | Source-bound findings and unresolved questions | Investigation evidence or the question changes | Treating recommendations as approved implementation |
+| `REVIEW.md` | Advisory review passes, severity, nit cap, exclusions for reviewers of this repository | Review expectations change | Pass/fail semantics (owned by `EVIDENCE.md`) |
+| `openspec/incidents/**` | One record per defect that reached a user, `main`, or a release candidate, with its owner decision | An incident is detected, decided, fixed, or corrected | Rewriting closed records; secrets or consumer source |
+| `openspec/lessons.md` | Durable one-line lessons read before investigating, each linked to its incident | An incident's fix lands | Incident narrative or a second rule set that contradicts shipped rules |
 
 For other documentation, identify its reader, purpose, canonical source, and
 update trigger before adding it. Extend the nearest family above or add a row
