@@ -1,0 +1,95 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "interrupted-review-recovers-dispatched-model-advance-checkpoint",
+      "requirementKey": "interrupted-review-recovers-dispatched-model",
+      "scenario": "รอบแรก standard ถูกขัดจังหวะ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "interrupted-review-recovers-dispatched-model-advance",
+      "requirementKey": "interrupted-review-recovers-dispatched-model",
+      "scenario": "รอบแรก fast ถูกขัดจังหวะ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "interrupted-review-recovers-dispatched-model-advance-2",
+      "requirementKey": "interrupted-review-recovers-dispatched-model",
+      "scenario": "รอบ configured ยังกู้ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "interrupted-review-recovers-dispatched-model-advance-3",
+      "requirementKey": "interrupted-review-recovers-dispatched-model",
+      "scenario": "คำตอบไม่ตรงกับที่ dispatch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "abort-refuses-unrecorded-result-authority-abort-request",
+      "requirementKey": "abort-refuses-unrecorded-result",
+      "scenario": "abort หลังผลเสร็จแต่ยังไม่บันทึก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "abort-refuses-unrecorded-result-authority-abort",
+      "requirementKey": "abort-refuses-unrecorded-result",
+      "scenario": "abort ระหว่างรีวิวยังรัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "abort-refuses-unrecorded-result-authority-abort-2",
+      "requirementKey": "abort-refuses-unrecorded-result",
+      "scenario": "abort request ที่ยังไม่ dispatch",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "abort-refuses-unrecorded-result-authority-abort-3",
+      "requirementKey": "abort-refuses-unrecorded-result",
+      "scenario": "abort หลังบันทึกแล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/workflow-policy.test.mjs .claude/harness/tests/configured-reviewer.test.mjs .claude/harness/tests/review-guard-reconciliation.test.mjs) && (node --test .claude/harness/tests/authority-request-operation.test.mjs .claude/harness/tests/workflow-policy.test.mjs) && (node .claude/tests/evals/run-evals.mjs)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/workflow-policy.test.mjs .claude/harness/tests/configured-reviewer.test.mjs .claude/harness/tests/review-guard-reconciliation.test.mjs",
+        "node --test .claude/harness/tests/authority-request-operation.test.mjs .claude/harness/tests/workflow-policy.test.mjs",
+        "node .claude/tests/evals/run-evals.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

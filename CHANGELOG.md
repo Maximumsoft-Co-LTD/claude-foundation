@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An AI review whose cheaper first round (fast or standard model) was
+  interrupted while its receipt was recorded now recovers instead of failing
+  "configured review result integrity or reviewer provenance does not match";
+  recovery compares against the reviewer the request was dispatched to.
+  `authority abort` now refuses a request whose AI result completed without a
+  receipt, which previously blocked every later review of the change.
 - Several visual providers failing in the same Prove pass now get one repair
   round and one batch; the second provider is no longer recorded as drift
   before it was ever repaired.

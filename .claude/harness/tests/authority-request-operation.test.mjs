@@ -264,6 +264,30 @@ test("authority abort cancels requested work and aborts stale dispatches", () =>
   assert.equal(stale.replaced.length, 1);
 });
 
+test("authority abort refuses a request whose AI result completed without a receipt", () => {
+  const request = {
+    requestId: "request-c", status: "dispatched",
+    dispatch: { attemptDigest: "attempt-dispatched" }
+  };
+  // The dispatched attempt was superseded by its completion, so it is no
+  // longer the chain head; the completed result has no receipt yet.
+  const stranded = abortContext(request, { digest: "attempt-dispatched", status: "dispatched" },
+    "attempt-completed");
+  stranded.unrecordedRequestResult = (_id, row) => row.requestId === "request-c";
+  assert.throws(() => abortAuthorityOperation(stranded, "c", {
+    request: "request-c", reason: "looks stuck"
+  }), /already has a completed AI review result without a receipt; aborting it would block every later review\. Record it instead: claude-foundation advance c --through proven/);
+  assert.equal(stranded.replaced.length, 0, "the request is left dispatched");
+  assert.equal(stranded.completed.length, 0, "attempt history is untouched");
+
+  const recorded = abortContext(request, { digest: "attempt-dispatched", status: "dispatched" },
+    "attempt-completed");
+  recorded.unrecordedRequestResult = () => false;
+  assert.equal(abortAuthorityOperation(recorded, "c", {
+    request: "request-c", reason: "superseded after recording"
+  }).status, "aborted", "a recorded result keeps the existing abort behavior");
+});
+
 test("authority abort completes the current dispatch and preserves idempotency", () => {
   const attempt = {
     digest: "attempt-current", status: "dispatched", reviewerSessionId: null

@@ -199,6 +199,7 @@ try {
   let configuredReviewResults = {};
   let installedReviewers = null;
   let configuredReviewCalls = 0;
+  let lastReceiptFlags = null;
   let persistConfiguredResult = false;
   let interruptReceipt = false;
   let interruptConfigured = false;
@@ -360,8 +361,12 @@ try {
       };
       if (persistConfiguredResult) {
         report.changeId = args.changeId;
-        report.reviewer = { ...report.reviewer, identity: "codex-sol",
-          providerFamily: "openai", modelFamily: "gpt-5.6", modelId: "gpt-5.6-sol" };
+        // The saved report names the model that actually ran for this tier.
+        report.reviewer = { ...report.reviewer, ...(args.reviewer === "claude-opus"
+          ? { identity: "claude-opus", providerFamily: "anthropic", modelFamily: "claude",
+            modelId: args.modelTier === "fast" ? "haiku" : "opus" }
+          : { identity: "codex-sol", providerFamily: "openai", modelFamily: "gpt-5.6",
+            modelId: "gpt-5.6-sol" }) };
         report.reportReference = `.foundation/reviews/${args.changeId}/saved.json`;
         report.reportPath = join(fixture, report.reportReference);
         writeJson(report.reportPath, report);
@@ -373,6 +378,7 @@ try {
     receiptPath: (id) => join(fixture, `${id}-receipt.json`),
     recordReceipt: (id, _provider, status, flags) => {
       if (interruptReceipt) { interruptReceipt = false; throw new Error("receipt interrupted"); }
+      lastReceiptFlags = flags;
       return writeJson(
       join(fixture, `${id}-receipt.json`), {
         status, review: { attemptDigest: flags["review-attempt"] },
@@ -699,6 +705,38 @@ try {
     assert.equal(proofs, 1);
     persistConfiguredResult = false;
   }
+
+  // A cheaper first round (fast tier) interrupted after its attempt completed
+  // recovers against the model it was dispatched with. Recomputing the class
+  // after completion counted that attempt and expected the configured model,
+  // so the saved result was refused and the change could never be reviewed.
+  const savedTier = riskTier;
+  riskTier = "low";
+  state = { version: 2, changeId: "change-fast-saved", reviewHistory: null };
+  const fastRequest = quiet(() => authority.requestAuthority("change-fast-saved", { type: "review" }));
+  const fastFlags = { request: fastRequest.requestId, "subject-actor": "human-implementer",
+    reviewer: "claude-opus" };
+  persistConfiguredResult = true;
+  interruptReceipt = true;
+  const fastCallsBefore = configuredReviewCalls;
+  assert.throws(() => quiet(() => authority.runAuthorityReviewer("change-fast-saved", fastFlags)),
+    /receipt interrupted/);
+  const fastDispatch = authorityStore.list("change-fast-saved")
+    .find((row) => row.value.requestId === fastRequest.requestId).value.dispatch;
+  assert.equal(fastDispatch.reviewer.modelId, "haiku", "round one ran on the fast model");
+  assert.throws(() => quiet(() => authority.abortAuthority("change-fast-saved", {
+    request: fastRequest.requestId, reason: "looks stuck"
+  })), /already has a completed AI review result without a receipt/,
+  "aborting the stranded result is refused, so recovery stays possible");
+  quiet(() => authority.runAuthorityReviewer("change-fast-saved", fastFlags));
+  assert.equal(configuredReviewCalls, fastCallsBefore + 1,
+    "the saved fast-tier result is recovered without another model call");
+  assert.equal(lastReceiptFlags["reviewer-model"], "haiku",
+    "the receipt names the model that ran, not the recomputed configured model");
+  assert.equal(authority.authorityStatusValue("change-fast-saved", fastRequest.requestId)
+    .requests[0].status, "completed");
+  persistConfiguredResult = false;
+  riskTier = savedTier;
 
   state = { version: 2, changeId: "change-orphan", reviewHistory: null };
   const orphanRequest = quiet(() => authority.requestAuthority(

@@ -1,0 +1,11 @@
+{
+  "id": "incident-2026-11-09-review-deadlock-after-target-branch-switch",
+  "source": "incident:2026-11-09-review-deadlock-after-target-branch-switch",
+  "layer": "deterministic",
+  "description": "An interrupted cheaper-tier first review round recovers against its dispatched reviewer, and authority abort refuses to strand a completed result without a receipt.",
+  "command": ["node", "--test", ".claude/harness/tests/workflow-policy.test.mjs", ".claude/harness/tests/authority-request-operation.test.mjs"],
+  "expect": {
+    "exit": 0,
+    "stdoutIncludes": ["authority abort refuses a request whose AI result completed without a receipt"]
+  }
+}
