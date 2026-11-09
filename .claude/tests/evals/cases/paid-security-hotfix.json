@@ -1,0 +1,7 @@
+{
+  "id": "paid-security-hotfix",
+  "source": "task:A security hotfix lands with its regression and disclosure handling.",
+  "layer": "paid",
+  "scenario": "security-hotfix",
+  "description": "A security hotfix lands with its regression and disclosure handling."
+}

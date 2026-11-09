@@ -1,0 +1,7 @@
+{
+  "id": "paid-owner-only-delete",
+  "source": "task:An authorization boundary is implemented with allow and deny proof.",
+  "layer": "paid",
+  "scenario": "owner-only-delete",
+  "description": "An authorization boundary is implemented with allow and deny proof."
+}

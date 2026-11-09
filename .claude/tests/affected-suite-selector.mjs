@@ -46,6 +46,8 @@ const RULES = [
   [/^(?:(?:README(?:\.th)?|AGENTS|CLAUDE|CONTRIBUTING|WORKFLOW|RELEASING)\.md$|docs\/.*\.md$|website\/docs\/|\.claude\/harness\/(?:README|EVIDENCE|CONSUMER-QUALITY)\.md$|\.claude\/tests\/README\.md$)/,
     ["workflow documentation contracts"]],
   [/^dashboard\//, ["dashboard contracts"]],
+  // A case, its tooling, or an incident record that must keep an eval.
+  [/^\.claude\/tests\/evals\/|^openspec\/incidents\//, ["agent eval tooling", "agent evals"]],
   [/^\.claude\/tests\/docs\//, ["workflow documentation contracts"]],
   [/^\.claude\/tests\/interview\//, ["human interaction contracts"]],
   [/^\.claude\/hooks\//, ["current hook contracts", "phase mutation guard"]],

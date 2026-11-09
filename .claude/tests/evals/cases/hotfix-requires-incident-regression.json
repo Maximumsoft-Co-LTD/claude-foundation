@@ -1,0 +1,19 @@
+{
+  "id": "hotfix-requires-incident-regression",
+  "source": "task:a new hotfix must carry a regression for its incident",
+  "layer": "deterministic",
+  "description": "change start sends a hotfix without a matching, executable regressionOf scenario back to the agent, and only changes created under the rule are enforced on revise.",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=hotfix",
+    ".claude/harness/tests/change-atomic-start.test.mjs"
+  ],
+  "expect": {
+    "exit": 0,
+    "stdoutIncludes": [
+      "a new hotfix without a regression for its incident is sent back to the agent",
+      "revise enforces the hotfix regression only for changes created under the rule"
+    ]
+  }
+}

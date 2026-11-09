@@ -1,0 +1,16 @@
+{
+  "id": "incident-2026-11-09-review-rules-callback-default",
+  "source": "incident:2026-11-09-review-rules-callback-default",
+  "layer": "deterministic",
+  "description": "Receipt validity built without a rules lookup must not throw on review receipts that record reviewRulesHash; the risk-tiered review contract keeps its repair-closure case green.",
+  "command": [
+    "node",
+    ".claude/tests/harness/run-risk-tiered-review-tests.mjs"
+  ],
+  "expect": {
+    "exit": 0,
+    "stdoutIncludes": [
+      "PASS: CASE-REVIEW-REPAIR-CLOSURE"
+    ]
+  }
+}

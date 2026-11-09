@@ -1,0 +1,7 @@
+{
+  "id": "paid-idempotent-refund",
+  "source": "task:An idempotent retry-safe write is implemented and proven.",
+  "layer": "paid",
+  "scenario": "idempotent-refund",
+  "description": "An idempotent retry-safe write is implemented and proven."
+}
