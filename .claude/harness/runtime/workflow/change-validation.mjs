@@ -485,16 +485,46 @@ export function waiveGateOperation(context, id, flags = {}) {
     return revokeGateWaiver(context, id, state, state.waivers || [], request);
   const waivers = currentWaivers(state, context.relevantHash?.(id));
   assertWaivableCapability(context, id, request, waivers);
+  // Waiving visual while differences are pending accepts exactly those.
+  const drift = request.capability === "visual" ? state.visualRepair?.drift : null;
+  if (drift) state.visualRepair = { ...state.visualRepair, drift: null };
   state.waivers = [...(state.waivers || []).filter((row) => row.capability !== request.capability), {
     capability: request.capability,
     reason: request.reason,
     authority: { kind: "host-user-decision", reference: request.decisionRef },
     recordedAt: context.now(),
+    ...(drift ? { acceptedFindings: drift.findings || [] } : {}),
     ...(context.relevantHash ? { binding: { workspaceHash: context.relevantHash(id),
       contractRevision: Number(state.contractRevision || 0) } } : {})
   }];
   context.saveRuntime(state);
   context.log(`GATE WAIVED ${id}/${request.capability}\n  reason: ${request.reason}\n  decision: ${request.decisionRef}\n  recorded in proof advisories; the claim keeps declaring it\n  next: claude-foundation proof run ${id}`);
+}
+
+// The user's "accept" answer to a pending visual drift: the visual gate is
+// withdrawn under the same rules as `change waive` (a reason and a decision
+// reference, bound to the current workspace and contract revision), and the
+// row keeps the differences the user accepted, so proof and Land report a
+// mismatch the user accepted rather than a pass.
+export function recordVisualDriftWaiver(context, id, { decisionRef, reason } = {}) {
+  const request = waiverRequest({ capability: "visual", "decision-ref": decisionRef, reason },
+    context.fail);
+  if (!request.reason) context.fail("accepting visual differences requires a reason");
+  const state = context.loadRuntime(id);
+  const drift = state.visualRepair?.drift;
+  if (!drift) context.fail(`change '${id}' has no pending visual drift to accept`);
+  state.waivers = [...(state.waivers || []).filter((row) => row.capability !== "visual"), {
+    capability: "visual",
+    reason: request.reason,
+    authority: { kind: "host-user-decision", reference: request.decisionRef },
+    recordedAt: context.now(),
+    acceptedFindings: drift.findings || [],
+    binding: { workspaceHash: context.relevantHash(id),
+      contractRevision: Number(state.contractRevision || 0) }
+  }];
+  state.visualRepair = { ...state.visualRepair, drift: null };
+  context.saveRuntime(state);
+  return state.waivers.at(-1);
 }
 
 function failValidationLayer(fail, name, issues) {
@@ -2031,6 +2061,7 @@ export function createChangeValidationRuntime({
       detail: row.reason,
       authority: row.authority,
       recordedAt: row.recordedAt,
+      ...(Array.isArray(row.acceptedFindings) ? { acceptedFindings: row.acceptedFindings } : {}),
       next: `restore it: claude-foundation change waive ${id} --capability ${
         row.capability} --revoke --decision-ref <ref>`
     }));

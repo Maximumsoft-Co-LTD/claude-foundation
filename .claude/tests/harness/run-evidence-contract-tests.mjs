@@ -330,7 +330,7 @@ test("capability and claim coverage validation reject incompatible wiring", () =
   expectProviderFailure((providers) => {
     providers.browser.adapter = "command";
     providers.browser.inputMode = undefined;
-  }, /valid inputMode/);
+  }, /browser provider 'browser' requires a valid inputMode \(browser-automation, dom-event, os-input, both\); set "inputMode" on providers\.browser in the draft's execution/);
   expectProviderFailure((providers) => {
     providers.mutation.resultProtocol = undefined;
     providers.mutation.classification = undefined;

@@ -136,3 +136,44 @@ test("declared identity skips absent and empty roots without falling back global
   assert.equal(value.mode, "declared");
   assert.deepEqual(value.files, []);
 });
+
+// Visual review: an unchanged prototype and unchanged screenshots keep the
+// same identity, so the passing receipt is reused without another reviewer
+// call; screenshots in tool output directories still bind it.
+test("visual identity binds the prototype and screenshots, not unrelated edits", () => {
+  const files = new Map([
+    ["/root/openspec/changes/change/prototype/screen.html", "proto-1"],
+    ["/root/test-results/settings.png", "shot-1"],
+    ["/root/src/unrelated.js", "code-1"]
+  ]);
+  const tree = new Map([
+    ["/root", [entry("openspec", "directory"), entry("test-results", "directory"), entry("src", "directory")]],
+    ["/root/openspec", [entry("changes", "directory")]],
+    ["/root/openspec/changes", [entry("change", "directory")]],
+    ["/root/openspec/changes/change", [entry("prototype", "directory")]],
+    ["/root/openspec/changes/change/prototype", [entry("screen.html")]],
+    ["/root/test-results", [entry("settings.png")]],
+    ["/root/src", [entry("unrelated.js")]]
+  ]);
+  const config = {
+    builtIn: "visual-review-v1", capability: "visual",
+    inputs: ["openspec/changes/change/prototype/screen.html", "test-results/**"],
+    screenshots: ["test-results/**"]
+  };
+  const identity = () => providerInputIdentityOperation(baseContext({
+    readDirectory: (path) => tree.get(path) || [],
+    excludedDirectories: new Set(["node_modules", ".git", "test-results"]),
+    filesystemEntryIdentity: (path) => files.get(path)
+  }), "change", "visual", config);
+  const first = identity();
+  assert.deepEqual(first.files.map((file) => file.path), [
+    "openspec/changes/change/prototype/screen.html", "test-results/settings.png"
+  ]);
+  files.set("/root/src/unrelated.js", "code-2");
+  assert.equal(identity().fingerprint, first.fingerprint);
+  files.set("/root/test-results/settings.png", "shot-2");
+  assert.notEqual(identity().fingerprint, first.fingerprint);
+  files.set("/root/test-results/settings.png", "shot-1");
+  files.set("/root/openspec/changes/change/prototype/screen.html", "proto-2");
+  assert.notEqual(identity().fingerprint, first.fingerprint);
+});

@@ -2152,16 +2152,25 @@ export function createSandboxRuntime({
     const base = workspace.baseHead || "HEAD";
     const prior = workspace.landedCarried || {};
     const carried = {};
+    // Where the sandbox copy started from landed bytes (`landedCarriedFrom`),
+    // kept while the target still holds them, across this change's own later
+    // edits: the landed replay must not merge that landed edit in twice.
+    const priorFrom = workspace.landedCarriedFrom || {};
+    const carriedFrom = {};
     const added = [];
     for (const path of Object.keys(landedBy).sort()) {
       if ([".foundation/", "openspec/changes/"].some((prefix) => path.startsWith(prefix))) continue;
       const sandboxFile = join(workspace.path, path);
       const current = identity(sandboxFile);
       const digest = landed[path].after;
+      const target = identity(join(root, path));
+      const from = priorFrom[path]?.target === target ? priorFrom[path] : null;
       if (current === digest) {
         if (prior[path]) carried[path] = prior[path];
+        carriedFrom[path] = from || { changeId: landedBy[path], target };
         continue;
       }
+      if (from) carriedFrom[path] = from;
       // Never overwrite this change's own edit; a path both changed is the
       // landed replay's 3-way merge, not a carry.
       const shown = gitBuffer(["show", `${base}:${path}`], root);
@@ -2172,8 +2181,11 @@ export function createSandboxRuntime({
       mkdirSync(dirname(sandboxFile), { recursive: true });
       cpSync(join(root, path), sandboxFile, VERBATIM_COPY);
       carried[path] = { changeId: landedBy[path], digest: identity(sandboxFile) };
+      carriedFrom[path] = { changeId: landedBy[path], target };
       added.push({ path, landedBy: landedBy[path] });
     }
+    if (Object.keys(carriedFrom).length) workspace.landedCarriedFrom = carriedFrom;
+    else delete workspace.landedCarriedFrom;
     // Recorded beside the copy-time carry-ins, so the change surface, task
     // paths, and review packet skip them while their bytes are unchanged.
     const digests = Object.fromEntries(Object.entries(carried).map(([path, row]) => [path, row.digest]));
@@ -2253,6 +2265,19 @@ export function createSandboxRuntime({
       const untouched = baseBytes && sandboxBytes ? baseBytes.equals(sandboxBytes)
         : !baseBytes && !lstatSync(sandboxFile, { throwIfNoEntry: false });
       if (untouched) continue;
+      // The sandbox copy started from exactly these landed bytes, so every
+      // difference from them is this change's own edit: replaying the landed
+      // edit again would conflict with its own lines. Recorded as resolved,
+      // bound to the current bytes, so Land accepts it like an answered merge.
+      const carriedFrom = workspace.landedCarriedFrom?.[path];
+      const targetIdentity = identity(join(root, path));
+      if (carriedFrom && carriedFrom.target === targetIdentity) {
+        const sandboxIdentity = identity(sandboxFile);
+        if (sandboxIdentity !== targetIdentity)
+          resolved[path] = { target: targetIdentity, sandbox: sandboxIdentity,
+            landedBy: landedBy[path] };
+        continue;
+      }
       const replay = replayLandedEdit({ root, sandboxPath: workspace.path, path, baseBytes });
       if (replay.status === "merged") {
         writeFileSync(sandboxFile, replay.bytes);

@@ -8,3 +8,5 @@ Treat the text after `$build` as the command arguments. Read
 Translate host-specific wording without changing its lifecycle or authority
 boundaries. Preserve the command's convergent finding aggregation, batched
 repair, selective rerun, receipt reuse, and resumable no-progress behavior.
+A `prototype/` file in `contextFiles` is the approved design: match it, and
+never edit it.

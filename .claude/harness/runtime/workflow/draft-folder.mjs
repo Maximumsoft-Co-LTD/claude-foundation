@@ -151,6 +151,22 @@ export function loadDraftFolder(dir, { name = dir } = {}) {
       issues.push(`${name}/change.json must declare version ${DRAFT_FOLDER_VERSION}`);
     }
   }
+  // Provider wiring may sit beside change.json in the same JSON form as the
+  // packet's execution.yaml; one home, so both places is an issue.
+  const executionPath = join(dir, "execution.yaml");
+  if (draft && existsSync(executionPath)) {
+    let execution;
+    try { execution = JSON.parse(readFileSync(executionPath, "utf8")); }
+    catch (error) {
+      issues.push(`${name}/execution.yaml must be JSON like the packet's execution.yaml ` +
+        `({"version": 1, "providers": {...}}): ${error.message}`);
+    }
+    if (execution !== undefined) {
+      if (draft.execution !== undefined)
+        issues.push(`${name} declares execution in both change.json and execution.yaml; keep one`);
+      else draft = { ...draft, execution };
+    }
+  }
   const language = draft?.language;
   const prose = {};
   for (const document of DRAFT_FOLDER_PROSE) {

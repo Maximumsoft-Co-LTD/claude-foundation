@@ -21,7 +21,8 @@ With approved `--compare`, use a `mode: "compare"` record with three to five
 options and create disposable alternatives only at their `prototypePaths` under
 `.foundation/prototypes/<id>/`. Record the choice, reason, and every rejected
 option in the record's `selection`. Do not edit product code or OpenSpec;
-prototype output is never proof.
+prototype output is never proof. Change can bind the selected file as the UI
+reference through `prototypeSelection`.
 
 Separate user intent from source-grounded facts. Questions may be open-ended;
 recommendations and alternatives are optional.

@@ -24,6 +24,7 @@ reviewer และ trusted host สร้างหลักฐานของต
 | **ยอมรับผลลัพธ์ (acceptance)** | หลัง Prove เฉพาะเมื่อ change กำหนดให้ต้องมีคนยอมรับ | บอกพร้อมชื่อของคุณว่าผลลัพธ์ใช่สิ่งที่ต้องการหรือไม่ | acceptance ที่จำเป็นยังเปิดค้างและ change รออยู่ standard change ที่ยังไม่ตัดสินจะบล็อก validation |
 | **Waive gate ที่ไม่ผ่าน** | check รันแล้วไม่ผ่าน และคุณเลือกไม่แก้ | ให้เหตุผลที่ชัดเจน | ความล้มเหลวยังเป็นความล้มเหลว และ Land จะปฏิเสธ |
 | **ตัดสินหลัง review ใช้รอบหมด** | รอบ review ที่อนุญาตใช้หมดแล้วแต่ยังไม่มี verdict | เลือก: human verdict, AI อีกหนึ่งรอบ หรือพัก | change หยุดรอ review ที่ใช้รอบหมดแล้วไม่เคยถูก waive |
+| **ตัดสินเมื่อ UI ยังไม่ตรง prototype** | change ผูก prototype ไว้ ซ่อมครบ 2 รอบแล้วยังมีจุดที่ต่าง และ gate อื่นจบหมดแล้ว | เลือก: ซ่อมต่อ, ยอมรับความต่างพร้อมเหตุผล หรือแก้ agreement | Land ปฏิเสธ ความต่างที่ยอมรับแล้วแสดงว่าคุณยอมรับ ไม่ใช่ผ่าน |
 | **อนุญาต Land** | เมื่อ change เป็น `proven` | `/land <change>` หรือบอกตั้งแต่ต้นว่า "ทำจนจบ" | ไม่มีอะไรถูก apply เข้าโปรเจกต์ `proven` ไม่ใช่ delivered |
 | **อนุญาต side effect** | commit, push, เปิด PR, รัน external provider, ใช้เกิน budget | บอกตรง ๆ (`/deliver`, "push ด้วย", "ตกลง") | การกระทำนั้นไม่รัน ระบบถามไม่ได้สันนิษฐาน |
 | **แก้สิ่งที่มีแต่คุณแก้ได้** | login, network หรือ disk เต็มขวางความคืบหน้า | แก้ใน environment ของคุณเอง | change คงสถานะไว้และทำต่อเมื่อคุณแก้เสร็จ |
@@ -41,7 +42,8 @@ target conflict, path ไม่ปลอดภัย, repository identity กำ
 และจะแสดง path ของ control-plane, CI หรือ secret และไฟล์ที่ change ลบก่อน apply
 
 ก่อนถึง Land ไม่มีอะไรรอคุณนอกจากการตัดสินใจของคุณเอง: อนุมัติ spec, ความหมายของ
-product หรือ trade-off, ผล acceptance, waiver, review ที่ใช้รอบหมด, Land, การ commit,
+product หรือ trade-off, ผล acceptance, waiver, review ที่ใช้รอบหมด, UI ที่ยังไม่ตรง
+prototype ที่ผูกไว้, Land, การ commit,
 push หรือ side effect อื่น, budget หรือสาเหตุที่มีแต่คุณแก้ได้ (login, network, disk เต็ม)
 ส่วน setup, sync conflict, การรอ resource ร่วม และการแก้ที่วนซ้ำเป็นงานของ agent หรือ harness
 :::

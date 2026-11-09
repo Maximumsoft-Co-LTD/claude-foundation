@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "visual-declined-repair-escalates-resume-workspace-hash-repair",
+      "requirementKey": "visual-declined-repair-escalates",
+      "scenario": "agent ไม่แก้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-declined-repair-escalates-prove",
+      "requirementKey": "visual-declined-repair-escalates",
+      "scenario": "agent แก้แล้วยังต่าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-declined-repair-escalates-prove-2",
+      "requirementKey": "visual-declined-repair-escalates",
+      "scenario": "ไม่มี repair ของ visual ก่อนหน้า",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-declined-repair-escalates-prove-3",
+      "requirementKey": "visual-declined-repair-escalates",
+      "scenario": "ครบ 2 รอบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/visual-repair.test.mjs .claude/harness/tests/visual-drift-decision.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

@@ -127,6 +127,10 @@ Browser automation is not physical operating-system input. Use `browser-automati
 
 Change Loop cannot infer a console-error policy from a successful browser exit, so install a Playwright fixture that fails on unexpected `console.error` and uncaught page errors.
 
+#### Screenshots for the visual check
+
+When a change binds a UI prototype in `strict` mode, its bound claims also need the harness-owned `visual` provider. Wire it without a command and point its `screenshots` at the folder or files where your browser tests already write PNG or JPEG screenshots, for example `"visual": { "capability": "visual", "screenshots": ["test-results/**"], "dependsOn": ["browser"] }`. `dependsOn` makes your browser provider run first. An agent reviewer compares them with the prototype copied into the change packet and lists each difference. No matching screenshot is `inconclusive`, never a pass. See [Visual](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/EVIDENCE.md#visual) for the full contract.
+
 ### contract-digest
 
 Executes no command. It hashes the same declared contract artifact in every participating repository and passes only when the bytes agree — which is what makes `cross-repo-contract` a check rather than an assertion.

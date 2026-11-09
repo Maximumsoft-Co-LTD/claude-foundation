@@ -26,6 +26,7 @@ export const PROVIDER_CONTRACTS = {
   "semantic-acceptance": "A signed external oracle verdict covers every declared behavior partition without exposing hidden oracle content.",
   "static-analysis": "Compilation, type checking, linting, and applicable static quality gates pass.",
   "data-migration": "Schema or data evolution is forward-safe, backward-compatible, and rollback-aware.",
+  "visual": "Agent reviewer compares screenshots of the real UI with the change's bound prototype.",
   "accessibility": "Rendered semantics, keyboard use, focus, contrast, and assistive access meet policy.",
   "resilience": "Timeout, retry, partial-failure, recovery, and degraded-dependency behavior is proven.",
   "observability": "Required logs, metrics, traces, and alerts expose success and failure safely.",

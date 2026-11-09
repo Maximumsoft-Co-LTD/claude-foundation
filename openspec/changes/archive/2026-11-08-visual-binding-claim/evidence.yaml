@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "visual-binding-claims-fail-closed-prove-contract-provider-visual",
+      "requirementKey": "visual-binding-claims-fail-closed",
+      "scenario": "claims ว่าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-claims-fail-closed-prove",
+      "requirementKey": "visual-binding-claims-fail-closed",
+      "scenario": "claims ไม่รู้จักทั้งหมด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-claims-fail-closed-prove-2",
+      "requirementKey": "visual-binding-claims-fail-closed",
+      "scenario": "claims ไม่รู้จักบางส่วน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-claims-fail-closed-prove-3",
+      "requirementKey": "visual-binding-claims-fail-closed",
+      "scenario": "claims ถูกต้อง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/visual-binding-claims.test.mjs .claude/harness/tests/visual-binding-record.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

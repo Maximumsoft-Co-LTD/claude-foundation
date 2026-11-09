@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "landed-carry-no-false-conflict-advance-sync-land-sandbox",
+      "requirementKey": "landed-carry-no-false-conflict",
+      "scenario": "แก้ต่อจากงานที่คัดลอกมา",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-carry-no-false-conflict-advance-sync",
+      "requirementKey": "landed-carry-no-false-conflict",
+      "scenario": "target เปลี่ยนหลังคัดลอก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "landed-carry-no-false-conflict-advance-sync-2",
+      "requirementKey": "landed-carry-no-false-conflict",
+      "scenario": "path ที่ไม่ได้คัดลอก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/landed-carry-sync.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

@@ -30,6 +30,8 @@ import {
 } from "./validation/semantic-intake.mjs";
 import { inferPathSignals } from "../contracts/scratch-router.mjs";
 import { TYPE_SURFACES, checklistNoteLine } from "./prototype-checklist.mjs";
+import { PROTOTYPE_DIR, materializePrototype, prototypeCovers, prototypeMode,
+  prototypeSelectionIssues } from "./prototype-binding.mjs";
 import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
 import {
   inspectRepositoryIntelligence, repositoryIntelligenceRequired, skippedRepositoryIntelligence
@@ -211,7 +213,8 @@ export function atomicStartPreflight(draft, { groundingRequired = false } = {}) 
     issues.push("draft externalOperations must be an array");
   if (!draft?.execution || draft.execution.version !== 1 ||
       !draft.execution.providers || Object.keys(draft.execution.providers).length === 0)
-    issues.push("start draft requires executable evidence wiring");
+    issues.push("start draft requires executable evidence wiring: execution must be " +
+      '{"version": 1, "providers": {"<name>": {...}}} with at least one provider');
 
   const safeTriggers = Array.isArray(securityTriggers) ? securityTriggers : [];
   const rapid = impact === "low" && coupling === "isolated" &&
@@ -888,9 +891,17 @@ export function renderDraftDesign(draft) {
     risks: () => risks ? `| Risk | Mitigation | Evidence owner |\n|---|---|---|\n${risks}` : "",
     fileMap: () => renderFileMapBody(authoredFileMap ? fileMapWithTasks(draft.fileMap, draft.tasks)
       : derivedFileMap(draft), { derived: !authoredFileMap, fileTree: renderFileTree(draft) }),
-    prototype: () => prototype
-      ? `- **Selected:** ${prototype.selected}\n- **Reference:** ${prototype.reference}\n` +
-        `- **Reason:** ${prototype.reason || "Recorded in the selection reference"}` : ""
+    prototype: () => {
+      if (!prototype) return "";
+      const name = String(prototype.reference || "").split(/[\\/]/).pop();
+      const copy = `${PROTOTYPE_DIR}/${name === "binding.json" ? "prototype-binding.json" : name}`;
+      const covers = prototypeCovers(prototype);
+      return `- **Selected:** ${prototype.selected}\n- **Reference:** [${copy}](${copy}) ` +
+        `(copied from \`${prototype.reference}\`)\n` +
+        `- **Mode:** ${prototypeMode(prototype)}\n` +
+        (covers.length ? `- **Requirements:** ${covers.map((key) => `\`${key}\``).join(", ")}\n` : "") +
+        `- **Reason:** ${prototype.reason || "Recorded in the selection reference"}`;
+    }
   };
   const context = { workTypes: declared.length ? declared : inferred, language };
   const sections = [];
@@ -1608,6 +1619,9 @@ export function createChangeLifecycle({
       }
     }
     for (const [field, value] of referencedPaths) validateLocalFile(field, value);
+    const requirementKeys = draft._requirementKeys?.length ? draft._requirementKeys
+      : (draft.claims || []).map((claim) => claim?.requirementKey).filter(Boolean);
+    issues.push(...prototypeSelectionIssues(draft.prototypeSelection, requirementKeys));
     for (const [index, integration] of (draft.integrations || []).entries()) {
       const source = String(integration?.documentation?.source || "").trim();
       if (!source) continue;
@@ -1739,6 +1753,10 @@ export function createChangeLifecycle({
     else if (state.groundingRequired && draft.grounding)
       writeJson(join(basePath, "grounding.yaml"), draft.grounding);
     writeFileSync(join(basePath, "tasks.md"), renderDraftTasks(draft.tasks));
+    materializePrototype({
+      root, basePath, selection: draft.prototypeSelection,
+      claims: draft.claims || [], tasks: draft.tasks || []
+    });
     const contract = readJson(join(basePath, "evidence.yaml"));
     contract.claims = draft.claims;
     if (isSemanticVersion(draft._semanticVersion) && draft._derivedExecution)

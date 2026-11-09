@@ -1,5 +1,7 @@
 import { currentWaivers } from "../core/user-decisions.mjs";
-import { repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
+import { grantVisualRepair, repairActionForWorkspace } from "../evidence/repair-runtime.mjs";
+import { recordVisualDriftWaiver } from "./change-validation.mjs";
+import { advisoryVisualLine } from "../evidence/visual-review.mjs";
 import { behaviorChangingWork } from "../evidence/test-discrimination.mjs";
 import { changeWorkTypes } from "./task-change.mjs";
 import { proofCursorToken } from "../evidence/proof-execution-runtime.mjs";
@@ -7,6 +9,7 @@ import { isProcessAlive } from "../core/process-lock.mjs";
 import { shellDisplayArgument } from "../core/shell-mutation-policy.mjs";
 import { pathInside } from "../core/process-runtime.mjs";
 import { drainSignals, recordSignal } from "../core/signals.mjs";
+import { readPrototypeBinding } from "./prototype-binding.mjs";
 import {
   lifecycleOutcome, lifecycleUserProjection, lifecycleUserState
 } from "../core/lifecycle-outcome.mjs";
@@ -111,9 +114,17 @@ function packetSpecFiles(dir) {
 // (`<repository>/<path>`, as repair-graph nodes carry them) and resolve in
 // that repository's own sandbox, never in the shared sandbox's submodule mirror.
 export function envelopeContextFiles({
-  packetDir, state = {}, tasks = [], paths = [], scopedPaths = []
+  packetDir, state = {}, tasks = [], paths = [], scopedPaths = [], repairClaims = []
 }) {
   const specs = packetSpecFiles(join(packetDir, "specs"));
+  // A bound prototype is a read-only design reference for the work it
+  // constrains: tasks the binding names, or repair touching its claims.
+  // It is never added to the writable scope.
+  const binding = readPrototypeBinding(packetDir);
+  const boundClaims = new Set(binding?.claims || []);
+  const prototype = binding?.present && (
+    tasks.some((task) => (binding.tasks || []).includes(task.id)) ||
+    repairClaims.some((claim) => boundClaims.has(claim))) ? [binding.path] : [];
   // The harness ticks the isolated workspace's ledger; the main checkout's
   // copy stays unticked until Land, so it would report finished work pending.
   const isolatedLedger = ["worktree", "copy"].includes(state.workspace?.mode) &&
@@ -151,7 +162,7 @@ export function envelopeContextFiles({
     (exists ? existing : created).push(file);
   }
   return {
-    contextFiles: [...new Set([...packet, ...specs, ...existing])],
+    contextFiles: [...new Set([...packet, ...specs, ...prototype, ...existing])],
     newFiles: [...new Set(created)].filter((file) => !existing.includes(file)),
     contextScope: { paths: "absolute", specs: specs.length ? "included" : "none" }
   };
@@ -1105,6 +1116,7 @@ export function createAdvanceRuntime({
         const tasks = value.tasks || [];
         const paths = tasks.length ? [] : value.allowedPaths || [];
         const scopedPaths = (value.repairGraph?.nodes || []).flatMap((node) => node.paths || []);
+        const repairClaims = (value.repairGraph?.nodes || []).flatMap((node) => node.claimIds || []);
         const state = loadRuntime(id);
         // An EDIT names no skills: in every observed paid run agents skipped
         // routed skills, wherever the action put them. Agents choose skills
@@ -1112,7 +1124,7 @@ export function createAdvanceRuntime({
         const adequacy = value.action === "EDIT"
           ? testAdequacyInstruction({ workTypes: changeWorkTypes(changePath(id)), tasks }) : null;
         return { ...value, ...envelopeContextFiles({
-          packetDir: changePath(id), state, tasks, paths, scopedPaths
+          packetDir: changePath(id), state, tasks, paths, scopedPaths, repairClaims
         }), ...(adequacy ? { instructions: [...(value.instructions || []), adequacy] } : {}) };
       });
     } catch { return value; }
@@ -1235,15 +1247,27 @@ export function createAdvanceRuntime({
     } catch { return []; }
   }
 
+  function advisoryEvidenceRows(id) {
+    try {
+      const rows = loadRuntime(id).advisoryEvidence?.rows;
+      return Array.isArray(rows) ? rows : [];
+    } catch { return []; }
+  }
+
   function done(id, stage, through) {
     const next = stage === "build" ? resume(id, "proven")
       : stage === "proven" ? resume(id, "archived") : null;
     const specGaps = stage === "build" ? [] : reviewSpecGaps(id);
+    const advisory = stage === "build" ? [] : advisoryEvidenceRows(id);
     return envelope(id, "DONE", {
       legacyAction: stage === "archived" ? "ARCHIVED" : "TARGET_REACHED",
       reason: `${stage} target reached`, completed: true, reached: stage,
       resumeCommand: null,
       ...(specGaps.length ? { reviewAdvisories: { specGaps } } : {}),
+      // Reported for the user; advisory results never count as passing evidence.
+      ...(advisory.length ? { advisoryEvidence: {
+        passingEvidence: false, rows: advisory, summary: advisory.map(advisoryVisualLine)
+      } } : {}),
       next
     });
   }
@@ -1373,6 +1397,39 @@ export function createAdvanceRuntime({
     return { ...result, notices: [...new Set([...(result.notices || []), ...next.notices])] };
   }
 
+  // The user's answer to a pending visual drift. Repair-more and accept
+  // continue the same advance; amending the agreement is the agent's next edit.
+  function visualDriftAnswer(id, answer, through) {
+    const state = loadRuntime(id);
+    if (answer.choice === "repair-more") {
+      saveRuntime(grantVisualRepair(state, {
+        decisionRef: answer.reference, now: new Date(nowMs()).toISOString()
+      }));
+      return null;
+    }
+    if (answer.choice === "accept") {
+      recordVisualDriftWaiver({
+        loadRuntime, saveRuntime, relevantHash,
+        now: () => new Date(nowMs()).toISOString(),
+        fail: (message) => { throw new Error(message); }
+      }, id, { decisionRef: answer.reference, reason: answer.reason });
+      return null;
+    }
+    if (answer.choice !== "amend-agreement") return null;
+    return envelope(id, "EDIT", {
+      legacyAction: "AMEND_AGREEMENT", actor: "agent", owner: "agent",
+      boundary: "agreement-amendment",
+      reason: "The user chose to amend the agreement so it matches the built UI. Author one " +
+        "semantic amendment (prototype or requirements); visual evidence bound to the old " +
+        "agreement is invalidated and checked again.",
+      command: command(`change amend ${id} <amendment.json>`),
+      decisionRef: answer.reference,
+      recoveryType: "EDIT",
+      resumeCommand: resume(id, through),
+      alternatives: ["author the semantic amendment, then resume"]
+    });
+  }
+
   async function advanceThrough(id, through, internal = { applyRecovered: [], notices: [] }) {
     let stage = "build";
     const finish = async (value) => {
@@ -1462,6 +1519,10 @@ export function createAdvanceRuntime({
         // synchronization, the indeterminate retry by the next proof run.
         const answer = internal.answer;
         if (answer) delete internal.answer;
+        if (answer?.kind === "visual-drift") {
+          const routed = visualDriftAnswer(id, answer, through);
+          if (routed) return finish(withContext(id, routed));
+        }
         if (answer?.kind === "amended-agreement-conflict" && answer.choice !== "pause" &&
             synchronizeAgreement)
           await synchronizeAgreement(id, { resolve: `openspec/changes/${id}` });

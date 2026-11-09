@@ -48,3 +48,87 @@ export function repairActionForWorkspace(attempt, workspaceHash, stableHash) {
     repairGraph: graph
   };
 }
+
+// Visual repair is the one bounded repair loop: agent repair against a
+// reviewer's judgement of screenshots may never converge, so after
+// VISUAL_REPAIR_ROUNDS batches the remaining differences become a pending
+// visual drift for the user instead of another batch. Only a user grant
+// extends the budget.
+export const VISUAL_REPAIR_ROUNDS = 2;
+
+export function visualRepairBudget(state) {
+  const value = state?.visualRepair || {};
+  const grants = Array.isArray(value.grants) ? value.grants : [];
+  return {
+    rounds: Number(value.rounds || 0),
+    allowed: VISUAL_REPAIR_ROUNDS * (1 + grants.length),
+    lastBatchWorkspaceHash: value.lastBatchWorkspaceHash || null,
+    grants,
+    drift: value.drift || null
+  };
+}
+
+function visualRepairFindings(receipt) {
+  return (receipt?.visual?.findings || [])
+    .filter((finding) => ["blocker", "major"].includes(finding?.severity));
+}
+
+// What one failed visual receipt means for the repair loop. A new failing
+// result spends a round while any remain. The same workspace coming back
+// after a batch means the agent resumed without editing: it declined the
+// differences (for example, ones the agreement forbids), so another identical
+// batch cannot help and the differences become drift for the user.
+export function planVisualRepair(state, { provider, receipt, now }) {
+  const budget = visualRepairBudget(state);
+  const findings = visualRepairFindings(receipt);
+  const workspaceHash = receipt?.workspaceHash || null;
+  const base = { ...(state?.visualRepair || {}), grants: budget.grants };
+  if (!findings.length) return { action: "none", visualRepair: state?.visualRepair, findings };
+  const declined = Boolean(workspaceHash) && workspaceHash === budget.lastBatchWorkspaceHash;
+  if (!declined && budget.rounds < budget.allowed)
+    return { action: "repair", round: budget.rounds + 1, findings, visualRepair: {
+      ...base, rounds: budget.rounds + 1, lastBatchWorkspaceHash: workspaceHash, drift: null } };
+  return { action: "drift", findings, visualRepair: { ...base, drift: {
+    provider, findings, rounds: budget.rounds, workspaceHash, recordedAt: now,
+    ...(declined ? { declined: true } : {}) } } };
+}
+
+export function visualRepairGraph({ findings, workspaceHash, round }, stableHash) {
+  const nodes = findings.slice(0, 8).map((finding, index) => ({
+    id: `repair-${String(index + 1).padStart(3, "0")}`,
+    findingIds: [`visual:${finding.id}`],
+    severity: finding.severity,
+    paths: [],
+    claimIds: boundedStrings(finding.claimIds),
+    criticalCaseIds: [],
+    dependencies: [],
+    screen: finding.screen,
+    difference: finding.difference,
+    sourceWorkspaceHash: workspaceHash
+  }));
+  return {
+    version: 1,
+    kind: "visual-repair-graph",
+    round,
+    roundsAllowed: VISUAL_REPAIR_ROUNDS,
+    sourceWorkspaceHash: workspaceHash,
+    totalFindingIds: findings.map((finding) => `visual:${finding.id}`),
+    truncated: findings.length > nodes.length,
+    nodes,
+    digest: stableHash(nodes)
+  };
+}
+
+// The user's "repair more" answer: two more rounds, recorded with the
+// decision reference that authorized them. The next result on the same
+// workspace is a fresh batch, not a repeated decline.
+export function grantVisualRepair(state, { decisionRef, now }) {
+  const budget = visualRepairBudget(state);
+  state.visualRepair = {
+    ...(state.visualRepair || {}),
+    grants: [...budget.grants, { rounds: VISUAL_REPAIR_ROUNDS, decisionRef, recordedAt: now }],
+    lastBatchWorkspaceHash: null,
+    drift: null
+  };
+  return state;
+}

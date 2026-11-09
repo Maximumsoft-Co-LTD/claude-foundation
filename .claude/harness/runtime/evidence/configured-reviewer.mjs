@@ -80,7 +80,7 @@ export const REVIEW_SCHEMA = {
 };
 
 const ADAPTERS = new Set(["codex-cli", "claude-cli"]);
-const CLAUDE_READ_ONLY_TOOLS = "Read,Glob,Grep";
+export const CLAUDE_READ_ONLY_TOOLS = "Read,Glob,Grep";
 
 function text(value) {
   return String(value || "").trim();

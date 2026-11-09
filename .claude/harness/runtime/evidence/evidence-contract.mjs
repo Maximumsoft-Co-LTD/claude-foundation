@@ -8,6 +8,10 @@ import {
   classifyReviewRisk, reviewSemanticText, securityRiskSignals, thaiRiskPattern
 } from "./review-routing.mjs";
 import { providerTimeoutMs, reviewCoveredProviders, unobservedAliasConfig } from "./provider-catalog.mjs";
+import {
+  SCREENSHOT_SKIPPED_DIRECTORIES, VISUAL_BUILT_IN, VISUAL_CAPABILITY, readVisualBinding, reconcileVisualBinding,
+  visualProviderConfig, withVisualRequirement
+} from "./visual-review.mjs";
 
 const THAI_REQUIRED_SEMANTICS =
   thaiRiskPattern("concurrency", "money", "migration", "irreversible");
@@ -528,6 +532,17 @@ export function providerInputIdentityOperation(context, id, provider,
     collectProviderInputFiles(context, base, base, scopePatterns,
       base === workspace ? null : context.repositoryLabel(id, base), files);
   }
+  // Screenshots usually sit in tool output directories the workspace walk
+  // skips; the visual receipt is bound to them all the same.
+  const screenshots = config.builtIn === VISUAL_BUILT_IN && Array.isArray(config.screenshots)
+    ? normalizedProviderInputPatterns(config.screenshots) : [];
+  if (screenshots.length && context.pathExists(workspace)) {
+    const seen = new Set(files.map((file) => file.path));
+    const extra = [];
+    collectProviderInputFiles({ ...context, excludedDirectories: SCREENSHOT_SKIPPED_DIRECTORIES },
+      workspace, workspace, screenshots, null, extra);
+    files.push(...extra.filter((file) => !seen.has(file.path)));
+  }
   sortProviderInputFiles(files);
   return {
     mode: "declared",
@@ -539,6 +554,13 @@ export function providerInputIdentityOperation(context, id, provider,
 
 export function claimsForCapability(context, id, claims, capability) {
   if (capability === "review") return context.scopedReviewClaims(claims);
+  // A visual provider covers the claims the prototype is bound to, in either
+  // mode; only a strict binding also makes it required.
+  if (capability === VISUAL_CAPABILITY) {
+    const bound = new Set(context.evidence(id).visualClaims || []);
+    return claims.filter((claim) =>
+      bound.has(claim.id) || claim.capabilities.includes(VISUAL_CAPABILITY));
+  }
   if (capability === "acceptance") {
     const ids = context.resolvedAcceptance(
       id, context.loadRuntime(id), context.evidence(id)).claimIds;
@@ -918,7 +940,10 @@ export function createEvidenceContract({
     const defaultInputMode = config.adapter === "playwright" ? "browser-automation" : "";
     if (capability === "browser" && config.adapter !== "external" &&
         !INPUT_MODES.has(config.inputMode || defaultInputMode))
-      die("configured browser provider requires a valid inputMode");
+      die(`configured browser provider '${provider}' requires a valid inputMode ` +
+        `(${[...INPUT_MODES].join(", ")}); set "inputMode" on providers.${provider} in the ` +
+        "draft's execution (change.json or execution.yaml in the draft folder) or the " +
+        "change's execution.yaml");
     if (capability === "mutation" && config.adapter !== "external" &&
         config.resultProtocol !== "foundation-mutation-v2" &&
         !["behavioral-kill", "test-failure"].includes(config.classification))
@@ -1024,10 +1049,12 @@ export function createEvidenceContract({
     const value = readJson(path);
     validateEvidenceClaims(id, value);
     const executionValue = rawExecution(id, dir);
-    const declaredProviders = {
+    const binding = reconcileVisualBinding(readVisualBinding(dir),
+      (value.claims || []).map((claim) => claim.id));
+    const declaredProviders = expandedVisualProviders(id, dir, binding, {
       ...(value.providers || {}),
       ...(executionValue.providers || {})
-    };
+    });
     // A previewOnly provider exists for pre-Build previews: Prove never selects
     // it, so it is kept out of the proof contract and its validation.
     const previewProviders = Object.fromEntries(Object.entries(declaredProviders)
@@ -1050,10 +1077,43 @@ export function createEvidenceContract({
     if (writerConflict)
       die(`discovery receipt '${writerConflict.output}' has multiple writers ('${
         writerConflict.producers.join("', '")}'); each durable provider receipt requires one producer`);
-    return { ...value, providers: configuredProviders, previewProviders, execution: executionValue };
+    return { ...withVisualRequirement(value, binding), providers: configuredProviders,
+      previewProviders, execution: executionValue };
+  }
+
+  function packetRelativePath(id, dir) {
+    const rel = relative(ROOT, dir).replaceAll("\\", "/");
+    return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : `openspec/changes/${id}`;
+  }
+
+  function builtInVisualConfig(id, dir, binding, base = {}) {
+    return visualProviderConfig({
+      changeId: id, packetPath: dir, packetRelative: packetRelativePath(id, dir), binding,
+      scriptPath: join(ROOT, ".claude", "harness", "runtime", "evidence", "visual-review.mjs"),
+      base
+    });
+  }
+
+  // A project wires a visual provider by naming only its screenshots; the
+  // harness owns the command, its inputs, and its report.
+  function expandedVisualProviders(id, dir, binding, providers) {
+    if (!binding) return providers;
+    return Object.fromEntries(Object.entries(providers).map(([provider, config]) =>
+      providerCapability(provider, config) === VISUAL_CAPABILITY && config?.adapter !== "external" &&
+        !config?.command
+        ? [provider, builtInVisualConfig(id, dir, binding, { ...config, adapter: "command" })]
+        : [provider, config]));
   }
   
   function builtInProviderConfig(id, provider) {
+    if (provider === VISUAL_CAPABILITY) {
+      const dir = activeChangePath(id);
+      let claimIds = [];
+      try { claimIds = (readJson(join(dir, "evidence.yaml")).claims || []).map((claim) => claim.id); }
+      catch { /* an unreadable contract fails elsewhere; no extra claims are bound here */ }
+      const binding = reconcileVisualBinding(readVisualBinding(dir), claimIds);
+      return binding ? builtInVisualConfig(id, dir, binding) : null;
+    }
     if (provider !== "dependency-supply-chain") return null;
     let repositories;
     try { repositories = selectedRepositories(id).filter((row) => row.mode === "write"); }

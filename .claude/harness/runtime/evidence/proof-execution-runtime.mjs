@@ -10,7 +10,11 @@ import {
   noProgressRepair
 } from "../core/convergent-gate.mjs";
 import { createServiceSessions } from "./proof-execution/service-sessions.mjs";
-import { derivedReviewRepairGraph } from "./repair-runtime.mjs";
+import { dirname, join } from "node:path";
+import {
+  derivedReviewRepairGraph, planVisualRepair, visualRepairGraph
+} from "./repair-runtime.mjs";
+import { advisoryVisualRow, visualDriftDecision } from "./visual-review.mjs";
 import { blockedOutcomeStop } from "../core/blocked-decision.mjs";
 import { authorityRunCommand, authorityStatusCommand } from "../core/authority-run-command.mjs";
 
@@ -95,9 +99,10 @@ export function proofExecutionAdvanceValue(id, options, snapshot, proofRunId, no
 
 export async function runProofExecutionNodes(context, id, nodes, proofRunId, options) {
   if (nodes.length)
-    await context.runExecutionDag(id, nodes, proofRunId, { quiet: options.quiet });
-  else if (!options.quiet)
+    return await context.runExecutionDag(id, nodes, proofRunId, { quiet: options.quiet }) || [];
+  if (!options.quiet)
     context.log(`EXECUTION ${proofRunId}: all receipts reused`);
+  return [];
 }
 
 export function writeProofExecutionAdvance(
@@ -189,7 +194,8 @@ export function rebindProofCollectionReceipts(
 }
 
 export function assertProofCollectionOutcomes(outcomes) {
-  const failed = outcomes.filter((row) => row.status !== "pass");
+  // An advisory provider reports; its result never fails the collection.
+  const failed = outcomes.filter((row) => row.status !== "pass" && !row.advisory);
   if (failed.length) {
     const summary = failed.map((row) =>
       `${row.provider}:${row.status}${row.detail ? ` (${row.detail})` : ""}`).join(", ");
@@ -274,7 +280,13 @@ export function createProofExecutionRuntime({
   testDiscrimination = null,
   // (id, provider) => finding | null. The performance-regression finding a
   // failed benchmark receipt carries (benchmark-runtime.mjs).
-  performanceRegression = () => null
+  performanceRegression = () => null,
+  // (id, provider) => receipt | null. A visual receipt carries the reviewer's
+  // differences; receipts live beside proof.json.
+  visualReceipt = (id, provider) => {
+    try { return readJson(join(dirname(proofPath(id)), `${provider}.json`), null); }
+    catch { return null; }
+  }
 }) {
   const memoryAdvance = new Map();
   const activeAdvance = new Set();
@@ -493,6 +505,13 @@ export function createProofExecutionRuntime({
             onProgress: (event) => recordProofProgress(id, event)
           })
         : [];
+      recordAdvisoryEvidence(id, snapshot.workspaceHash, [
+        ...outcomes,
+        // An advisory node whose dependency is neither run nor current.
+        ...nodes.filter((node) => node.advisory && collectable.blocked.includes(node.provider))
+          .map((node) => ({ provider: node.provider, status: "skipped", advisory: true,
+            detail: `advisory; dependency ${node.dependsOn.join(", ")} did not run` }))
+      ]);
       try { assertProofCollectionOutcomes(outcomes); } catch (error) {
         // An open merge of another change's landed edit explains a failing
         // check better than the run itself: the sandbox no longer carries
@@ -546,8 +565,9 @@ export function createProofExecutionRuntime({
         return reservation;
       }
       sessions = await startTrackedServices(id, nodes, proofRunId);
-      await runProofExecutionNodes(
+      const outcomes = await runProofExecutionNodes(
         { runExecutionDag, log: console.log }, id, nodes, proofRunId, options);
+      recordAdvisoryEvidence(id, hash, outcomes);
       const serviceArtifacts = stopAll(sessions)
         .map((artifact) => durableArtifact(id, "service", proofRunId, {
           path: artifact.path,
@@ -615,7 +635,7 @@ export function createProofExecutionRuntime({
 
   function writeConvergentRepairStop(id, readiness, advanceStart, {
     gate, stage, findings, failures = [], requests = [], executedProviders = [],
-    repairBatch = null, strategy, workspaceHash = readiness.workspaceHash,
+    repairBatch = null, repairGraph = null, strategy, workspaceHash = readiness.workspaceHash,
     route = "AUTO_REPAIR", nextReason
   }) {
     const repairPlan = gateRepairPlan(findings, { phase: "prove", gate });
@@ -664,7 +684,7 @@ export function createProofExecutionRuntime({
       repairPlan,
       ...(repairBatch ? { repairGraph: derivedReviewRepairGraph(
         deliveredAiAttempts(id).at(-1), stableHash
-      ) } : {}),
+      ) } : repairGraph ? { repairGraph } : {}),
       ...(stall ? { noProgress: {
         reason: stall.reason,
         progressFingerprint: stall.progressFingerprint,
@@ -755,24 +775,80 @@ export function createProofExecutionRuntime({
     }));
   }
 
-  function writeEvidenceRepairStop(id, readiness, advanceStart, failures) {
+  // What advisory providers reported this run, kept on the change so the
+  // Prove outcome, the proof, and the Land report can show it. It is never
+  // passing evidence and never read by a gate.
+  function recordAdvisoryEvidence(id, workspaceHash, outcomes = []) {
+    const advisory = outcomes.filter((row) => row?.advisory);
+    if (!advisory.length) return;
+    const state = loadRuntime(id);
+    const rows = new Map((state.advisoryEvidence?.rows || []).map((row) => [row.provider, row]));
+    for (const outcome of advisory) {
+      const receipt = ["pass", "fail", "inconclusive"].includes(outcome.status)
+        ? visualReceipt(id, outcome.provider) : null;
+      rows.set(outcome.provider, { ...advisoryVisualRow(outcome, receipt), workspaceHash });
+    }
+    state.advisoryEvidence = { workspaceHash, recordedAt: now(),
+      rows: [...rows.values()].sort((left, right) => left.provider.localeCompare(right.provider)) };
+    saveRuntime(state);
+  }
+
+  // Failed visual receipts with blocker/major differences become a visual
+  // repair batch while the visual budget lasts; once spent, they become a
+  // pending drift and leave the batch, so every other gate keeps repairing.
+  function visualRepairSplit(id, failures) {
+    const failed = failures.filter((failure) =>
+      failure.capability === "visual" && failure.validity === "fail");
+    const result = { failures: failures.filter((failure) => !failed.includes(failure)),
+      repaired: [], findings: [], graph: null, drift: false };
+    if (!failed.length) return result;
+    const state = loadRuntime(id);
+    for (const failure of failed) {
+      const receipt = visualReceipt(id, failure.provider);
+      const plan = planVisualRepair(state, { provider: failure.provider, receipt, now: now() });
+      state.visualRepair = plan.visualRepair;
+      if (plan.action === "drift") { result.drift = true; continue; }
+      if (plan.action === "none") { result.failures.push(failure); continue; }
+      result.repaired.push(failure);
+      result.findings.push(...plan.findings.map((finding) => ({
+        id: `visual:${finding.id}`, provider: failure.provider, classification: "product",
+        severity: finding.severity, rootCause: "visual-mismatch",
+        message: `${finding.screen}: ${finding.difference}`,
+        claimIds: finding.claimIds || [], criticalCaseIds: []
+      })));
+      result.graph = visualRepairGraph({ findings: plan.findings,
+        workspaceHash: receipt?.workspaceHash || null, round: plan.round }, stableHash);
+    }
+    saveRuntime(state);
+    return result;
+  }
+
+  // Returns null when the only failure is visual drift: it waits for the
+  // user's one question after the other gates, never stopping them here.
+  function writeEvidenceRepairStop(id, readiness, advanceStart, allFailures) {
+    const visual = visualRepairSplit(id, allFailures);
+    const failures = visual.failures;
+    if (!failures.length && !visual.findings.length) return null;
     // A benchmark whose head ran cleanly but slower than its threshold is a
     // performance repair with its measured medians, not a generic failure.
     const regressions = failures.filter((failure) => failure.validity === "fail")
       .map((failure) => performanceRegression(id, failure.provider)).filter(Boolean);
     const regressed = new Set(regressions.map((finding) => finding.provider));
-    const findings = [...regressions, ...evidenceFailureFindings(
+    const findings = [...regressions, ...visual.findings, ...evidenceFailureFindings(
       failures.filter((failure) => !regressed.has(failure.provider)))];
-    if (regressions.length && regressions.length === failures.length)
+    if (regressions.length && regressions.length === failures.length && !visual.findings.length)
       return writeConvergentRepairStop(id, readiness, advanceStart, {
         gate: "evidence", stage: "performance-regression", findings, failures,
         strategy: "repair-performance-regression",
         nextReason: "Head is slower than base beyond the benchmark threshold. Remove the slowdown in product code, then resume this same gate; base and head are measured again"
       });
     return writeConvergentRepairStop(id, readiness, advanceStart, {
-      gate: "evidence", stage: "evidence-failed", findings, failures,
+      gate: "evidence", stage: "evidence-failed", findings,
+      failures: [...failures, ...visual.repaired], repairGraph: visual.graph,
       strategy: "repair-failed-evidence",
-      nextReason: "Repair every failed evidence finding in the dependency-ordered batch, then resume this same gate. The controller will reuse unaffected current receipts."
+      nextReason: "Repair every failed evidence finding in the dependency-ordered batch, then resume this same gate. The controller will reuse unaffected current receipts." +
+        (visual.findings.length ? " A visual difference that would contradict the approved agreement is not " +
+          "yours to apply: resume without editing for it, and the harness asks the user to decide." : "")
     });
   }
 
@@ -955,9 +1031,44 @@ export function createProofExecutionRuntime({
     return discrimination;
   }
 
+  // Visual providers whose current receipt failed after the visual budget was
+  // spent wait for the user's decision; unchanged content is not reviewed
+  // again while every other gate runs.
+  function heldVisualDrift(id, workspaceHash) {
+    const drift = loadRuntime(id).visualRepair?.drift;
+    if (!drift) return null;
+    const providers = requiredProviders(id).filter((provider) =>
+      providerCapability(provider, providerConfig(id, provider)) === "visual" &&
+      receiptValidity(id, provider, workspaceHash).validity === "fail");
+    return providers.length ? { drift, providers } : null;
+  }
+
+  function writeVisualDriftStop(id, readiness, held, executedProviders) {
+    const decision = visualDriftDecision(id, held.drift);
+    return writeAdvance(id, {
+      version: 1,
+      changeId: id,
+      command: "proof advance",
+      status: "NEEDS_USER_DECISION",
+      route: "VISUAL_DRIFT_DECISION",
+      stage: "visual-drift",
+      completed: false,
+      workspaceHash: readiness.workspaceHash,
+      providers: held.providers,
+      visualDrift: held.drift,
+      decision,
+      requests: [],
+      executedProviders,
+      next: [{ kind: "visual-drift", reason: decision.summary }]
+    });
+  }
+
   async function collectAdvanceExecution(id, flags, snapshot, readiness,
     authorityRequests, advanceStart = {}) {
-    const execution = executionNodes(id, snapshot.workspaceHash);
+    const selected = executionNodes(id, snapshot.workspaceHash);
+    const held = heldVisualDrift(id, snapshot.workspaceHash);
+    const execution = held ? { ...selected, nodes: selected.nodes.filter((node) =>
+      !held.providers.includes(node.provider)) } : selected;
     const collectable = collectableExecutionNodes(
       id, execution.nodes, snapshot.workspaceHash);
     let executedProviders = [];
@@ -1069,7 +1180,21 @@ export function createProofExecutionRuntime({
 
   async function finishProofAdvance(id, advanceStart, readiness,
     authorityRequests, executedProviders) {
-    if (readiness.status === "READY") {
+    const held = heldVisualDrift(id, readiness.workspaceHash);
+    if (held) {
+      // Other failures repair first; the drift question waits for them.
+      const others = terminalEvidence(id, readiness)
+        .filter((row) => !held.providers.includes(row.provider));
+      const repair = others.length
+        ? writeEvidenceRepairStop(id, readiness, advanceStart, others) : null;
+      if (repair) return stopProofAdvance(repair);
+      const done = requiredProviders(id).every((provider) => held.providers.includes(provider) ||
+        ["valid", "reusable-inputs", "reusable-diff"].includes(
+          receiptValidity(id, provider, readiness.workspaceHash).validity));
+      if (done) return stopProofAdvance(
+        writeVisualDriftStop(id, readiness, held, executedProviders));
+    }
+    if (readiness.status === "READY" && !held) {
       const outcome = await proofRunUnlocked(id, {
         readiness,
         quiet: true,
@@ -1378,7 +1503,7 @@ export function createProofExecutionRuntime({
               }]
             })
           : writeEvidenceRepairStop(id, readiness, advanceStart, failedEvidence);
-      return { outcome: stopProofAdvance(outcome) };
+      if (outcome) return { outcome: stopProofAdvance(outcome) };
     }
 
     const reviewProviders = missingByCapability(id, readiness, "review");

@@ -7,11 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Prototype-bound visual check. `prototypeSelection` takes `covers` (requirement
+  keys) and `mode` (`strict` by default, or `advisory`); the compiler copies the
+  prototype into the packet so spec approval binds it. Build tasks for bound
+  requirements open it as read-only context. In `strict` mode Prove requires the
+  new `visual` capability: an agent reviewer compares the project's screenshots
+  with the prototype and lists each difference. Blocker and major differences
+  get two repair rounds; what remains is asked once when every other gate is
+  done (repair more, accept with a reason, or amend), and accepted differences
+  are shown as accepted by the user, never as a pass. A packet prototype copy
+  that is edited or missing keeps its check: `visual` stays required and
+  reports the drift with its recovery instead of silently dropping out. A
+  strict binding with no claims or with unknown claims binds every claim instead.
+
 ### Changed
 
 - Docs no longer say a `prototype` skill writes the approval page. It is written
   by hand, by the agent when asked or by the user; the page contract in
   `WORKFLOW.md` and the harness `package` data are unchanged.
+
+### Fixed
+
+- A visual repair the agent declines (for example, one the agreement forbids)
+  no longer reissues the same batch forever. Resuming without editing records
+  visual drift at once, and the user decides.
+- A draft folder's `execution.yaml` (JSON, like the packet's) is read as the
+  draft's provider wiring, so browser and visual providers can be wired before
+  `change start`. A browser provider without `inputMode` now names the provider,
+  the accepted values, and where to set it; a draft `execution` without
+  `version: 1` names the required form.
+- A sandbox created after another change landed no longer loops on a landed
+  conflict. The carry now records where the sandbox copy started
+  (`landedCarriedFrom`); while the target still holds those landed bytes, the
+  change's own edits next to the landed lines are not merged with the landed
+  edit again, and Land accepts the path. A target that moved since the carry is
+  replayed as before.
 
 ## [3.6.10] - 2026-11-02
 

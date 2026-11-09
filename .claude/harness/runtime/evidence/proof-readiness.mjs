@@ -8,6 +8,7 @@ import {
   declaredPathMatcher, mergeSurfaceAdditions, surfaceAdditionEntries
 } from "../core/workspace-surface.mjs";
 import { blockedOutcomeStop } from "../core/blocked-decision.mjs";
+import { visualWaiverSummary } from "./visual-review.mjs";
 
 const PREFLIGHT_SCAN_MAX_FILES = 20000;
 const PREFLIGHT_SCAN_MAX_BYTES = 1024 * 1024;
@@ -132,6 +133,10 @@ export function proofPreflightFailure(id, value, blockers, recovery) {
 }
 
 export function proofPreflightAdvisory(advisory) {
+  // Accepted visual differences read as a mismatch, never as a pass.
+  const visual = advisory.reason === "user-waived" && visualWaiverSummary(advisory);
+  if (visual)
+    return `  WAIVED ${visual}${advisory.detail ? ` — ${advisory.detail}` : ""}; not a pass; not blocking`;
   if (advisory.reason === "user-waived")
     return `  WAIVED ${advisory.capability}: withdrawn by ${
       advisory.authority?.reference || "user decision"}${

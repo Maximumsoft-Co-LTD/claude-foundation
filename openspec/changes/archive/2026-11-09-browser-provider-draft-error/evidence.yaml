@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "draft-folder-execution-draft-folder",
+      "requirementKey": "draft-folder-execution",
+      "scenario": "draft folder มี execution.yaml",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-folder-execution-draft-folder-2",
+      "requirementKey": "draft-folder-execution",
+      "scenario": "ประกาศ execution สองที่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "draft-folder-execution-draft-folder-3",
+      "requirementKey": "draft-folder-execution",
+      "scenario": "execution.yaml ไม่ใช่ JSON",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "actionable-wiring-errors-evidence-contract",
+      "requirementKey": "actionable-wiring-errors",
+      "scenario": "browser provider ไม่มี inputMode",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "actionable-wiring-errors-change-start-draft",
+      "requirementKey": "actionable-wiring-errors",
+      "scenario": "execution ของ draft ไม่มี version",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "actionable-wiring-errors-evidence-contract-2",
+      "requirementKey": "actionable-wiring-errors",
+      "scenario": "browser provider ที่ถูกต้อง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "node --test .claude/harness/tests/draft-execution-wiring.test.mjs"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

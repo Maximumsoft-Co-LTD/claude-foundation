@@ -25,6 +25,7 @@ when you want to know what the system will never ask of you.
 | **Accept the outcome** | After Prove, only if the change requires human acceptance | Say whether the outcome is the one you wanted, with your name | Required acceptance stays open and the change waits. An undecided standard change blocks validation |
 | **Waive a failed gate** | A check ran and failed, and you choose not to fix it | Give an explicit reason | The failure stays a failure and Land refuses it |
 | **Decide after exhausted review** | The allowed review rounds are used and a verdict is still open | Choose: a human verdict, one more AI attempt, or pause | The change stays paused; exhausted review is never waived |
+| **Decide on UI that differs from the prototype** | The change binds a prototype, two repair rounds are used, differences remain, and every other gate is done | Choose: repair more, accept the differences with a reason, or amend the agreement | Land refuses; accepted differences are shown as accepted by you, never as a pass |
 | **Authorize Land** | Once the change is `proven` | `/land <change>`, or "finish it" said up front | Nothing is applied to your project. `proven` is not delivered |
 | **Authorize a side effect** | Commit, push, open a PR, run an external provider, spend beyond budget | Say so directly (`/deliver`, "push it", "yes") | The action does not run; it is asked, not assumed |
 | **Clear what only you can clear** | A login, the network, or a full disk blocks progress | Fix it in your own environment | The change keeps its state and resumes when you are done |
@@ -44,7 +45,8 @@ secret paths and deletions the change makes before it applies.
 
 Before Land, nothing waits on you except your own decisions: approving the
 spec, product meaning or a trade-off, an acceptance verdict, a waiver,
-exhausted review, Land, a commit, push, or other side effect, budget, or a
+exhausted review, UI that still differs from a bound prototype, Land, a
+commit, push, or other side effect, budget, or a
 cause only you can clear (a login, the network, a full disk). Setup, sync
 conflicts, shared-resource waits, and repeated repair stay with the agent or
 the harness.

@@ -145,3 +145,28 @@ test("review waiver binds the current diff and a stale waiver can be revoked", (
   });
   assert.deepEqual(world.state.waivers, []);
 });
+
+test("a visual waiver without a reason or decision reference is refused and not recorded", () => {
+  const world = fixture({ required: ["test", "visual"] });
+  assert.throws(() => waiveGateOperation(world.context, "change", {
+    capability: "visual", "decision-ref": "decision:1"
+  }), /requires --reason/);
+  assert.throws(() => waiveGateOperation(world.context, "change", {
+    capability: "visual", reason: "looks fine"
+  }), /requires --decision-ref/);
+  assert.equal(world.saves.length, 0);
+  assert.equal(world.state.waivers, undefined);
+});
+
+test("waiving visual while drift is pending keeps the accepted differences", () => {
+  const finding = { id: "V1", screen: "settings", difference: "moved", severity: "major", claimIds: [] };
+  const world = fixture({ required: ["test", "visual"], state: {
+    visualRepair: { rounds: 2, drift: { findings: [finding], rounds: 2, workspaceHash: "h" } }
+  } });
+  world.context.relevantHash = () => "h";
+  waiveGateOperation(world.context, "change", {
+    capability: "visual", reason: "intended", "decision-ref": "decision:visual"
+  });
+  assert.deepEqual(world.state.waivers[0].acceptedFindings, [finding]);
+  assert.equal(world.state.visualRepair.drift, null);
+});

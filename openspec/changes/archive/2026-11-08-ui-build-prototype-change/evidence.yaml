@@ -1,0 +1,244 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "prototype-bound-reference-change-start",
+      "requirementKey": "prototype-bound-reference",
+      "scenario": "ผูก prototype จาก investigate",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-bound-reference-prototypeselection-reference-resolve",
+      "requirementKey": "prototype-bound-reference",
+      "scenario": "อ้างไฟล์ที่ไม่มีหรืออยู่นอกโปรเจกต์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-bound-reference-prototypeselection-covers-key-requirem",
+      "requirementKey": "prototype-bound-reference",
+      "scenario": "covers อ้าง requirement ที่ไม่มี",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-bound-reference-openspec-changes-id-prototype",
+      "requirementKey": "prototype-bound-reference",
+      "scenario": "prototype ใน packet ถูกแก้หลังอนุมัติ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-build-context-advance-edit-t",
+      "requirementKey": "prototype-build-context",
+      "scenario": "task ที่เกี่ยวข้องได้ prototype",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-build-context-advance-edit-u",
+      "requirementKey": "prototype-build-context",
+      "scenario": "task ที่ไม่เกี่ยวข้อง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "prototype-build-context-advance-edit-change-prototypeselection",
+      "requirementKey": "prototype-build-context",
+      "scenario": "change ไม่มี prototype",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-judgement-provider-visual",
+      "requirementKey": "visual-check-judgement",
+      "scenario": "ภาพตรงกัน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-judgement-provider-visual-2",
+      "requirementKey": "visual-check-judgement",
+      "scenario": "ภาพไม่ตรง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-judgement-provider-visual-screenshot-artifact",
+      "requirementKey": "visual-check-judgement",
+      "scenario": "ไม่มี screenshot",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-judgement-inputs-provider-visual-prove",
+      "requirementKey": "visual-check-judgement",
+      "scenario": "ใช้ผลเดิมเมื่อไม่มีอะไรเปลี่ยน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-repair-budget-build-repair-batch-prove",
+      "requirementKey": "visual-repair-budget",
+      "scenario": "ซ่อมสำเร็จในรอบแรก",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-repair-budget-prove",
+      "requirementKey": "visual-repair-budget",
+      "scenario": "ครบ 2 รอบยังไม่ตรง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-repair-budget-receipt-visual-finding-minor",
+      "requirementKey": "visual-repair-budget",
+      "scenario": "finding ระดับ minor",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-drift-decision-user-decision-ref",
+      "requirementKey": "visual-drift-decision",
+      "scenario": "user ยอมรับความต่าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-drift-decision-user",
+      "requirementKey": "visual-drift-decision",
+      "scenario": "user ขอซ่อมต่อ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-drift-decision-user-agreement",
+      "requirementKey": "visual-drift-decision",
+      "scenario": "user แก้ agreement",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-drift-decision-waive-visual-decision-ref",
+      "requirementKey": "visual-drift-decision",
+      "scenario": "ยอมรับโดยไม่ให้เหตุผล",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-drift-decision-ui-workspace",
+      "requirementKey": "visual-drift-decision",
+      "scenario": "ภาพเปลี่ยนหลังยอมรับ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-mode-change-compile",
+      "requirementKey": "visual-check-mode",
+      "scenario": "strict เป็นค่าเริ่มต้น",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-mode-prove",
+      "requirementKey": "visual-check-mode",
+      "scenario": "advisory รายงานอย่างเดียว",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-mode-change-prototypeselection",
+      "requirementKey": "visual-check-mode",
+      "scenario": "ไม่มี prototype",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-mode-prove-land",
+      "requirementKey": "visual-check-mode",
+      "scenario": "ความต่างแบบ advisory แสดงให้ผู้ใช้เห็น",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-check-mode-adapter-provider-visual-advisory-throw-depende",
+      "requirementKey": "visual-check-mode",
+      "scenario": "advisory provider ล้มเหลวกลางทาง",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/prototype-binding.test.mjs .claude/harness/tests/design-render.test.mjs .claude/harness/tests/semantic-draft.test.mjs) && (node --test .claude/harness/tests/advance-runtime.test.mjs) && (node --test .claude/harness/tests/visual-review.test.mjs .claude/harness/tests/provider-input-identity.test.mjs) && (node --test .claude/harness/tests/visual-repair.test.mjs .claude/harness/tests/advance-recovery.test.mjs) && (node --test .claude/harness/tests/visual-drift-decision.test.mjs .claude/harness/tests/waive-gate.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh) && (node --test .claude/harness/tests/visual-advisory.test.mjs) && (node --test .claude/harness/tests/visual-advisory-report.test.mjs .claude/harness/tests/visual-advisory.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/prototype-binding.test.mjs .claude/harness/tests/design-render.test.mjs .claude/harness/tests/semantic-draft.test.mjs",
+        "node --test .claude/harness/tests/advance-runtime.test.mjs",
+        "node --test .claude/harness/tests/visual-review.test.mjs .claude/harness/tests/provider-input-identity.test.mjs",
+        "node --test .claude/harness/tests/visual-repair.test.mjs .claude/harness/tests/advance-recovery.test.mjs",
+        "node --test .claude/harness/tests/visual-drift-decision.test.mjs .claude/harness/tests/waive-gate.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh",
+        "node --test .claude/harness/tests/visual-advisory.test.mjs",
+        "node --test .claude/harness/tests/visual-advisory-report.test.mjs .claude/harness/tests/visual-advisory.test.mjs"
+      ]
+    }
+  }
+}

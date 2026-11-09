@@ -383,6 +383,12 @@ export const ADVANCE_DECISIONS = {
   },
   "amended-agreement-conflict": {
     legacyAction: "RESOLVE_AGREEMENT_CONFLICT", boundary: "amended-agreement-conflict"
+  },
+  // Visual repair spent its rounds and every other gate is done: repair more,
+  // accept the listed differences, or amend the agreement: a product-meaning
+  // decision under the blocking policy.
+  "visual-drift": {
+    legacyAction: "DECIDE_VISUAL_DRIFT", boundary: "product-meaning"
   }
 };
 
@@ -610,7 +616,7 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
     if (previous) {
       if (previous.subject === record.subject && previous.fingerprint === flags["decision-fingerprint"] &&
           previous.choice === choice && previous.reason === reason)
-        return { choice, through: previous.through, kind: previous.kind || null, reference };
+        return { choice, through: previous.through, kind: previous.kind || null, reference, reason };
       throw new Error("This decision reference already records a different or stale recovery answer.");
     }
     if (!current || flags["decision-fingerprint"] !== current.decision.fingerprint)
@@ -631,7 +637,7 @@ export function createAdvanceRecovery({ loadRuntime, saveRuntime, subject, now =
       record.pending = null;
     } else record.pending.paused = true;
     save(state, record);
-    return { choice, through: current.through, kind, reference };
+    return { choice, through: current.through, kind, reference, reason };
   }
 
   return { observe, pending, resolve };

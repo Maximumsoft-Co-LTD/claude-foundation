@@ -411,7 +411,10 @@ baseline, and scope rules are documented in `CONSUMER-QUALITY.md`.
 
 Prototype files under `.foundation/prototypes/` are non-authoritative. The
 runtime rejects them, including local-path references and symlinked origins,
-before copying any artifact or writing a receipt.
+before copying any artifact or writing a receipt. A selected prototype bound
+to the change is copied into the packet and serves only as the reference the
+[visual](#visual) provider compares screenshots against; it never proves a
+claim.
 
 Preview runs (`claude-foundation preview`) are equally non-authoritative. Their
 receipts carry `kind: "preview"`, live under `.foundation/previews/<change>/`,
@@ -809,6 +812,68 @@ evidence that genuinely requires a focused native window.
 Projects should also install an automatic Playwright fixture that fails on
 unexpected `console.error` and uncaught page errors. Change Loop cannot infer
 that policy from a successful browser exit.
+
+## Visual
+
+The `visual` capability compares the real UI with the prototype a change
+binds ([WORKFLOW.md](../../WORKFLOW.md#prototype-bound-visual-check)). It is
+required only for the claims of requirements a `strict` binding covers; an
+`advisory` binding reports without requiring it, and a change without a
+binding never owes it.
+
+The provider is harness-owned. Wire it in `execution.yaml` without a command:
+
+```json
+"visual": { "capability": "visual", "screenshots": ["test-results/**"],
+            "dependsOn": ["browser"] }
+```
+
+`screenshots` uses the provider-input pattern language (a file, a directory,
+`dir/*`, or `dir/**`), and the PNG and JPEG files it matches are what the
+reviewer sees. The harness does not run a browser itself, so add `dependsOn`
+on the provider that writes them. The harness supplies the command, binds the
+prototype copy and the screenshot patterns as `inputs`, and reads the
+structured report at `.foundation/visual/<change>.json`; a receipt without that
+report is `inconclusive`. Without a wired provider, the built-in one has no
+screenshots and asks the agent to set `screenshots`.
+
+An agent reviewer reads the packet's prototype copy and those screenshots and
+returns `pass`, `fail`, or `inconclusive` with one finding per difference: the
+screen, what differs, a severity of `blocker`, `major`, or `minor`, and the
+claims it affects. A `pass` with a blocker or major finding, or a `fail` with
+no findings, is an `error`. A fail whose findings are all minor passes with the
+differences listed in the receipt, never as an exact match. No matching
+screenshot is `inconclusive`, never a pass, and the reviewer is not asked.
+
+A packet copy that is missing or no longer matches the bound digest keeps
+`visual` required (it fails closed). The provider returns `error` naming the copy,
+the bound digest, and the recovery: restore it from the binding's `source`, or
+run `change revise` before Build to bind it again. The reviewer is not asked.
+An advisory binding reports the same error without requiring `visual`. A
+`prototype/binding.json` that cannot be read or has no supported version
+binds every claim of the change to `visual`, because which claims it bound is
+unknown; one without a valid `sha256` keeps its bound claims. A strict binding
+whose `claims` list is empty or names any claim the contract lacks also binds
+every claim and names any unknown claims. Each of these reports `error` with
+`change revise` as the recovery.
+
+The receipt's declared inputs are the prototype copy and the screenshots, so
+it is reused while neither changes and the reviewer is not asked again.
+Blocker and major findings feed a repair batch for at most two rounds; after
+that the remaining findings are visual drift for the user to decide. A result
+on the same workspace as the last batch means the agent declined it, so it
+becomes drift immediately; a user's "repair more" starts a fresh batch. A
+`visual` waiver carries the accepted findings with its reason and decision
+reference, and proof shows `visual` as a mismatch the user accepted, never as
+passing evidence.
+
+Under an `advisory` binding the visual provider runs once per content as a
+non-required node, and its result (status, difference count, and each
+difference) appears in the proof's `advisoryEvidence`, the Prove `DONE`
+outcome, and the Land report, labelled advisory and not passing evidence; an
+advisory provider whose adapter throws or whose dependency failed or never ran
+is recorded as `error` or `skipped` with its reason and never stops the
+required providers or the proof run.
 
 ## Resources and dependencies
 

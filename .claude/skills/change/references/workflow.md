@@ -70,8 +70,8 @@ heading, empty section, `TODO`, or `TBD`. v4 JSON stays valid. Its discovery con
   and selected among meaningful alternatives; `status: proposed` awaits user
   ratification, and `durable: true` with `requirements` adds spec Rationale;
 - `diagrams` for Mermaid or referenced SVG/PNG contracts;
-- `prototypeSelection` for an existing selection note (never prototype code or
-  output as proof);
+- `prototypeSelection` to bind a UI prototype (`WORKFLOW.md` §
+  Prototype-bound visual check);
 - `integrations` with documentation source/version, linked requirements, and
   security/resilience/compatibility concerns;
 - `repositories` only for multi-repository work, plus each task's

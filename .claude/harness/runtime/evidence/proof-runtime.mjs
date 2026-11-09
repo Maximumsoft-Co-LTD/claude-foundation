@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { validityRecovery } from "./receipt-validity.mjs";
 import { proofRolloutGates } from "./provider-catalog.mjs";
+import { advisoryVisualLine } from "./visual-review.mjs";
 import { resolveTaskExecutionAuthority } from "../core/task-execution-authority.mjs";
 import { transitionLifecycleState } from "../core/lifecycle-reducer.mjs";
 
@@ -209,6 +210,8 @@ export function createProofRuntime({
       aggregateGraphProof: graphProof.aggregate,
       providers: checks.map((row) => row.provider),
       advisories: advisoryCapabilities?.(id) || [],
+      // Reported, never passing evidence: see advisoryVisualLine.
+      advisoryEvidence: state.advisoryEvidence?.rows || [],
       rolloutGates: rolloutGates(id),
       receipts: receiptEntries,
       excludedReceipts,
@@ -234,7 +237,8 @@ export function createProofRuntime({
         `${excludedReceipts.length ? `\n  excluded receipts: ${excludedReceipts.map((row) =>
           `${row.provider}:${row.validity}`).join(", ")}` : ""}${proofRolloutGates(proof, { deferred: true }).length
           ? `\n  rollout gates (deferred): ${proofRolloutGates(proof, { deferred: true }).map((row) =>
-            row.capability).join(", ")}` : ""}\n  next: /land ${id}`);
+            row.capability).join(", ")}` : ""}${(proof.advisoryEvidence || []).map((row) =>
+          `\n  ${advisoryVisualLine(row)}`).join("")}\n  next: /land ${id}`);
   }
 
   function finalize(id, requestedProofRunId, suppliedOptions) {

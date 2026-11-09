@@ -2,6 +2,13 @@ import { existsSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { validateSignedCiEnvelope } from "../evidence/signed-ci.mjs";
 import { validityRecovery } from "../evidence/receipt-validity.mjs";
+import { advisoryVisualLine, visualWaiverSummary } from "../evidence/visual-review.mjs";
+
+// Advisory results the Land report names, labelled as not passing evidence.
+export function landAdvisoryLines(state) {
+  const rows = state?.advisoryEvidence?.rows;
+  return Array.isArray(rows) ? rows.map(advisoryVisualLine) : [];
+}
 import { MANUAL_APPLY_STATUS, targetHeadMovedDecision } from "./apply-recovery.mjs";
 import {
   compileLandPreparation, landPreparationMatches
@@ -766,7 +773,7 @@ export function createLandRuntime({
   }
 
   function reportLandReady(id, state, hash, assurance, externalOperations, surface) {
-    const waived = (state.waivers || []).map((row) =>
+    const waived = (state.waivers || []).map((row) => visualWaiverSummary(row) ||
       `${row.capability} (${row.authority?.reference || "user decision"})`);
     const rootBranch = targetBranch(root);
     const branchLine = rootBranch && ["main", "master"].includes(rootBranch)
@@ -786,7 +793,8 @@ export function createLandRuntime({
         surface.deleted.length ? `\n  paths deleted: ${surfacePathList(surface.deleted)}` : ""}` : "";
     console.log(`LAND READY ${id}\n  workspace: ${hash}\n  assurance: ${assurance.status}${surfaceLines}${
       postLand.length ? `\n  declared post-Land obligation: ${postLand.join(", ")}` : ""}${
-      waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${branchLine}\n  next: /land ${id}${telemetry
+      waived.length ? `\n  waived: ${waived.join(", ")}` : ""}${landAdvisoryLines(state)
+      .map((line) => `\n  ${line}`).join("")}${branchLine}\n  next: /land ${id}${telemetry
         ? `\n  telemetry: ${telemetry.classification}${telemetryRecovery
           ? `; recovery: ${telemetryRecovery}` : ""}` : ""}`);
     return telemetry;

@@ -125,6 +125,10 @@ browser automation ไม่ใช่ input ระดับระบบปฏิ
 
 Change Loop อนุมานนโยบายเรื่อง console error จากการ exit สำเร็จของเบราว์เซอร์ไม่ได้ ให้ติดตั้ง Playwright fixture ที่ fail เมื่อเจอ `console.error` ที่ไม่คาดคิดและ uncaught page error
 
+#### Screenshot สำหรับการตรวจภาพ
+
+เมื่อ change ผูก prototype ของ UI แบบ `strict` claim ที่ผูกไว้จะต้องมี provider `visual` ที่ harness เป็นเจ้าของด้วย ให้ตั้งค่าโดยไม่ต้องมี command และชี้ `screenshots` ไปที่โฟลเดอร์หรือไฟล์ที่ test เบราว์เซอร์ของคุณเขียน screenshot แบบ PNG หรือ JPEG ไว้อยู่แล้ว เช่น `"visual": { "capability": "visual", "screenshots": ["test-results/**"], "dependsOn": ["browser"] }` โดย `dependsOn` ทำให้ provider เบราว์เซอร์ของคุณรันก่อน agent reviewer จะเทียบไฟล์เหล่านั้นกับ prototype ที่ถูกคัดลอกเข้า packet ของ change แล้วระบุจุดที่ต่างทีละจุด ถ้าไม่มี screenshot ที่ตรงเลย ผลคือ `inconclusive` ไม่ใช่ผ่าน ดูสัญญาฉบับเต็มที่ [Visual](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/EVIDENCE.md#visual)
+
 ### contract-digest
 
 ไม่รันคำสั่งใด ๆ มัน hash artifact สัญญาตัวเดียวกันในทุกรีโปที่ร่วมด้วย แล้วผ่านก็ต่อเมื่อ byte ตรงกัน ซึ่งเป็นสิ่งที่ทำให้ `cross-repo-contract` เป็น "การตรวจ" ไม่ใช่ "การกล่าวอ้าง"

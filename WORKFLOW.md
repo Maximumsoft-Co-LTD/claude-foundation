@@ -93,7 +93,10 @@ Before Land, only a user decision stops the flow, as `ASK_USER`:
 - product meaning, a material trade-off, or a scope widening the agreement
   does not settle (including an amended-agreement conflict, and two changes
   whose intents contradict);
-- an acceptance verdict, a waiver, or exhausted review (`review-exhausted`);
+- an acceptance verdict, a waiver, exhausted review (`review-exhausted`), or
+  visual drift left after its repair budget (`visual-drift`, asked once when
+  every other gate is done; see the
+  [prototype-bound visual check](#prototype-bound-visual-check));
 - Land authority, a commit or push, or another external side effect (including
   rerunning a provider execution whose side effects are indeterminate);
 - budget or spend (`budget-no-progress`);
@@ -181,7 +184,9 @@ with findings, trade-offs, and sources, and, once concluded, a `selection`
 naming the chosen option, its reason, and why each other option was rejected.
 Under `/investigate <decision> --compare`, the agent may write disposable
 alternatives only at the `prototypePaths` such a record declares under
-`.foundation/prototypes/<id>/`. Prototype artifacts are never evidence.
+`.foundation/prototypes/<id>/`. Prototype artifacts are never evidence; the
+selected one can bind the change's UI through `prototypeSelection`
+([visual check](#prototype-bound-visual-check)).
 
 A `ready-for-change` result emits a digest-bound handoff. The agent copies it
 into semantic draft v4 as `investigation`; Change verifies the state and source
@@ -912,6 +917,66 @@ written to `.foundation/backups/<id>/<timestamp>/<sandbox>/` (`commits.bundle`,
 sandbox whose content cannot be inspected, or whose backup cannot be written, is
 kept.
 
+<a id="prototype-bound-visual-check"></a>
+
+#### Prototype-bound visual check
+
+A selected prototype can bind the UI a change delivers. The draft's
+`prototypeSelection` names the file (`reference`, a regular file inside the
+project, for example an investigation prototype under
+`.foundation/prototypes/<id>/` or an HTML page or artifact the agent saved into
+the project), the requirement keys it shows (`covers`), and a `mode`: `strict`
+(the default) or `advisory`. A `covers` key that names no requirement, or
+another mode, is an intake `EDIT`. The compiler copies the file into the packet
+as `openspec/changes/<id>/prototype/<name>` and writes `prototype/binding.json`
+with its digest, mode, requirements, and the claims and tasks those requirements
+reach. Save an artifact or pasted HTML into the project before naming it; use
+`advisory` when the user says the prototype is only a guide. Wire the
+screenshot provider (capability `browser`, with an `inputMode`) and the
+`visual` provider in the draft's `execution` `{"version": 1, "providers": {...}}`,
+in `change.json` or in `execution.yaml` beside it, never both
+([evidence](.claude/harness/EVIDENCE.md#visual)). Because spec approval binds every packet byte, editing the copy after
+approval needs approval again; a revision without a prototype removes it. A
+copy that no longer matches its bound digest, or is missing, never drops the
+check: `visual` stays required and its provider reports the drift with its
+recovery (restore the copy, or `change revise` before Build).
+
+- **Build.** An `EDIT` for a task that covers a bound requirement, and a
+  `REPAIR` touching a bound claim, lists the copy in `contextFiles`. It is a
+  read-only reference: it never enters the task's write scope.
+- **Prove.** In `strict` mode every bound claim requires the `visual`
+  capability. The harness-owned `visual` provider gives an agent reviewer the
+  prototype and the screenshots the project's browser or Playwright provider
+  produced, and records a receipt listing each difference by screen, what
+  differs, and severity. No screenshot is `inconclusive`, never a pass. The
+  receipt binds the prototype and screenshots as inputs, so an unchanged pair
+  is reused without asking the reviewer again ([evidence](.claude/harness/EVIDENCE.md#visual)).
+  In `advisory` mode the provider reports differences but `visual` is not
+  required and never decides `proven`; its differences are listed in the Prove
+  outcome and the Land report as advisory, not passing evidence, and an
+  advisory provider that throws or lacks a dependency is recorded as `error` or
+  `skipped` with its reason without stopping proof. Without a prototype nothing
+  is added.
+- **Repair budget.** Blocker and major differences become a repair batch, at
+  most two rounds. This is the one exception to repair without a fixed cycle
+  ceiling. Minor differences are reported and never repaired automatically.
+  After two rounds the remaining differences are recorded as visual drift and
+  every other gate keeps running and repairing; drift does not stop them. A
+  difference the agreement forbids is not the agent's to apply: resuming a
+  visual batch without editing records the drift at once instead of reissuing
+  the same batch.
+- **Decision.** When every other gate is done and drift remains, `advance`
+  asks once, as a product-meaning decision of kind `visual-drift`: repair more
+  (two further rounds, recorded with the user's decision reference), accept the
+  differences, amend the agreement, or pause. Accepting records a `visual` waiver with its reason, decision
+  reference, and the accepted differences; proof and the Land report show the
+  mismatch as accepted by the user, never as a pass. The waiver is bound to the
+  workspace, so a later UI change makes it stale and the check runs again.
+  Amending invalidates the affected `visual` receipts.
+
+The prototype itself is still never evidence: it is the reference the real UI
+is compared against.
+
 ### `/build <change>`
 
 The normal entrypoint is:
@@ -1279,7 +1344,8 @@ explicitly with `[claims:<claim-id>]`.
 Every phase gate follows the same convergence rule: collect independent
 findings, repair one dependency-ordered in-contract batch, and selectively
 rerun invalidated checks. Product repair has no fixed cycle ceiling while its
-semantic progress identity changes. A coding gate that returns the same
+semantic progress identity changes; the only exception is the two-round
+[visual repair budget](#prototype-bound-visual-check). A coding gate that returns the same
 findings for unchanged inputs returns an `AUTO_REPAIR` whose next step is a
 `change-strategy` repair carrying those findings, not a user question. Two
 unchanged automated transitions hand the stuck step to the agent as a

@@ -1133,3 +1133,27 @@ test("an archive recovery that finds the change already archived signals it in t
   assert.equal(printed.signals[0].code, "already-archived");
   assert.match(printed.signals[0].message, /^ALREADY ARCHIVED demo/);
 });
+
+test("visual drift is an advance-owned decision whose answer carries the user's reason", () => {
+  let stored = { id: "demo" };
+  const recovery = createAdvanceRecovery({
+    loadRuntime: () => structuredClone(stored),
+    saveRuntime: (state) => { stored = structuredClone(state); },
+    subject: () => "subject-1",
+    now: () => "t"
+  });
+  const asked = recovery.observe("demo", {
+    action: "ASK_USER", reason: "visual drift",
+    decision: { kind: "visual-drift", summary: "1 difference remains", recommended: "repair-more",
+      options: [{ id: "repair-more", outcome: "more" }, { id: "accept", outcome: "accept" },
+        { id: "amend-agreement", outcome: "amend" }, { id: "pause", outcome: "pause" }] }
+  });
+  assert.equal(asked.legacyAction, "DECIDE_VISUAL_DRIFT");
+  assert.match(asked.decision.options.find((row) => row.id === "accept").command,
+    /^claude-foundation advance demo --decision accept --decision-fingerprint /);
+  const resolved = recovery.resolve("demo", { decision: "accept",
+    "decision-fingerprint": asked.decision.fingerprint, "decision-ref": "user:accept",
+    reason: "intended" });
+  assert.deepEqual(resolved, { choice: "accept", through: null, kind: "visual-drift",
+    reference: "user:accept", reason: "intended" });
+});

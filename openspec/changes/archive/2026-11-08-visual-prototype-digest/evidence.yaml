@@ -1,0 +1,76 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "visual-binding-fail-closed-prove-contract-provider-visual",
+      "requirementKey": "visual-binding-fail-closed",
+      "scenario": "สำเนา strict ถูกแก้",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-fail-closed-prove",
+      "requirementKey": "visual-binding-fail-closed",
+      "scenario": "สำเนา strict หายไป",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-fail-closed-prove-2",
+      "requirementKey": "visual-binding-fail-closed",
+      "scenario": "สำเนา advisory ถูกแก้",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-fail-closed-prove-3",
+      "requirementKey": "visual-binding-fail-closed",
+      "scenario": "สำเนาตรง digest",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-fail-closed-prove-contract-provider-visual-2",
+      "requirementKey": "visual-binding-fail-closed",
+      "scenario": "binding.json เสียหรืออ่านไม่ได้",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "visual-binding-fail-closed-prove-provider-visual",
+      "requirementKey": "visual-binding-fail-closed",
+      "scenario": "binding ไม่มี digest",
+      "impact": "low",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/visual-binding-drift.test.mjs .claude/harness/tests/visual-review.test.mjs .claude/harness/tests/visual-advisory.test.mjs) && (node --test .claude/harness/tests/visual-binding-record.test.mjs .claude/harness/tests/visual-binding-drift.test.mjs)"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared",
+      "segments": [
+        "node --test .claude/harness/tests/visual-binding-drift.test.mjs .claude/harness/tests/visual-review.test.mjs .claude/harness/tests/visual-advisory.test.mjs",
+        "node --test .claude/harness/tests/visual-binding-record.test.mjs .claude/harness/tests/visual-binding-drift.test.mjs"
+      ]
+    }
+  }
+}

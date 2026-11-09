@@ -4,6 +4,7 @@ import {
   SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION,
   validateSemanticAcceptanceEnvelope
 } from "./semantic-acceptance.mjs";
+import { VISUAL_CAPABILITY, visualReceiptResult } from "./visual-review.mjs";
 
 // Adapters the harness itself executes. A receipt may only claim one of these
 // when this process ran the command; naming one on the command line is a claim
@@ -1082,8 +1083,24 @@ export function createReceiptRuntime({
       receipt.benchmark = flags.benchmark;
   }
 
+  // The visual provider's verdict and differences come from its structured
+  // report, never from the exit code alone: no report, or a report that
+  // contradicts itself, is never recorded as a pass.
+  function applyVisualReceipt(status, flags, receipt, context) {
+    const report = context.harnessExecuted ? (Array.isArray(flags.artifacts) ? flags.artifacts : [])
+      .filter((artifact) => artifact?.type === "structured-report" && artifact.path)
+      .map((artifact) => {
+        try { return readJson(resolve(ROOT, artifact.path), null); } catch { return null; }
+      }).find(Boolean) || null : null;
+    const result = visualReceiptResult(report, status);
+    receipt.status = result.status;
+    receipt.observed = [result.observed, receipt.observed].filter(Boolean).join("; ");
+    receipt.visual = result.visual;
+  }
+
   function applyCapabilityReceipt(id, provider, status, flags, options, receipt, context) {
     applyBenchmarkReceipt(flags, receipt, context);
+    if (context.capability === VISUAL_CAPABILITY) applyVisualReceipt(status, flags, receipt, context);
     if (context.capability === "review")
       applyReviewReceipt(id, provider, status, flags, options, receipt, receipt.references);
     if (context.capability === "acceptance")

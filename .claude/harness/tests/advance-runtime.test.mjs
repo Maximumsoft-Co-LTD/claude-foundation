@@ -1223,6 +1223,62 @@ test("envelope context keeps only files inside the workspace or repository bases
     file === outside || file === "/etc/passwd"));
 });
 
+// A bound prototype is read-only context for the work it constrains.
+async function prototypePacket(t, { withBinding = true } = {}) {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "advance-context-prototype-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const packet = join(root, "packet");
+  const workspace = join(root, "box");
+  mkdirSync(join(workspace, "src"), { recursive: true });
+  mkdirSync(join(packet, "prototype"), { recursive: true });
+  writeFileSync(join(packet, "proposal.md"), "# Proposal\n");
+  writeFileSync(join(workspace, "src", "board.js"), "");
+  if (withBinding) {
+    writeFileSync(join(packet, "prototype", "board.html"), "<main></main>\n");
+    writeFileSync(join(packet, "prototype", "binding.json"), JSON.stringify({
+      version: 1, file: "prototype/board.html", sha256: "x", mode: "strict",
+      requirements: ["board"], claims: ["board-renders"], tasks: ["T001"]
+    }));
+  }
+  return { packet, workspace, file: join(packet, "prototype", "board.html") };
+}
+
+test("a task covering a bound requirement opens the prototype without gaining write scope", async (t) => {
+  const { packet, workspace, file } = await prototypePacket(t);
+  const task = { id: "T001", allowedPaths: ["src/board.js"] };
+  const value = envelopeContextFiles({ packetDir: packet, state: { workspace: { path: workspace } }, tasks: [task] });
+  assert.ok(value.contextFiles.includes(file));
+  assert.deepEqual(task.allowedPaths, ["src/board.js"]);
+  assert.ok(!value.newFiles.includes(file));
+});
+
+test("a task outside the prototype's requirements does not open it", async (t) => {
+  const { packet, workspace, file } = await prototypePacket(t);
+  const value = envelopeContextFiles({ packetDir: packet, state: { workspace: { path: workspace } },
+    tasks: [{ id: "T002", allowedPaths: ["src/board.js"] }] });
+  assert.ok(!value.contextFiles.includes(file));
+});
+
+test("repair on a bound claim opens the prototype", async (t) => {
+  const { packet, workspace, file } = await prototypePacket(t);
+  const state = { workspace: { path: workspace } };
+  assert.ok(envelopeContextFiles({ packetDir: packet, state, repairClaims: ["board-renders"] })
+    .contextFiles.includes(file));
+  assert.ok(!envelopeContextFiles({ packetDir: packet, state, repairClaims: ["export-csv"] })
+    .contextFiles.includes(file));
+});
+
+test("a change without a prototype keeps the previous context exactly", async (t) => {
+  const { join } = await import("node:path");
+  const { packet, workspace } = await prototypePacket(t, { withBinding: false });
+  const value = envelopeContextFiles({ packetDir: packet, state: { workspace: { path: workspace } },
+    tasks: [{ id: "T001", allowedPaths: ["src/board.js"] }] });
+  assert.deepEqual(value.contextFiles, [join(packet, "proposal.md"), join(workspace, "src", "board.js")]);
+});
+
 // A Build EDIT names skills from typed change data and the project's
 // installed skills; prose and missing skills select nothing.
 async function skillEdit(t, {
