@@ -13,7 +13,7 @@ Investigate? → Change → Build → Prove → Land
 Your coding agent implements it; the harness manages state, isolation,
 evidence, and recovery. Keep using your existing test framework, Git, and CI.
 
-**Version 3.6.10** · Installed package and CLI: `claude-foundation`.
+**Version 3.6.11** · Installed package and CLI: `claude-foundation`.
 
 ## Where to start
 
