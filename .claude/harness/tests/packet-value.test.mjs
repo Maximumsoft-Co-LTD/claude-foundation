@@ -506,6 +506,39 @@ try {
   providers = reviewProviders;
   surface = reviewSurface;
 
+  // Advisory REVIEW.md at the control project root (review packet schema 7).
+  const rulesPath = join(root, "REVIEW.md");
+  const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+  assert.equal(Object.hasOwn(runtime.reviewPacketValue("packet-test"), "reviewRules"), false,
+    "absent REVIEW.md adds no reviewRules field");
+  const rulesText = "# Review rules\n\n- Check negative paths.\n";
+  writeFileSync(rulesPath, rulesText);
+  const withRules = runtime.reviewPacketValue("packet-test");
+  assert.deepEqual(withRules.reviewRules, {
+    path: "REVIEW.md", hash: sha256(rulesText), advisory: true, content: rulesText
+  });
+  writeFileSync(rulesPath, `${rulesText}- Cap nits at three.\n`);
+  assert.notEqual(runtime.reviewPacketValue("packet-test").packetDigest, withRules.packetDigest,
+    "editing REVIEW.md changes the bound packet");
+  writeFileSync(rulesPath, " \n\t\n");
+  assert.equal(Object.hasOwn(runtime.reviewPacketValue("packet-test"), "reviewRules"), false,
+    "whitespace-only REVIEW.md counts as absent");
+  const oversized = "x".repeat(32 * 1024 + 1);
+  writeFileSync(rulesPath, oversized);
+  assert.deepEqual(runtime.reviewPacketValue("packet-test").reviewRules, {
+    path: "REVIEW.md", hash: sha256(oversized), advisory: true, omitted: "too-large"
+  });
+  const atLimit = "y".repeat(32 * 1024);
+  writeFileSync(rulesPath, atLimit);
+  assert.equal(runtime.reviewPacketValue("packet-test").reviewRules.content, atLimit,
+    "exactly 32 KiB is still sent");
+  rmSync(rulesPath);
+  mkdirSync(rulesPath);
+  assert.deepEqual(runtime.reviewPacketValue("packet-test").reviewRules, {
+    path: "REVIEW.md", advisory: true, omitted: "unreadable"
+  }, "an unreadable REVIEW.md never blocks the review packet");
+  rmSync(rulesPath, { recursive: true });
+
   const priorConsoleError = console.error;
   let warning = "";
   console.error = (message) => { warning += String(message); };

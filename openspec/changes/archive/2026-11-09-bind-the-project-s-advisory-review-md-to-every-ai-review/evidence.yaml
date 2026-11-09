@@ -1,0 +1,186 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "review-rules-in-packet-harness-reviewer-packet",
+      "requirementKey": "review-rules-in-packet",
+      "scenario": "มี REVIEW.md",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-in-packet-harness-reviewer-packet-2",
+      "requirementKey": "review-rules-in-packet",
+      "scenario": "ไม่มี REVIEW.md",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-in-packet-harness-reviewer-packet-3",
+      "requirementKey": "review-rules-in-packet",
+      "scenario": "REVIEW.md ว่าง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-in-packet-harness-reviewer-packet-4",
+      "requirementKey": "review-rules-in-packet",
+      "scenario": "REVIEW.md ใหญ่เกิน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-in-packet-harness-reviewer-packet-5",
+      "requirementKey": "review-rules-in-packet",
+      "scenario": "อ่าน REVIEW.md ไม่ได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-in-packet-harness-packet-ai-reviewer",
+      "requirementKey": "review-rules-in-packet",
+      "scenario": "รอบรีวิวแบบส่งแค่ diff",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-advisory-harness-prompt-configured-reviewer",
+      "requirementKey": "review-rules-advisory",
+      "scenario": "prompt ระบุว่าเป็นคำแนะนำ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-advisory-harness-review-receipt",
+      "requirementKey": "review-rules-advisory",
+      "scenario": "ผลตัดสินเหมือนเดิม",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-bind-receipt-harness-review-receipt",
+      "requirementKey": "review-rules-bind-receipt",
+      "scenario": "บันทึก hash",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-bind-receipt-harness-receipt",
+      "requirementKey": "review-rules-bind-receipt",
+      "scenario": "แก้ REVIEW.md หลังรีวิว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-bind-receipt-harness-receipt-2",
+      "requirementKey": "review-rules-bind-receipt",
+      "scenario": "ลบ REVIEW.md หลังรีวิว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-bind-receipt-harness-receipt-3",
+      "requirementKey": "review-rules-bind-receipt",
+      "scenario": "สร้าง REVIEW.md หลังรีวิว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-bind-receipt-harness-receipt-4",
+      "requirementKey": "review-rules-bind-receipt",
+      "scenario": "REVIEW.md ไม่เปลี่ยน",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "review-rules-bind-receipt-harness-receipt-5",
+      "requirementKey": "review-rules-bind-receipt",
+      "scenario": "receipt เก่าก่อนอัปเกรด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "starter-review-rules-seeded-install-sh",
+      "requirementKey": "starter-review-rules-seeded",
+      "scenario": "ติดตั้งใหม่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "starter-review-rules-seeded-install-sh-2",
+      "requirementKey": "starter-review-rules-seeded",
+      "scenario": "อัปเกรดโปรเจกต์ที่ไม่มีไฟล์",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "starter-review-rules-seeded-install-sh-3",
+      "requirementKey": "starter-review-rules-seeded",
+      "scenario": "มี REVIEW.md อยู่แล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "starter-review-rules-seeded-installer-rollback",
+      "requirementKey": "starter-review-rules-seeded",
+      "scenario": "ติดตั้งล้มกลางทาง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/packet-value.test.mjs .claude/harness/tests/configured-reviewer.test.mjs .claude/harness/tests/diagnostics-runtime.test.mjs && bash .claude/tests/harness/run-feedback-review-tests.sh) && (node --test .claude/harness/tests/receipt-validity.test.mjs) && (bash .claude/tests/harness/run-installer-tests.sh) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/packet-value.test.mjs .claude/harness/tests/configured-reviewer.test.mjs .claude/harness/tests/diagnostics-runtime.test.mjs && bash .claude/tests/harness/run-feedback-review-tests.sh",
+        "node --test .claude/harness/tests/receipt-validity.test.mjs",
+        "bash .claude/tests/harness/run-installer-tests.sh",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}

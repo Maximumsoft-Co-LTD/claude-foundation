@@ -114,6 +114,7 @@ import {
 } from "./runtime/evidence/proof-readiness.mjs";
 import { createReceiptRuntime } from "./runtime/evidence/receipt-runtime.mjs";
 import { createReceiptValidity } from "./runtime/evidence/receipt-validity.mjs";
+import { reviewRulesHash } from "./runtime/evidence/configured-reviewer.mjs";
 import { createAdapterRuntime } from "./runtime/evidence/adapter-runtime.mjs";
 import { createProofExecutionRuntime } from "./runtime/evidence/proof-execution-runtime.mjs";
 import {
@@ -177,7 +178,7 @@ const COMMAND_TELEMETRY_SCHEMA_VERSION = "5";
 const REVIEW_PROTOCOL_VERSION = "4";
 const ACCEPTANCE_PROTOCOL_VERSION = "2";
 const SEMANTIC_ACCEPTANCE_PROTOCOL_VERSION = "1";
-const REVIEW_PACKET_SCHEMA_VERSION = "6";
+const REVIEW_PACKET_SCHEMA_VERSION = "7";
 const ATTESTATION_PROTOCOL_VERSION = "1";
 const AUTHORITY_PROTOCOL_VERSION = "2";
 const CI_EVIDENCE_PROTOCOL_VERSION = "1";
@@ -795,7 +796,9 @@ const { receiptValidity } = createReceiptValidity({
   changeDiffIdentity: (id, state) => sandboxRuntime.changeDiffIdentity(id, state),
   // The sync's record of its own clean diff rewrites (landed replay, carried
   // target edit, moved base): a review verdict rebinds across them.
-  identityBridges: (id) => loadRuntime(id)?.workspace?.identityBridges || []
+  identityBridges: (id) => loadRuntime(id)?.workspace?.identityBridges || [],
+  // The control project's advisory REVIEW.md, bound by every review verdict.
+  currentReviewRulesHash: () => reviewRulesHash(ROOT)
 });
 const changeValidationRuntime = createChangeValidationRuntime({
   policyProviderSetupActions,

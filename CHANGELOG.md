@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Advisory project review rules. The AI reviewer packet (review packet schema
+  7) now carries the project's `REVIEW.md` as `reviewRules`, shown to the
+  reviewer as advisory guidance that never changes pass or fail. Review receipts
+  record `review.reviewRulesHash`; editing, deleting, or creating `REVIEW.md`
+  after a review makes it stale (`review-rules-changed`), while receipts recorded
+  before this release stay valid. A missing or empty `REVIEW.md` keeps the
+  previous behavior. Install and upgrade seed a starter `REVIEW.md` only when
+  the project has none, and never overwrite one.
 - Prototype-bound visual check. `prototypeSelection` takes `covers` (requirement
   keys) and `mode` (`strict` by default, or `advisory`); the compiler copies the
   prototype into the packet so spec approval binds it. Build tasks for bound

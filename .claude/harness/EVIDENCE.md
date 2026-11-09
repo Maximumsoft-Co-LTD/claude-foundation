@@ -71,6 +71,8 @@ or provider with the same fingerprint is reused. An active proof lock is waited
 on rather than duplicated. Infrastructure exhaustion leaves a non-dispatchable
 external or Harness-owned boundary; it cannot remain a review request that gets
 invoked repeatedly. No unavailable measurement is converted to zero or pass.
+An AI review packet also carries the project's advisory `REVIEW.md`, read from
+the control project root (see [review rules](#project-review-rules)).
 
 A sandbox path changed outside every task's `[paths:]` is recorded as a
 repository-qualified `surfaceAdditions` entry (`{repositoryId, path}`; legacy
@@ -591,7 +593,27 @@ input partitions or scenarios the change plausibly needs but the agreement does
 not name. They are bounded, recorded on the durable report and the completed
 attempt, and reported as `reviewAdvisories.specGaps` on a reached `proven` or
 `archived` target; they never become findings, change the verdict, or block.
-Closing one is a semantic amendment the user decides. An explicit
+Closing one is a semantic amendment the user decides.
+
+<a id="project-review-rules"></a>Review packet schema 7 adds `reviewRules`:
+the project-owned `REVIEW.md` at the control project root, read when the AI
+reviewer packet is assembled. A present file yields `{ path: "REVIEW.md", hash,
+advisory: true, content }`, where `hash` is the SHA-256 of the file bytes. A
+missing, empty, or whitespace-only file adds no `reviewRules` field and leaves
+the packet and prompt unchanged. A file over 32 KiB (32768 bytes) carries its
+hash and `omitted: "too-large"` without content; an unreadable file carries
+`omitted: "unreadable"` and no hash. `reviewRules` survives diff-only rounds.
+The configured reviewer prompt shows the content under "Project review rules
+(advisory)": guidance for what to look at and how to report, never a reason to
+fail beyond the review contract. Pass/fail semantics are unchanged; the receipt
+status and verdict are the same with or without `reviewRules`. Every review
+receipt records `review.reviewRulesHash` (the packet's hash, or `null` when the
+packet had no rules or they were unreadable); see
+[Receipt reuse](#receipt-reuse) for how it expires. One `REVIEW.md` applies per
+change; per-repository rules in a multi-repository change are not read. The
+installer seeds a starter `REVIEW.md` only when the project has none.
+
+An explicit
 `--review` (or impact, coupling, or declared security triggers) raises
 verification risk to high even at the low review tier. A draft's typed
 `riskSignals` are kept on the change: `access-control` and `financial` make
@@ -958,7 +980,15 @@ Reuse is bound to:
 - claim scope;
 - declared environment names and project lockfile digests;
 - Node/platform architecture;
-- required artifact SHA-256 and byte size.
+- required artifact SHA-256 and byte size;
+- for review receipts, the project's `REVIEW.md` hash.
+
+A review receipt that records `review.reviewRulesHash` is stale with reason
+`review-rules-changed` when the current value differs: `REVIEW.md` was edited,
+deleted, or created after the review (a recorded `null` against a file that now
+exists counts as created). An unchanged hash keeps the existing reuse and
+rebind rules. A receipt with no `reviewRulesHash` field at all, recorded before
+review packet schema 7, is never invalidated by this check.
 
 Reports, logs, and attachments are copied immediately into
 `.foundation/evidence/<change>/<proof-run>/`. `proof audit` verifies copied

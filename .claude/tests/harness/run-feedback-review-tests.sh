@@ -402,6 +402,19 @@ assert_contains "review validity recomputes scope digest" \
 cp "$TMP/bound-review.json" \
   .foundation/receipts/irreversible-payment-migration/review.json
 
+# The advisory REVIEW.md binding: a review recorded without rules stores null,
+# creating the rules afterwards expires it, and removing them restores it.
+assert_eq "review receipt records the absent advisory rules" "null" \
+  "$(jq -c '.review.reviewRulesHash' .foundation/receipts/irreversible-payment-migration/review.json)"
+printf '# Review rules\n- Flag missing negative paths.\n' > REVIEW.md
+critical_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
+assert_contains "creating REVIEW.md after review expires the verdict" \
+  "$critical_plan" "review: stale"
+rm REVIEW.md
+critical_plan="$(node .claude/harness/foundation.mjs proof-plan irreversible-payment-migration)"
+assert_contains "removing the new REVIEW.md restores the verdict" \
+  "$critical_plan" "review: valid"
+
 printf 'reviewed fix one\n' >> app.txt
 assert_cmd_zero "scoped second AI review is allowed" \
   node .claude/harness/foundation.mjs receipt irreversible-payment-migration review pass \
@@ -591,7 +604,7 @@ assert_contains "legacy review receipt is specifically stale" \
 assert_eq "provider protocol carries canonical filesystem identity" "13" \
   "$(jq -r '.providerProtocolVersion' .foundation/receipts/irreversible-payment-migration/review.json)"
 assert_cmd_zero "protocol bundle advertises feedback protocols" \
-  jq -e '.reviewProtocol == "4" and .acceptanceProtocol == "2" and .reviewPacketSchema == "6" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
+  jq -e '.reviewProtocol == "4" and .acceptanceProtocol == "2" and .reviewPacketSchema == "7" and .authorityProtocol == "2" and .attestationProtocol == "1" and .ciEvidenceProtocol == "1"' \
     .claude/harness/protocol.json
 
 node .claude/harness/foundation.mjs new 'Missing recorded base' >/dev/null

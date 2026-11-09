@@ -108,7 +108,8 @@ const { receiptValidity } = createReceiptValidity({
   relevantHash: () => world.workspaceHash,
   identityBridges: () => world.bridges || [],
   relevantSnapshot: () => ({ packetReviewHash: world.packetReviewHash }),
-  changeDiffIdentity: () => world.diffIdentity
+  changeDiffIdentity: () => world.diffIdentity,
+  currentReviewRulesHash: () => world.reviewRulesHash
 });
 
 const validity = (provider, value) => {
@@ -175,6 +176,55 @@ try {
   const blockers = reviewBase();
   blockers.review.findings.unresolvedBlockers = 1;
   expect("review", blockers, "review-blockers");
+
+  // The advisory REVIEW.md a verdict was given is bound by its hash: any
+  // create, edit, or delete afterwards expires the verdict; a receipt from
+  // before the binding existed (no field) is never expired by this check.
+  const rulesReview = (recorded) => {
+    const value = reviewBase();
+    value.review.reviewRulesHash = recorded;
+    return value;
+  };
+  const rulesCases = [
+    ["rules-a", "rules-a", "valid"],
+    [null, null, "valid"],
+    ["rules-a", "rules-b", "stale"],
+    ["rules-a", null, "stale"],
+    [null, "rules-a", "stale"]
+  ];
+  for (const [recorded, current, expected] of rulesCases) {
+    world.reviewRulesHash = current;
+    expect("review", rulesReview(recorded), expected);
+    if (expected === "stale")
+      assert.deepEqual(receiptValidity(id, "review").invalidation, {
+        reason: "review-rules-changed", from: recorded, to: current, reusable: false
+      });
+  }
+  world.reviewRulesHash = "rules-a";
+  expect("review", reviewBase(), "valid");
+  assert.equal(Object.hasOwn(reviewBase().review, "reviewRulesHash"), false,
+    "legacy receipt carries no reviewRulesHash and stays valid with rules present");
+  const failedWithRules = rulesReview("rules-a");
+  failedWithRules.status = "fail";
+  const failedWithout = reviewBase();
+  failedWithout.status = "fail";
+  assert.equal(validity("review", failedWithRules), validity("review", failedWithout),
+    "matching rules never change the verdict a receipt carries");
+  const movedWithRules = rulesReview("rules-a");
+  movedWithRules.workspaceHash = "workspace-old";
+  movedWithRules.inputIdentity.fingerprint = "old-input";
+  movedWithRules.rebind = {
+    mode: "diff", diffIdentity: world.diffIdentity, packetReviewHash: world.packetReviewHash
+  };
+  expect("review", movedWithRules, "reusable-diff");
+  world.reviewRulesHash = "rules-b";
+  expect("review", movedWithRules, "stale");
+  assert.equal(receiptValidity(id, "review").invalidation.reason, "review-rules-changed",
+    "a moved base cannot rebind a verdict whose rules changed");
+  const testWithField = baseReceipt();
+  testWithField.review = { reviewRulesHash: "rules-a" };
+  expect("test", testWithField, "valid");
+  delete world.reviewRulesHash;
 
   const movedReview = reviewBase();
   movedReview.workspaceHash = "workspace-old";

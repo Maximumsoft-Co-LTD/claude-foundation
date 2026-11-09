@@ -8,6 +8,7 @@ import { authorityPreflightValue } from "../core/authority-policy.mjs";
 import { scopeAllowsPath } from "../core/graph-execution.mjs";
 import { repositoryBaseHead } from "../core/repository-binding.mjs";
 import { archivedResumeSource, resumePacketValue } from "./resume-packet.mjs";
+import { reviewRulesValue } from "../evidence/configured-reviewer.mjs";
 
 export function attachPhaseUpdateAdvisory(value, phase, options = {}) {
   if (!["change", "build"].includes(phase)) return value;
@@ -629,6 +630,7 @@ export function createPacketRuntime({
       ? readJson(receiptPath(id, reviewProvider), {}) : null;
     const grounding = artifact("grounding.yaml");
     const groundingValue = grounding ? readJson(join(activePath, "grounding.yaml"), {}) : null;
+    const reviewRules = reviewRulesValue(ROOT);
     const reviewArtifactNames = [
       "proposal.md", "design.md", "tasks.md", "evidence.yaml",
       "execution.yaml", "repositories.yaml", "grounding.yaml", "handoffs.yaml", "specs"
@@ -690,6 +692,9 @@ export function createPacketRuntime({
       evidence: compactList(evidenceRows, 15),
       priorReview: priorReviewValue(prior),
       unresolvedFindings: Number(prior?.review?.findings?.unresolvedBlockers || 0),
+      // Advisory project review rules from the control project root; absent
+      // or empty rules leave the packet exactly as it was before schema 7.
+      ...(reviewRules ? { reviewRules } : {}),
       references: {
         evidence: artifact("evidence.yaml"),
         tasks: artifact("tasks.md"),

@@ -25,7 +25,7 @@
   "reviewProtocol": "4",
   "acceptanceProtocol": "2",
   "semanticAcceptanceProtocol": "1",
-  "reviewPacketSchema": "6",
+  "reviewPacketSchema": "7",
   "attestationProtocol": "1",
   "authorityProtocol": "2",
   "ciEvidenceProtocol": "1",
