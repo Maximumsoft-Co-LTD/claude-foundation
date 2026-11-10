@@ -637,7 +637,13 @@ recording. Retrying the same request after interrupted recording reuses that
 report only when its digest, packet, workspace, implementation subject, and
 reviewer provenance still match. It retains the actual reviewer session and
 does not launch another model or append another completed attempt. A changed
-binding stops recovery and preserves the report for inspection.
+binding stops recovery and preserves the report for inspection. Reviewer
+provenance is compared with the reviewer the request was dispatched to
+(`dispatch.reviewer`), so an interrupted cheaper first round (fast or standard
+model class) recovers and its receipt names the model that ran. `authority
+abort` refuses a dispatched request whose AI result completed without a
+receipt, because the unrecorded result would then block every later review;
+`advance` or `authority record` records it instead.
 On the existing `advance --through proven|archived` route, the backend revalidates
 the retained packet and rejected result. It may restore missing control-workspace
 location metadata without widening scope. Only a now-valid binding with a ready

@@ -194,6 +194,15 @@ export function abortAuthorityOperation(context, id, flags = {}) {
   const attemptIsCurrent = dispatchedAttempt?.status === "dispatched" &&
     context.reviewHistoryState(id, context.loadRuntime(id)).chainHead ===
       dispatchedAttempt.digest;
+  // Aborting a request whose AI review already delivered a result that has no
+  // receipt strands that result: the anti-repeat guard then refuses every new
+  // review. The result is still recordable, so route there instead.
+  if (request.status === "dispatched" && !attemptIsCurrent &&
+      context.unrecordedRequestResult?.(id, request))
+    context.fail(`authority request '${requestId}' already has a completed AI review result ` +
+      "without a receipt; aborting it would block every later review. Record it instead: " +
+      `claude-foundation advance ${id} --through proven (or claude-foundation authority record ${id} ` +
+      `--request ${requestId} --response <saved response>)`);
   if (attemptIsCurrent) {
     context.completeReviewAttempt(id, dispatchedAttempt.digest, {
       reviewerSessionId: dispatchedAttempt.reviewerSessionId || "",
@@ -1084,7 +1093,14 @@ export function createAuthorityRuntime({
 
   const abortAuthorityUnlocked = abortAuthorityOperation.bind(null, {
     authorityStore, reviewAttemptByDigest, reviewHistoryState, loadRuntime,
-    completeReviewAttempt, now, fail, output: console
+    completeReviewAttempt, now, fail, output: console,
+    // The latest delivered AI attempt still lacks a receipt and belongs to
+    // this request.
+    unrecordedRequestResult: (id, request) => {
+      const latest = unrecordedDeliveredAiResponse(
+        id, reviewHistoryState(id, loadRuntime(id)), request.provider);
+      return Boolean(latest && latest.requestId === request.requestId);
+    }
   });
 
   function abortAuthority(id, flags = {}) {
@@ -1258,6 +1274,22 @@ export function createAuthorityRuntime({
       providerFamily: "",
       modelFamily: ""
     };
+  }
+
+  // The reviewer configuration that actually ran a dispatched request: the
+  // model class whose identity and model match what the dispatch recorded.
+  // Recomputing the class after the attempt completed counts that attempt and
+  // would expect the configured model instead of a cheaper first round.
+  function dispatchedReviewerConfiguration(reviewerName, request) {
+    const ran = request.dispatch?.reviewer;
+    if (!ran?.identity || reviewerName === "main-session") return null;
+    for (const tier of ["fast", "standard", "configured"]) {
+      const candidate = authorityReviewerConfiguration(reviewerName, request, tier);
+      if (["identity", "providerFamily", "modelFamily", "modelId"].every((field) =>
+        String(candidate[field] || "") === String(ran[field] || "")))
+        return candidate;
+    }
+    return null;
   }
 
   function authorityReviewerSeparationIssue(reviewerName, configured, reviewSettings, subject) {
@@ -1459,12 +1491,15 @@ export function createAuthorityRuntime({
       // An escalated checkpoint binds the configured model that produced it.
       const recoveredEscalation = entry.value.configuredResult?.modelEscalation || null;
       const expectedReviewer = recoveredEscalation
-        ? authorityReviewerConfiguration(reviewerName, entry.value, "configured") : configured;
+        ? authorityReviewerConfiguration(reviewerName, entry.value, "configured")
+        : dispatchedReviewerConfiguration(reviewerName, entry.value) || configured;
       recoveredReport = recoverReviewResult(root, entry.value, subject, expectedReviewer,
         authorityWorkspaceHash(id, entry.value.provider));
-      if (recoveredReport && recoveredEscalation)
-        recoveredReport = { ...recoveredReport, modelEscalation: recoveredEscalation,
-          finalReviewer: expectedReviewer };
+      // The receipt carries the model that actually ran, never one recomputed
+      // after its own attempt completed and changed the delivered count.
+      if (recoveredReport)
+        recoveredReport = { ...recoveredReport, finalReviewer: expectedReviewer,
+          ...(recoveredEscalation ? { modelEscalation: recoveredEscalation } : {}) };
       if (recoveredReport) return entry;
       const attemptDigest = requestEntry.value.dispatch?.attemptDigest;
       const attempt = attemptDigest ? reviewAttemptByDigest(id, attemptDigest) : null;
