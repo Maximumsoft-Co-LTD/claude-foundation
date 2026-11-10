@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hotfix regression for its incident. A new hotfix draft must include a
+  scenario whose `regressionOf` equals `bugfix.incident.link`, in a requirement
+  with an executable capability; otherwise `change start` returns an agent
+  EDIT. The change records `regressionRequired: true` and `change revise`
+  enforces it only for marked changes, so hotfixes created before the upgrade
+  are never blocked. The compiled spec shows "Regression of: <link>"; evidence
+  claims and protocol pins are unchanged.
+- Project incident records and lessons. Install and upgrade seed
+  `openspec/incidents/README.md`, `openspec/incidents/_template.md`, and
+  `openspec/lessons.md` only when missing, and never overwrite them.
+- Lessons as grounding. When `openspec/lessons.md` exists, investigation and
+  change intake read it as a grounding source.
 - Advisory project review rules. The AI reviewer packet (review packet schema
   7) now carries the project's `REVIEW.md` as `reviewRules`, shown to the
   reviewer as advisory guidance that never changes pass or fail. Review receipts

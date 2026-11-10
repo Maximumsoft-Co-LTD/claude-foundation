@@ -22,6 +22,7 @@ import {
   renderSpecHeading, semanticDraftTemplate, unknownTaskFieldWarnings
 } from "./semantic-draft.mjs";
 import { isSemanticV4Plus, isSemanticVersion } from "./validation/draft-version.mjs";
+import { hotfixRegressionIssues } from "./validation/hotfix-regression.mjs";
 import { assembleReviewPolicy, collectReviewSignals } from "../evidence/evidence-contract.mjs";
 import { classifyReviewRisk } from "../evidence/review-routing.mjs";
 import { reviewModelClass } from "../evidence/review-diff.mjs";
@@ -34,7 +35,8 @@ import { PROTOTYPE_DIR, materializePrototype, prototypeCovers, prototypeMode,
   prototypeSelectionIssues } from "./prototype-binding.mjs";
 import { inspectSemanticSources } from "./validation/semantic-source-inventory.mjs";
 import {
-  inspectRepositoryIntelligence, repositoryIntelligenceRequired, skippedRepositoryIntelligence
+  PROJECT_LESSONS_PATH, inspectRepositoryIntelligence, repositoryIntelligenceRequired,
+  skippedRepositoryIntelligence
 } from "./validation/repository-intelligence.mjs";
 import {
   planSemanticIntakeDepth,
@@ -1410,6 +1412,12 @@ export function createChangeLifecycle({
     return join(root, ".foundation", "intake", `${key}.json`);
   }
 
+  // A skipped repository scan still grounds the project's lessons, so even a
+  // rapid intake reads them and an edit to them refreshes source coverage.
+  function lessonsSourcePaths() {
+    return existsSync(join(root, PROJECT_LESSONS_PATH)) ? [PROJECT_LESSONS_PATH] : [];
+  }
+
   function semanticSourceInspection(source, baseline = null, discoveredPaths = []) {
     return inspectSemanticSources({
       projectRoot: root,
@@ -1440,7 +1448,7 @@ export function createChangeLifecycle({
     if (!repositoryIntelligenceRequired(source, { standardLane })) {
       const repository = skippedRepositoryIntelligence();
       const depth = planSemanticIntakeDepth(source, { repository: {} });
-      return { repository, depth, selected: [], selectedBytes: 0 };
+      return { repository, depth, selected: lessonsSourcePaths(), selectedBytes: 0 };
     }
     const query = [source.intent, source.why, ...(source.changes || []),
       ...(source.requirements || []).flatMap((row) => [
@@ -1866,6 +1874,9 @@ export function createChangeLifecycle({
     // prose and the harness does not translate it.
     if (semantic && String(draft.language || "").trim())
       state.documentLanguage = String(draft.language).trim();
+    // Marks a change created under the hotfix regression rule, so a later
+    // revise keeps enforcing it while older changes stay unaffected.
+    if (semantic) state.regressionRequired = true;
     saveRuntime(state);
     if (draft) materializeDraft(id, draft);
     if (!options.deferSessionBinding) bindClaudeSession(id, "change");
@@ -1928,6 +1939,10 @@ export function createChangeLifecycle({
         Object.entries(riskSignalDimensions())
           .map(([signal, dimensions]) => `${signal} → ${dimensions.join(", ")}`).join("; ") +
         `; fixes → ${FIXES_DIMENSIONS.join(", ")}.`,
+      minimalDraftHotfix: "A bugfix with variant 'hotfix' needs bugfix.incident.link and at " +
+        "least one scenario regressionOf: \"<that link>\" that reproduces the incident and " +
+        "fails without the fix, in a requirement proven by an executable capability such as " +
+        "the default \"test\".",
       minimalDraftFixes: "When the request reports a defect introduced by an earlier change " +
         "that is already archived under openspec/changes/archive/<date>-<id>, add fixes: " +
         "[\"<id>\"] to the minimal draft and cover the analogous boundaries, not only the " +
@@ -1954,7 +1969,8 @@ export function createChangeLifecycle({
 
   function inspectSemanticIntakeSource(source, {
     statePath, resume, quiet = false, validateCompiledDraft = true,
-    excludedSourcePath = null, standardLane = false, extraIssues = []
+    excludedSourcePath = null, standardLane = false, extraIssues = [],
+    regressionRequired = false
   }) {
     let previous = null;
     if (existsSync(statePath)) {
@@ -1967,7 +1983,10 @@ export function createChangeLifecycle({
     const sourceInspection = intelligenceUsable(intelligence)
       ? semanticSourceInspection(
         source, sameDraft ? previous?.sourceInventory : null, intelligence.selected)
-      : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
+      : inspectSemanticSources({
+        projectRoot: root, sourcePaths: lessonsSourcePaths(),
+        baseline: sameDraft ? previous?.sourceInventory : null
+      });
     const intakeIssues = semanticIntakeIssues(source);
     const normalized = validateCompiledDraft
       ? normalizeSemanticDraft(source, slugify, {
@@ -1985,7 +2004,9 @@ export function createChangeLifecycle({
       ...normalized.issues.filter((issue) => !intakeIssues.includes(issue)),
       // Start rejects these after intake; report them in this same EDIT batch.
       ...(validateCompiledDraft
-        ? startDraftChecks(normalized.draft, { structural: !normalized.issues.length }).issues
+        ? startDraftChecks(normalized.draft, {
+          structural: !normalized.issues.length, regressionRequired
+        }).issues
         : []),
       ...semanticReferenceIssues(normalized.draft),
       ...extraIssues,
@@ -2104,7 +2125,9 @@ export function createChangeLifecycle({
       resume: startResume(draftPath),
       quiet: options.quiet,
       excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/"),
-      extraIssues: folderIssues
+      extraIssues: folderIssues,
+      // Every change created from now on carries the hotfix regression rule.
+      regressionRequired: true
     });
   }
 
@@ -2622,7 +2645,7 @@ export function createChangeLifecycle({
     const intelligence = repositoryIntelligence(source, [sourcePath]);
     const sourceInspection = intelligenceUsable(intelligence)
       ? semanticSourceInspection(source, null, intelligence.selected)
-      : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
+      : inspectSemanticSources({ projectRoot: root, sourcePaths: lessonsSourcePaths() });
     const projection = semanticIntakeResumeProjection(intakeState, source, {
       resumeRoute: resume, sourceInventory: sourceInspection.inventory
     });
@@ -2642,7 +2665,7 @@ export function createChangeLifecycle({
   // reports these with the compiler's issues, so one EDIT carries them all;
   // `structural: false` (the compiler already refused the draft) skips only
   // the evidence-wiring row, which a refused compile cannot produce.
-  function startDraftChecks(draft, { structural = true } = {}) {
+  function startDraftChecks(draft, { structural = true, regressionRequired = false } = {}) {
     const preflight = atomicStartPreflight(draft, {
       groundingRequired: workflowPolicy().workflow.grounding === "required" ||
         Boolean(draft.grounding)
@@ -2662,15 +2685,16 @@ export function createChangeLifecycle({
       ...taskRepositoryIssues(draft.tasks, {
         repositories: declaredRepositories(), selection: draft.repositories, exists: existsSync
       }),
-      ...apiContractErrorIssues(draft), ...fixesIssues(draft)];
+      ...apiContractErrorIssues(draft), ...fixesIssues(draft),
+      ...(regressionRequired ? hotfixRegressionIssues(draft) : [])];
     return { issues, preflight, keepsDesign, rapid };
   }
 
-  function preflightDraft(draftPath, source) {
+  function preflightDraft(draftPath, source, { regressionRequired = false } = {}) {
     const draft = measureStage("change.load-draft", () =>
       loadDraft(draftPath, { deferPolicy: true, preparedSource: source }));
     const { issues, preflight, keepsDesign, rapid } =
-      measureStage("change.preflight", () => startDraftChecks(draft));
+      measureStage("change.preflight", () => startDraftChecks(draft, { regressionRequired }));
     if (issues.length)
       fail(`start draft preflight failed:\n  - ${issues.join("\n  - ")}`);
     const { classification } = preflight;
@@ -2715,7 +2739,8 @@ export function createChangeLifecycle({
       console.log(JSON.stringify(incomplete, null, 2));
       return incomplete;
     }
-    const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
+    const { draft, rapid, resolutionFlags } =
+      preflightDraft(draftPath, source, { regressionRequired: true });
     const id = draftChangeId(draft, slugify);
     assertChangeAvailable(id);
     try {
@@ -2998,7 +3023,9 @@ export function createChangeLifecycle({
     return inspectSemanticIntakeSource(source, {
       statePath, resume, quiet: options.quiet,
       excludedSourcePath: relative(root, resolve(root, draftPath)).replaceAll("\\", "/"),
-      extraIssues: revisionFolderIssues.get(source) || []
+      extraIssues: revisionFolderIssues.get(source) || [],
+      // A change created before the rule existed is never blocked by it.
+      regressionRequired: loadRuntime(id)?.regressionRequired === true
     });
   }
 
@@ -3025,7 +3052,8 @@ export function createChangeLifecycle({
       console.log(JSON.stringify(incomplete, null, 2));
       return incomplete;
     }
-    const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source);
+    const { draft, rapid, resolutionFlags } = preflightDraft(draftPath, source,
+      { regressionRequired: prior.regressionRequired === true });
 
     // Build does not take this lock, so recheck that no workspace, receipt, or
     // revision appeared during intake and compilation before anything moves.
@@ -3064,6 +3092,10 @@ export function createChangeLifecycle({
         next.contractRevision = Number(prior.contractRevision || 0) + 1;
         next.executionRevision = Number(prior.executionRevision || 0) + 1;
         next.createdAt = prior.createdAt || next.createdAt;
+        // A revision keeps the creation-time rule set: a change created before
+        // the hotfix regression rule never gains it by being revised.
+        if (prior.regressionRequired === true) next.regressionRequired = true;
+        else delete next.regressionRequired;
         if (prior.budget) next.budget = prior.budget;
         next.specApproval = { required: true };
         if (completedIntakeEffectiveness)
@@ -3183,7 +3215,7 @@ export function createChangeLifecycle({
         { standardLane: state.schema === "foundation-standard" });
       const sourceInspection = intelligenceUsable(intelligence)
         ? semanticSourceInspection(intakeSource, null, intelligence.selected)
-        : inspectSemanticSources({ projectRoot: root, sourcePaths: [] });
+        : inspectSemanticSources({ projectRoot: root, sourcePaths: lessonsSourcePaths() });
       const projection = semanticIntakeResumeProjection(intakeState, intakeSource, {
         resumeRoute: resume, sourceInventory: sourceInspection.inventory
       });

@@ -318,3 +318,25 @@ test("rapid draft inspection skips the repository scan; medium impact runs it", 
   assert.ok(scans > 0);
   assert.equal(medium.intelligence.repository.status, "ready");
 });
+
+test("a project's openspec/lessons.md always joins the declared seeds when present", async (t) => {
+  const root = await fixture(t);
+  const input = {
+    projectRoot: root, query: ["administrator login"],
+    seedPaths: ["src/auth/policy.ts"], limits: { maxReadSet: 3 }
+  };
+  const without = inspectRepositoryIntelligence(input);
+  assert.equal(without.readSet.some((row) => row.path === "openspec/lessons.md"), false,
+    "no lessons file adds no source");
+  writeFileSync(join(root, "openspec/lessons.md"),
+    "# Lessons\n\n| Date | Lesson | Incident | Enforced by |\n|---|---|---|---|\n");
+  const withLessons = inspectRepositoryIntelligence(input);
+  const paths = withLessons.readSet.map((row) => row.path);
+  assert.ok(paths.includes("openspec/lessons.md"), "the lessons file is read as a seed");
+  assert.ok(paths.includes("src/auth/policy.ts"), "declared seeds are kept");
+  mkdirSync(join(root, "elsewhere/openspec"), { recursive: true });
+  rmSync(join(root, "openspec/lessons.md"));
+  mkdirSync(join(root, "openspec/lessons.md"));
+  assert.equal(inspectRepositoryIntelligence(input).readSet
+    .some((row) => row.path === "openspec/lessons.md"), false, "a directory is not a lessons file");
+});

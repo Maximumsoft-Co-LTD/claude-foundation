@@ -398,6 +398,58 @@ assert_file_absent "a rolled-back install removes the REVIEW.md it seeded" \
 assert_file_contains "a rolled-back install restores the project's foundation.json" \
   "$review_failed/foundation.json" "{ not json"
 
+# Incident and lesson records: project-owned like REVIEW.md, seeded per file
+# only when absent, staged only when this run created them, rolled back.
+RECORD_TEMPLATES="$ROOT/.claude/harness/templates"
+for record in "openspec/incidents/README.md|incidents/README.md" \
+    "openspec/incidents/_template.md|incidents/_template.md" \
+    "openspec/lessons.md|lessons.md"; do
+  rel="${record%%|*}"
+  assert_cmd_zero "upgrade without $rel seeds the starter record" \
+    cmp -s "$RECORD_TEMPLATES/${record#*|}" "$TARGET/$rel"
+  assert_cmd_zero "fresh install seeds $rel" \
+    cmp -s "$RECORD_TEMPLATES/${record#*|}" "$review_fresh/$rel"
+  assert_file_absent "a rolled-back install removes the seeded $rel" \
+    "$review_failed/$rel"
+done
+assert_file_not_contains "starter records stay project-neutral" \
+  "$RECORD_TEMPLATES/incidents/README.md" "claude-foundation"
+assert_file_contains "the incident template names the hotfix regression link" \
+  "$RECORD_TEMPLATES/incidents/README.md" "regressionOf"
+records_custom="$TMP/records-custom"
+mkdir -p "$records_custom/openspec"
+printf '# Our lessons\n\n| keep | this |\n' > "$records_custom/openspec/lessons.md"
+cp "$records_custom/openspec/lessons.md" "$TMP/lessons-custom.md"
+records_plan="$(bash "$ROOT/install.sh" "$records_custom" --source "$ROOT" --yes --dry-run 2>&1)"
+assert_not_contains "install plan omits an existing lessons.md" "$records_plan" \
+  "+ openspec/lessons.md"
+assert_contains "install plan announces a missing incident template" "$records_plan" \
+  "+ openspec/incidents/_template.md"
+assert_cmd_zero "install over custom lessons applies" \
+  bash "$ROOT/install.sh" "$records_custom" --source "$ROOT" --yes
+assert_cmd_zero "an existing lessons.md is kept byte for byte" \
+  cmp -s "$TMP/lessons-custom.md" "$records_custom/openspec/lessons.md"
+assert_cmd_zero "missing incident records are seeded beside custom lessons" \
+  cmp -s "$RECORD_TEMPLATES/incidents/_template.md" \
+    "$records_custom/openspec/incidents/_template.md"
+records_git="$TMP/records-git"
+mkdir -p "$records_git"
+git -C "$records_git" init -q
+assert_cmd_zero "git install with incident records applies" \
+  bash "$ROOT/install.sh" "$records_git" --source "$ROOT" --yes
+assert_eq "seeded incident and lesson records are staged" \
+  "openspec/incidents/README.md openspec/incidents/_template.md openspec/lessons.md" \
+  "$(git -C "$records_git" diff --cached --name-only -- openspec/incidents openspec/lessons.md | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+git -C "$records_git" -c user.name=t -c user.email=t@example.invalid \
+  commit -q -m install --no-verify
+printf '| 2026-01-01 | Project lesson | none | none |\n' >> "$records_git/openspec/lessons.md"
+assert_cmd_zero "git reinstall over edited lessons applies" \
+  bash "$ROOT/install.sh" "$records_git" --source "$ROOT" --yes
+assert_eq "a project's uncommitted lessons.md edit is not staged" "" \
+  "$(git -C "$records_git" diff --cached --name-only -- openspec/lessons.md)"
+assert_eq "the project's lessons.md edit is kept in the working tree" "openspec/lessons.md" \
+  "$(git -C "$records_git" diff --name-only -- openspec/lessons.md)"
+
 # Ask git what it ignores rather than matching directory names in the file. The
 # name-matching version passed while `authority/`, `attestations/`, and
 # `install-manifest.txt` were all leaking into `git status`, because it could

@@ -1,0 +1,141 @@
+{
+  "version": 2,
+  "claims": [
+    {
+      "id": "hotfix-regression-required-change-start",
+      "requirementKey": "hotfix-regression-required",
+      "scenario": "hotfix ไม่มี regression",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hotfix-regression-required-change-start-2",
+      "requirementKey": "hotfix-regression-required",
+      "scenario": "regressionOf ไม่ตรง incident",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hotfix-regression-required-change-start-3",
+      "requirementKey": "hotfix-regression-required",
+      "scenario": "regression ไม่มี capability ที่รันได้",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hotfix-regression-required-change-start-4",
+      "requirementKey": "hotfix-regression-required",
+      "scenario": "hotfix ครบ",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hotfix-regression-required-change-start-5",
+      "requirementKey": "hotfix-regression-required",
+      "scenario": "bugfix ที่ไม่ใช่ hotfix",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hotfix-regression-required-change-revise-draft-regressionof",
+      "requirementKey": "hotfix-regression-required",
+      "scenario": "revise hotfix ที่สร้างก่อนอัปเกรด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "hotfix-regression-required-change-revise-draft-scenario-regressi",
+      "requirementKey": "hotfix-regression-required",
+      "scenario": "revise hotfix ที่สร้างหลังอัปเกรด",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "incident-and-lessons-seeded-install-sh",
+      "requirementKey": "incident-and-lessons-seeded",
+      "scenario": "ติดตั้งใหม่",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "incident-and-lessons-seeded-install-sh-2",
+      "requirementKey": "incident-and-lessons-seeded",
+      "scenario": "มีบางไฟล์อยู่แล้ว",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "incident-and-lessons-seeded-installer-rollback",
+      "requirementKey": "incident-and-lessons-seeded",
+      "scenario": "ติดตั้งล้มกลางทาง",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-read-as-grounding-investigation-change-intake",
+      "requirementKey": "lessons-read-as-grounding",
+      "scenario": "มี lessons.md",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-read-as-grounding-investigation-change-intake-2",
+      "requirementKey": "lessons-read-as-grounding",
+      "scenario": "ไม่มี lessons.md",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    },
+    {
+      "id": "lessons-read-as-grounding-lessons-md-change-start",
+      "requirementKey": "lessons-read-as-grounding",
+      "scenario": "แก้ lessons.md หลัง intake",
+      "impact": "medium",
+      "capabilities": [
+        "test"
+      ]
+    }
+  ],
+  "providers": {
+    "test": {
+      "adapter": "test-discovery",
+      "command": [
+        "sh",
+        "-c",
+        "(node --test .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/change-revise.test.mjs .claude/harness/tests/semantic-draft.test.mjs .claude/harness/tests/work-type-fields.test.mjs) && (bash .claude/tests/harness/run-installer-tests.sh) && (node --test .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/investigation-runtime.test.mjs) && (bash .claude/tests/docs/run-doc-consistency.sh)"
+      ],
+      "segments": [
+        "node --test .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/change-revise.test.mjs .claude/harness/tests/semantic-draft.test.mjs .claude/harness/tests/work-type-fields.test.mjs",
+        "bash .claude/tests/harness/run-installer-tests.sh",
+        "node --test .claude/harness/tests/change-atomic-start.test.mjs .claude/harness/tests/investigation-runtime.test.mjs",
+        "bash .claude/tests/docs/run-doc-consistency.sh"
+      ],
+      "minimum": 1,
+      "reportFormat": "auto",
+      "claims": "declared"
+    }
+  }
+}
