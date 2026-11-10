@@ -122,6 +122,12 @@ jobs:
         run: command -v jq >/dev/null || { sudo apt-get update && sudo apt-get install -y jq; }
       - name: Run workflow test harness
         run: sh .claude/tests/run-all.sh
+      - name: Report paid agent evals owed (informational, never runs them)
+        # Paid evals spend money and need a maintainer's authorization, so CI
+        # only says when an instruction-surface change owes them.
+        env:
+          EVALS_BASE: origin/${{ github.base_ref || 'main' }}
+        run: npm run --silent evals:owed
       - name: Check packaged CLI contract
         # Default help is the small agent-facing lifecycle surface. Compatibility
         # primitives remain discoverable only through help --all.

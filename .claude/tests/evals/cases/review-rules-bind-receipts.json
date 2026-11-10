@@ -1,0 +1,16 @@
+{
+  "id": "review-rules-bind-receipts",
+  "source": "task:advisory REVIEW.md binds every AI review receipt",
+  "layer": "deterministic",
+  "description": "A review verdict expires when the advisory REVIEW.md it was given is created, edited, or deleted; legacy receipts stay valid.",
+  "command": [
+    "node",
+    ".claude/harness/tests/receipt-validity.test.mjs"
+  ],
+  "expect": {
+    "exit": 0,
+    "stdoutIncludes": [
+      "receipt validity tests: PASS"
+    ]
+  }
+}

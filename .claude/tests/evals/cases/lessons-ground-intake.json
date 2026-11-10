@@ -1,0 +1,18 @@
+{
+  "id": "lessons-ground-intake",
+  "source": "task:project lessons ground every investigation and change intake",
+  "layer": "deterministic",
+  "description": "openspec/lessons.md is a grounded source even for rapid intake, and editing it refreshes source coverage.",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=lessons",
+    ".claude/harness/tests/change-atomic-start.test.mjs"
+  ],
+  "expect": {
+    "exit": 0,
+    "stdoutIncludes": [
+      "an edit to openspec/lessons.md after intake refreshes source coverage"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "id": "paid-regression-fix-with-fixes",
+  "source": "task:A regression from an archived change is fixed with fixes coverage.",
+  "layer": "paid",
+  "scenario": "regression-fix-with-fixes",
+  "description": "A regression from an archived change is fixed with fixes coverage."
+}
