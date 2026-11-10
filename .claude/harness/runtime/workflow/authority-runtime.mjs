@@ -1049,6 +1049,7 @@ export function createAuthorityRuntime({
         digest: scopeDigest
       },
       packetDigest: packet.packetDigest,
+      reviewRulesHash: packet.reviewRules?.hash ?? null,
       maxAiAttempts,
       maxInfrastructureRetries
     });

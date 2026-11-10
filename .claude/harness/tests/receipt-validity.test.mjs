@@ -86,7 +86,7 @@ const externalReceipt = () => {
 mkdirSync(join(evidenceVault, id, "review-attempts"), { recursive: true });
 writeFileSync(join(evidenceVault, id, "review-attempts", "attempt-123456789abc.json"), "{}\n");
 
-const { receiptValidity } = createReceiptValidity({
+const validityDependencies = {
   evidenceVault, providerProtocolVersion: "1", adapterProtocolVersion: "1",
   reviewProtocolVersion: "3", acceptanceProtocolVersion: "2",
   receiptPath: pathFor,
@@ -108,8 +108,10 @@ const { receiptValidity } = createReceiptValidity({
   relevantHash: () => world.workspaceHash,
   identityBridges: () => world.bridges || [],
   relevantSnapshot: () => ({ packetReviewHash: world.packetReviewHash }),
-  changeDiffIdentity: () => world.diffIdentity
-});
+  changeDiffIdentity: () => world.diffIdentity,
+  currentReviewRulesHash: () => world.reviewRulesHash
+};
+const { receiptValidity } = createReceiptValidity(validityDependencies);
 
 const validity = (provider, value) => {
   put(provider, value);
@@ -175,6 +177,67 @@ try {
   const blockers = reviewBase();
   blockers.review.findings.unresolvedBlockers = 1;
   expect("review", blockers, "review-blockers");
+
+  // The advisory REVIEW.md a verdict was given is bound by its hash: any
+  // create, edit, or delete afterwards expires the verdict; a receipt from
+  // before the binding existed (no field) is never expired by this check.
+  const rulesReview = (recorded) => {
+    const value = reviewBase();
+    value.review.reviewRulesHash = recorded;
+    return value;
+  };
+  const rulesCases = [
+    ["rules-a", "rules-a", "valid"],
+    [null, null, "valid"],
+    ["rules-a", "rules-b", "stale"],
+    ["rules-a", null, "stale"],
+    [null, "rules-a", "stale"]
+  ];
+  for (const [recorded, current, expected] of rulesCases) {
+    world.reviewRulesHash = current;
+    expect("review", rulesReview(recorded), expected);
+    if (expected === "stale")
+      assert.deepEqual(receiptValidity(id, "review").invalidation, {
+        reason: "review-rules-changed", from: recorded, to: current, reusable: false
+      });
+  }
+  world.reviewRulesHash = "rules-a";
+  expect("review", reviewBase(), "valid");
+  assert.equal(Object.hasOwn(reviewBase().review, "reviewRulesHash"), false,
+    "legacy receipt carries no reviewRulesHash and stays valid with rules present");
+  const failedWithRules = rulesReview("rules-a");
+  failedWithRules.status = "fail";
+  const failedWithout = reviewBase();
+  failedWithout.status = "fail";
+  assert.equal(validity("review", failedWithRules), validity("review", failedWithout),
+    "matching rules never change the verdict a receipt carries");
+  const movedWithRules = rulesReview("rules-a");
+  movedWithRules.workspaceHash = "workspace-old";
+  movedWithRules.inputIdentity.fingerprint = "old-input";
+  movedWithRules.rebind = {
+    mode: "diff", diffIdentity: world.diffIdentity, packetReviewHash: world.packetReviewHash
+  };
+  expect("review", movedWithRules, "reusable-diff");
+  world.reviewRulesHash = "rules-b";
+  expect("review", movedWithRules, "stale");
+  assert.equal(receiptValidity(id, "review").invalidation.reason, "review-rules-changed",
+    "a moved base cannot rebind a verdict whose rules changed");
+  const testWithField = baseReceipt();
+  testWithField.review = { reviewRulesHash: "rules-a" };
+  expect("test", testWithField, "valid");
+  delete world.reviewRulesHash;
+
+  // An embedding runtime that supplies no rules lookup treats the project as
+  // having no REVIEW.md instead of throwing.
+  const { currentReviewRulesHash: _lookup, ...withoutLookup } = validityDependencies;
+  const { receiptValidity: noLookupValidity } = createReceiptValidity(withoutLookup);
+  put("review", rulesReview(null));
+  assert.equal(noLookupValidity(id, "review").validity, "valid",
+    "a null-rules receipt stays valid without a rules lookup");
+  put("review", rulesReview("rules-a"));
+  assert.deepEqual(noLookupValidity(id, "review").invalidation, {
+    reason: "review-rules-changed", from: "rules-a", to: null, reusable: false
+  }, "a rules-bound receipt expires when no rules can be found");
 
   const movedReview = reviewBase();
   movedReview.workspaceHash = "workspace-old";

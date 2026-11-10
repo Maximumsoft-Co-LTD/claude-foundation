@@ -145,10 +145,27 @@ export function createReceiptValidity({
   reviewAttemptByDigest, reviewAttemptIsValid, resolvedAcceptance,
   claimsForProvider, stableHash, adapterFingerprint, providerWorkspaceHash,
   providerInputIdentity, validateArtifact, relevantHash, relevantSnapshot,
-  changeDiffIdentity, identityBridges = () => []
+  changeDiffIdentity, identityBridges = () => [],
+  // Without a rules lookup the project is treated as having no REVIEW.md.
+  currentReviewRulesHash = () => null
 }) {
   const invalidReceipt = (provider, validity, value) =>
     ({ provider, validity, status: value.status });
+
+  // A review verdict binds the advisory REVIEW.md it was given. Creating,
+  // editing, or deleting the rules afterwards expires it. A receipt recorded
+  // before this binding existed carries no field and is left alone.
+  function reviewRulesValidity(id, provider, value) {
+    if (!value.review || !Object.hasOwn(value.review, "reviewRulesHash")) return null;
+    if (providerCapability(provider, providerConfig(id, provider)) !== "review") return null;
+    const recorded = value.review.reviewRulesHash ?? null;
+    const current = currentReviewRulesHash(id) ?? null;
+    if (recorded === current) return null;
+    return {
+      provider, validity: "stale", status: value.status,
+      invalidation: { reason: "review-rules-changed", from: recorded, to: current, reusable: false }
+    };
+  }
 
   function protocolValidity(id, provider, value) {
     if (receiptIsPreview(value)) return invalidReceipt(provider, "preview-evidence", value);
@@ -471,6 +488,8 @@ export function createReceiptValidity({
     const value = readJson(path);
     const protocol = protocolValidity(id, provider, value);
     if (protocol) return protocol;
+    const rules = reviewRulesValidity(id, provider, value);
+    if (rules) return rules;
     const context = receiptContext(id, provider, hash, value);
     const reuse = workspaceReuse(context);
     if (reuse.result) return reuse.result;

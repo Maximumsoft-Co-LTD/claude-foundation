@@ -342,6 +342,62 @@ assert_cmd_zero "Claude Code reviewer profile is installed" \
     .providerFamily == "anthropic" and .sandbox == "read-only" and
     .ephemeral == true' "$TARGET/foundation.json"
 assert_file_exists "runtime ignore installed" "$TARGET/.foundation/.gitignore"
+
+# Advisory review rules: project-owned, seeded only when absent, on a fresh
+# install and on an upgrade alike, and removed again by a rolled-back install.
+REVIEW_TEMPLATE="$ROOT/.claude/harness/templates/REVIEW.md"
+assert_cmd_zero "upgrade without REVIEW.md seeds the starter review rules" \
+  cmp -s "$REVIEW_TEMPLATE" "$TARGET/REVIEW.md"
+assert_file_contains "starter review rules say they are advisory" \
+  "$REVIEW_TEMPLATE" "**advisory**"
+review_fresh="$TMP/review-fresh"
+mkdir -p "$review_fresh"
+review_plan="$(bash "$ROOT/install.sh" "$review_fresh" --source "$ROOT" --yes --dry-run 2>&1)"
+assert_contains "install plan announces a missing REVIEW.md" "$review_plan" "+ REVIEW.md"
+assert_file_absent "a dry run creates no REVIEW.md" "$review_fresh/REVIEW.md"
+assert_cmd_zero "fresh install applies with review rules" \
+  bash "$ROOT/install.sh" "$review_fresh" --source "$ROOT" --yes
+assert_cmd_zero "fresh install seeds the starter review rules" \
+  cmp -s "$REVIEW_TEMPLATE" "$review_fresh/REVIEW.md"
+printf '# Our own review rules\n\nKeep\tthis byte for byte.\n' > "$review_fresh/REVIEW.md"
+cp "$review_fresh/REVIEW.md" "$TMP/review-custom.md"
+review_plan="$(bash "$ROOT/install.sh" "$review_fresh" --source "$ROOT" --yes --dry-run 2>&1)"
+assert_not_contains "install plan omits an existing REVIEW.md" "$review_plan" "+ REVIEW.md"
+assert_cmd_zero "reinstall over custom review rules applies" \
+  bash "$ROOT/install.sh" "$review_fresh" --source "$ROOT" --yes
+assert_cmd_zero "an existing REVIEW.md is kept byte for byte" \
+  cmp -s "$TMP/review-custom.md" "$review_fresh/REVIEW.md"
+# In a git target the installer stages the REVIEW.md it seeded beside the other
+# installed files, and never stages a project's own uncommitted edits.
+review_git="$TMP/review-git"
+mkdir -p "$review_git"
+git -C "$review_git" init -q
+assert_cmd_zero "git install with review rules applies" \
+  bash "$ROOT/install.sh" "$review_git" --source "$ROOT" --yes
+assert_eq "a seeded REVIEW.md is staged" "REVIEW.md" \
+  "$(git -C "$review_git" diff --cached --name-only -- REVIEW.md)"
+git -C "$review_git" -c user.name=t -c user.email=t@example.invalid \
+  commit -q -m install --no-verify
+printf '# Edited by the project, not yet staged\n' >> "$review_git/REVIEW.md"
+assert_cmd_zero "git reinstall over edited review rules applies" \
+  bash "$ROOT/install.sh" "$review_git" --source "$ROOT" --yes
+assert_eq "a project's uncommitted REVIEW.md edit is not staged" "" \
+  "$(git -C "$review_git" diff --cached --name-only -- REVIEW.md)"
+assert_eq "the project's REVIEW.md edit is kept in the working tree" "REVIEW.md" \
+  "$(git -C "$review_git" diff --name-only -- REVIEW.md)"
+review_failed="$TMP/review-rollback"
+mkdir -p "$review_failed"
+printf '{ not json\n' > "$review_failed/foundation.json"
+if bash "$ROOT/install.sh" "$review_failed" --source "$ROOT" --yes >/dev/null 2>&1; then
+  fail "install over an unreadable foundation.json fails and rolls back"
+else
+  pass "install over an unreadable foundation.json fails and rolls back"
+fi
+assert_file_absent "a rolled-back install removes the REVIEW.md it seeded" \
+  "$review_failed/REVIEW.md"
+assert_file_contains "a rolled-back install restores the project's foundation.json" \
+  "$review_failed/foundation.json" "{ not json"
+
 # Ask git what it ignores rather than matching directory names in the file. The
 # name-matching version passed while `authority/`, `attestations/`, and
 # `install-manifest.txt` were all leaking into `git status`, because it could

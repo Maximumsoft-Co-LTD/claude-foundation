@@ -948,6 +948,28 @@ try {
   assert.match(highPrompt, /Read adjacent code only/);
   assert.match(highPrompt, /Read the full referenced requirements/);
 
+  // Advisory project review rules ride every depth, including diff-only.
+  assert.doesNotMatch(highPrompt, /REVIEW\.md/, "no rules, no rules section");
+  const reviewRules = {
+    path: "REVIEW.md", hash: "a".repeat(64), advisory: true,
+    content: "# Review rules\n- Flag missing negative paths as major.\n"
+  };
+  const rulesPacket = { ...lowPacket, reviewRules };
+  assert.deepEqual(reviewPromptPayload(rulesPacket).reviewRules, reviewRules,
+    "diff-only projection keeps the advisory rules");
+  const rulesPrompt = configuredReviewPrompt(rulesPacket);
+  assert.match(rulesPrompt, /packet\.reviewRules holds the project's REVIEW\.md/);
+  assert.match(rulesPrompt, /ADVISORY guidance/);
+  assert.match(rulesPrompt, /never widens reviewScope, adds claims, or justifies a fail status/);
+  assert.match(rulesPrompt, /Flag missing negative paths as major/);
+  for (const omitted of ["too-large", "unreadable"]) {
+    const omittedPrompt = configuredReviewPrompt({
+      ...highPacket, reviewRules: { path: "REVIEW.md", advisory: true, omitted }
+    });
+    assert.match(omittedPrompt, new RegExp(`REVIEW\\.md was not sent \\(${omitted}\\)`));
+    assert.doesNotMatch(omittedPrompt, /ADVISORY guidance/);
+  }
+
   const fastRuntime = createConfiguredReviewerRuntime({
     root, foundationPolicy: tierPolicy().foundationPolicy,
     commandExists: (command) => existsSync(command),

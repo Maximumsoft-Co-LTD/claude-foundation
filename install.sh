@@ -67,7 +67,7 @@ SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd -P)"
 
 for required in \
   .claude/orchestrator.md .claude/commands .claude/harness/foundation.mjs \
-  .claude/harness/commands.json \
+  .claude/harness/commands.json .claude/harness/templates/REVIEW.md \
   .claude/skills .claude/rules .claude/hooks .claude/settings.json \
   openspec/config.yaml openspec/repositories.yaml openspec/schemas \
   foundation.json .foundation/.gitignore .foundation/README.md WORKFLOW.md; do
@@ -132,6 +132,8 @@ LEGACY=(
 info "Install plan"
 for rel in "${MANAGED[@]}"; do printf '  ~ %s\n' "$rel"; done
 [ -e "$TARGET_PATH/openspec/config.yaml" ] || printf '  + openspec/config.yaml\n'
+[ -e "$TARGET_PATH/REVIEW.md" ] || [ -L "$TARGET_PATH/REVIEW.md" ] ||
+  printf '  + REVIEW.md (advisory review rules; edit freely)\n'
 if [ "$PERMISSION_ALLOWLIST" = yes ]; then
   printf '  ~ .claude/settings.json (merge hooks and permission allowlist, preserve user settings)\n'
 else
@@ -160,6 +162,7 @@ PROJECT_MUTABLE=(
   "openspec/config.yaml"
   "openspec/repositories.yaml"
   "foundation.json"
+  "REVIEW.md"
 )
 validate_managed_path() {
   case "$1" in
@@ -303,6 +306,13 @@ fi
 if [ ! -e "$TARGET_PATH/openspec/repositories.yaml" ]; then
   mkdir -p "$TARGET_PATH/openspec"
   cp "$SOURCE_PATH/openspec/repositories.yaml" "$TARGET_PATH/openspec/repositories.yaml"
+fi
+# Advisory review rules are project-owned: seeded once when absent (fresh
+# install or upgrade), never rewritten. A symlink counts as present.
+REVIEW_SEEDED=no
+if [ ! -e "$TARGET_PATH/REVIEW.md" ] && [ ! -L "$TARGET_PATH/REVIEW.md" ]; then
+  cp "$SOURCE_PATH/.claude/harness/templates/REVIEW.md" "$TARGET_PATH/REVIEW.md"
+  REVIEW_SEEDED=yes
 fi
 if [ ! -e "$TARGET_PATH/foundation.json" ]; then
   cp "$SOURCE_PATH/foundation.json" "$TARGET_PATH/foundation.json"
@@ -576,6 +586,9 @@ if command -v git >/dev/null 2>&1 &&
   git -C "$TARGET_PATH" add -- "${MANAGED[@]}" CLAUDE.md AGENTS.md \
     openspec/config.yaml openspec/repositories.yaml foundation.json \
     .claude/settings.json >/dev/null 2>&1 || true
+  # Stage only a REVIEW.md this run created; a project's own edits stay unstaged.
+  [ "$REVIEW_SEEDED" != yes ] ||
+    git -C "$TARGET_PATH" add -- REVIEW.md >/dev/null 2>&1 || true
   if ! git -C "$TARGET_PATH" diff --cached --quiet 2>/dev/null; then
     printf '▸ Setup is complete, but the managed workflow files are only staged.\n'
     printf '  Commit them before the first Change Loop change so they are not mistaken for product work:\n'

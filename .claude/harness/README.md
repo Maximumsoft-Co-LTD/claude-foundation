@@ -73,7 +73,7 @@ project-owned code; the harness can compile a project-owned agreement.
 | Category | Paths in an installed project | Who writes or updates it | Reader and authority |
 |---|---|---|---|
 | Project agreement | `openspec/specs/`, `openspec/changes/`, `openspec/investigations/` | Agent authors intent and investigation records; harness compiles/amends packets, updates task completion, and archives through OpenSpec | Users review intent, scenarios, and outcomes; consequential decisions remain theirs |
-| Project configuration | `foundation.json`, `openspec/config.yaml`, `openspec/repositories.yaml`, `quality/` | Project maintainer or authorized agent; installer seeds missing configuration and may perform documented additive/default migrations | Project chooses policy; upgrades preserve custom settings |
+| Project configuration | `foundation.json`, `openspec/config.yaml`, `openspec/repositories.yaml`, `quality/`, `REVIEW.md` | Project maintainer or authorized agent; installer seeds missing configuration and may perform documented additive/default migrations | Project chooses policy; upgrades preserve custom settings |
 | Project instructions and host settings | `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` | Project authors local instructions; installer updates only its marked pointer blocks and merges supported settings | These are not replaced by the upstream repository's maintainer manuals |
 | Installed product | `.claude/orchestrator.md`, `.claude/commands`, `.claude/harness`, `.claude/skills`, `.claude/rules`, `.claude/hooks`, `openspec/schemas`, `WORKFLOW.md`, `.foundation/.gitignore`, `.foundation/README.md` | Change Loop maintainers change source; installer refreshes managed files | Agent/host instructions and system references, not consumer customization points |
 | Runtime records | `.foundation/runtime/`, `receipts/`, `evidence/`, `transactions/`, and other state listed below | Harness and configured tools through supported operations | Read for diagnosis; never hand-edit proof, receipts, lifecycle state, or recovery journals |
@@ -85,7 +85,10 @@ The installer's `MANAGED` list defines product ownership; the per-install
 does not make every custom file beneath it disposable: custom agents, hooks,
 and other project additions must survive upgrades. `foundation.json` may gain
 missing fields or recognized legacy-default migrations; it is not replaced
-wholesale with upstream policy.
+wholesale with upstream policy. `REVIEW.md` holds the project's advisory review
+rules; the installer seeds it from `.claude/harness/templates/REVIEW.md` on a
+fresh install or upgrade only when the project has none, and never overwrites
+it ([review rules](EVIDENCE.md#project-review-rules)).
 
 Generated does not mean disposable, and project-owned does not mean manually
 editable during an active lifecycle. Change agreements go through draft/revision

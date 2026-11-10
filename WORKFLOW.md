@@ -1857,6 +1857,13 @@ Timeout is not a pass. Try repair first; if it cannot progress, explain the
 attempted remedies and offer further work before Land. Conflicts, incomplete Apply, and missing side-effect authority
 still require their actual resolution, never a claim of successful delivery.
 
+An AI reviewer also reads the project's `REVIEW.md`, when present, as advisory
+guidance: it shapes what the reviewer looks at and how it reports, but never
+changes pass or fail. Each review receipt binds the file's hash, so editing,
+deleting, or creating `REVIEW.md` after a review expires that review
+(`review-rules-changed`); receipts recorded before this binding existed are not
+expired by it. Details: [project review rules](.claude/harness/EVIDENCE.md#project-review-rules).
+
 Under `workflow.reviewPolicy: "risk-tiered"` every change receives review, with
 the correction circuit bounded by risk; `RESOLVED` prints the route, such as
 `review: risk-tiered AI review (low tier, fast model)`. The one exception is a

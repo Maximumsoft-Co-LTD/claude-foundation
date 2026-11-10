@@ -292,3 +292,196 @@ Foundation SHALL expose the effective reviewer-independence and model-diversity 
 - **GIVEN** path ที่แก้บังคับ compatibility ด้วย
 - **WHEN** harness คำนวณนโยบาย review
 - **THEN** compatibility ยังยกระดับ review เหมือนเดิม
+
+### Requirement: review-rules-in-packet
+
+ระบบ SHALL ใส่เนื้อหาและ hash ของ REVIEW.md ที่ root ของโปรเจกต์ลงใน AI reviewer packet เมื่อมีไฟล์นั้น
+
+#### Scenario: มี REVIEW.md
+
+- **GIVEN** root ของโปรเจกต์มี REVIEW.md ขนาดไม่เกิน 32 KiB
+- **WHEN** harness ประกอบ reviewer packet
+- **THEN** packet มี reviewRules ที่มี path REVIEW.md, hash sha256 ของเนื้อหา, เนื้อหาเต็ม และ advisory: true
+- **AND** packet version เป็น reviewPacketSchema 7
+
+#### Scenario: ไม่มี REVIEW.md
+
+- **GIVEN** root ของโปรเจกต์ไม่มี REVIEW.md
+- **WHEN** harness ประกอบ reviewer packet
+- **THEN** packet ไม่มีฟิลด์ reviewRules และ prompt ของ reviewer ไม่มีส่วนเกณฑ์รีวิว
+
+#### Scenario: REVIEW.md ว่าง
+
+- **GIVEN** REVIEW.md มีแต่ whitespace
+- **WHEN** harness ประกอบ reviewer packet
+- **THEN** ถือเหมือนไม่มีไฟล์ packet ไม่มี reviewRules
+
+#### Scenario: REVIEW.md ใหญ่เกิน
+
+- **GIVEN** REVIEW.md ใหญ่กว่า 32 KiB
+- **WHEN** harness ประกอบ reviewer packet
+- **THEN** reviewRules มี hash และ omitted: "too-large" แต่ไม่มีเนื้อหา
+- **AND** prompt บอก reviewer ว่าเกณฑ์ของโปรเจกต์ไม่ได้ส่งมาเพราะใหญ่เกิน
+
+#### Scenario: อ่าน REVIEW.md ไม่ได้
+
+- **GIVEN** REVIEW.md มีอยู่แต่อ่านไม่ได้ เช่น สิทธิ์ไฟล์ไม่พอ
+- **WHEN** harness ประกอบ reviewer packet
+- **THEN** รีวิวยังรันได้ reviewRules มี omitted: "unreadable" และไม่มี hash
+
+#### Scenario: รอบรีวิวแบบส่งแค่ diff
+
+- **GIVEN** REVIEW.md มีอยู่และเป็นรอบรีวิวแบบ diff-only
+- **WHEN** harness ส่ง packet ให้ AI reviewer
+- **THEN** reviewRules ยังอยู่ใน packet ไม่ถูกตัดออกเหมือนฟิลด์อื่นในรอบ diff-only
+
+### Requirement: review-rules-advisory
+
+ระบบ SHALL ใช้ REVIEW.md เป็นคำแนะนำเท่านั้นและไม่ให้มีผลต่อการตัดสินผ่านหรือไม่ผ่านของรีวิว
+
+#### Scenario: prompt ระบุว่าเป็นคำแนะนำ
+
+- **GIVEN** packet มี reviewRules ที่มีเนื้อหา
+- **WHEN** harness สร้าง prompt ให้ configured reviewer
+- **THEN** prompt มีเนื้อหา REVIEW.md ใต้หัวข้อที่ระบุว่าเป็นคำแนะนำ และบอกว่าห้ามใช้เป็นเหตุให้ไม่ผ่านเกินกว่า review contract
+
+#### Scenario: ผลตัดสินเหมือนเดิม
+
+- **GIVEN** reviewer ตอบผลเดียวกันสองครั้ง ครั้งหนึ่ง packet มี reviewRules อีกครั้งไม่มี
+- **WHEN** harness บันทึก review receipt
+- **THEN** status และ verdict ของ receipt ทั้งสองเหมือนกัน
+
+### Requirement: review-rules-bind-receipt
+
+ระบบ SHALL บันทึก hash ของ REVIEW.md ใน review receipt และถือว่ารีวิวเก่าเมื่อ hash ปัจจุบันไม่ตรงกับที่บันทึก
+
+#### Scenario: บันทึก hash
+
+- **GIVEN** packet มี reviewRules ที่มี hash
+- **WHEN** harness บันทึก review receipt
+- **THEN** receipt มี review.reviewRulesHash เท่ากับ hash ใน packet
+
+#### Scenario: แก้ REVIEW.md หลังรีวิว
+
+- **GIVEN** receipt มี reviewRulesHash และต่อมา REVIEW.md ถูกแก้
+- **WHEN** harness ตรวจความใช้ได้ของ receipt
+- **THEN** receipt เป็น stale ด้วยเหตุผล review-rules-changed
+
+#### Scenario: ลบ REVIEW.md หลังรีวิว
+
+- **GIVEN** receipt มี reviewRulesHash และต่อมา REVIEW.md ถูกลบ
+- **WHEN** harness ตรวจความใช้ได้ของ receipt
+- **THEN** receipt เป็น stale ด้วยเหตุผล review-rules-changed
+
+#### Scenario: สร้าง REVIEW.md หลังรีวิว
+
+- **GIVEN** receipt ถูกบันทึกโดยระบุว่าไม่มี REVIEW.md (reviewRulesHash: null) และต่อมามีการสร้างไฟล์
+- **WHEN** harness ตรวจความใช้ได้ของ receipt
+- **THEN** receipt เป็น stale ด้วยเหตุผล review-rules-changed
+
+#### Scenario: REVIEW.md ไม่เปลี่ยน
+
+- **GIVEN** receipt มี reviewRulesHash เท่ากับ hash ปัจจุบัน และ base ของ change ขยับเพราะ change อื่น land ก่อน
+- **WHEN** harness ตรวจความใช้ได้ของ receipt
+- **THEN** receipt ยังใช้ได้หรือ rebind ได้เหมือนก่อนมีฟีเจอร์นี้
+
+#### Scenario: receipt เก่าก่อนอัปเกรด
+
+- **GIVEN** receipt ไม่มีฟิลด์ reviewRulesHash เลย และโปรเจกต์มี REVIEW.md แล้ว
+- **WHEN** harness ตรวจความใช้ได้ของ receipt
+- **THEN** receipt ไม่ถูกทำให้เก่าด้วยเหตุผล review-rules-changed
+
+### Requirement: starter-review-rules-seeded
+
+installer SHALL ใส่ REVIEW.md ตั้งต้นที่ root ของโปรเจกต์เฉพาะเมื่อยังไม่มีไฟล์นั้น ทั้งตอนติดตั้งใหม่และอัปเกรด
+
+#### Scenario: ติดตั้งใหม่
+
+- **GIVEN** โปรเจกต์ยังไม่มี REVIEW.md
+- **WHEN** รัน install.sh
+- **THEN** REVIEW.md ถูกสร้างจาก .claude/harness/templates/REVIEW.md
+- **AND** แผนติดตั้งแสดงบรรทัด + REVIEW.md
+
+#### Scenario: อัปเกรดโปรเจกต์ที่ไม่มีไฟล์
+
+- **GIVEN** โปรเจกต์ติดตั้ง Change Loop รุ่นก่อนแล้วและไม่มี REVIEW.md
+- **WHEN** รัน install.sh เพื่ออัปเกรด
+- **THEN** REVIEW.md ถูกสร้างจาก template
+
+#### Scenario: มี REVIEW.md อยู่แล้ว
+
+- **GIVEN** โปรเจกต์มี REVIEW.md ของตัวเอง
+- **WHEN** รัน install.sh
+- **THEN** REVIEW.md เหมือนเดิมทุก byte
+
+#### Scenario: ติดตั้งล้มกลางทาง
+
+- **GIVEN** โปรเจกต์ไม่มี REVIEW.md และการติดตั้งล้มหลังสร้างไฟล์แล้ว
+- **WHEN** installer rollback
+- **THEN** REVIEW.md ที่เพิ่งสร้างถูกลบออก
+
+### Requirement: dispatched-review-binds-sent-rules
+
+ระบบ SHALL บันทึก reviewRulesHash ของ AI review ที่ผ่าน dispatch จาก hash ที่ส่งไปกับ dispatch นั้น ไม่ใช่จากไฟล์ตอนบันทึก
+
+#### Scenario: บันทึก hash ที่ส่งไป
+
+- **GIVEN** AI review ถูก dispatch ขณะ REVIEW.md มี hash A
+- **WHEN** บันทึก review receipt ด้วย --review-attempt ของ dispatch นั้น
+- **THEN** receipt มี review.reviewRulesHash เท่ากับ A
+
+#### Scenario: แก้ REVIEW.md ระหว่างรีวิว
+
+- **GIVEN** AI review ถูก dispatch ขณะ REVIEW.md มี hash A และไฟล์ถูกแก้เป็น hash B ก่อนบันทึก receipt
+- **WHEN** บันทึก receipt แล้วตรวจความใช้ได้
+- **THEN** receipt บันทึก A และเป็น stale ด้วยเหตุผล review-rules-changed
+
+#### Scenario: dispatch ตอนไม่มีเกณฑ์
+
+- **GIVEN** AI review ถูก dispatch ขณะไม่มี REVIEW.md หรือไฟล์อ่านไม่ได้
+- **WHEN** บันทึก receipt ด้วย --review-attempt
+- **THEN** receipt มี review.reviewRulesHash เป็น null
+
+#### Scenario: attempt รุ่นเก่าไม่มีฟิลด์
+
+- **GIVEN** dispatch attempt ถูกสร้างก่อนอัปเกรดและไม่มีฟิลด์ reviewRulesHash
+- **WHEN** บันทึก receipt ด้วย --review-attempt ของ attempt นั้น
+- **THEN** receipt ใช้ hash ของ REVIEW.md ปัจจุบัน และ attempt ยังผ่านการตรวจเหมือนเดิม
+
+#### Scenario: receipt ที่ไม่ผ่าน dispatch
+
+- **GIVEN** บันทึก review receipt โดยไม่มี dispatch attempt (เส้นทาง reserve)
+- **WHEN** บันทึก receipt
+- **THEN** receipt ใช้ hash ของ REVIEW.md ปัจจุบัน
+
+### Requirement: receipt-validity-without-rules-lookup
+
+ระบบ SHALL ถือว่าไม่มีเกณฑ์รีวิวเมื่อ receipt validity ถูกสร้างโดยไม่มีฟังก์ชันอ่าน hash ของเกณฑ์
+
+#### Scenario: ไม่ส่ง callback และ receipt บันทึก null
+
+- **GIVEN** receipt validity ไม่มี currentReviewRulesHash และ receipt มี reviewRulesHash เป็น null
+- **WHEN** ตรวจความใช้ได้ของ receipt
+- **THEN** ผลเหมือนตอนไม่มีฟีเจอร์ REVIEW.md และไม่มี exception
+
+#### Scenario: ไม่ส่ง callback แต่ receipt มี hash
+
+- **GIVEN** receipt validity ไม่มี currentReviewRulesHash และ receipt มี hash
+- **WHEN** ตรวจความใช้ได้ของ receipt
+- **THEN** receipt เป็น stale ด้วยเหตุผล review-rules-changed
+
+### Requirement: seeded-review-rules-staged
+
+installer SHALL stage REVIEW.md เข้า git เฉพาะเมื่อ installer เป็นผู้สร้างไฟล์นั้นในรอบนั้น
+
+#### Scenario: installer สร้างไฟล์
+
+- **GIVEN** target เป็น git repository ที่ไม่มี REVIEW.md
+- **WHEN** install.sh stage ไฟล์ที่ติดตั้ง
+- **THEN** REVIEW.md อยู่ใน git index
+
+#### Scenario: ไฟล์ของโปรเจกต์ที่ยังไม่ commit
+
+- **GIVEN** target มี REVIEW.md ที่แก้แล้วยังไม่ stage
+- **WHEN** install.sh stage ไฟล์ที่ติดตั้ง
+- **THEN** REVIEW.md ยังไม่ถูก stage

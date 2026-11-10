@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 
 import {
   approvedGroundingRevision, createReceiptRuntime, groundedRepairBinding,
-  repairClosureFindings
+  receiptReviewRulesHash, repairClosureFindings
 } from "../runtime/evidence/receipt-runtime.mjs";
 import { createReceiptValidity } from "../runtime/evidence/receipt-validity.mjs";
 import { createReviewAttemptStore } from "../runtime/evidence/review-attempt-store.mjs";
@@ -307,6 +307,33 @@ try {
   assert.equal(receiptValidity(id, "review", workspaceHash).validity,
     "review-repair-evidence-stale",
     "changing bound critical-case evidence invalidates deterministic closure");
+
+  // A review receipt binds the REVIEW.md hash its dispatch carried, even when
+  // the file changed while the reviewer ran; legacy attempts and receipts
+  // without a dispatch read the project's current rules.
+  const rulesAttempt = attemptStore.dispatchReviewAttempt("rules-change", {
+    reviewerType: "human", reviewerIdentity: "reviewer-rules",
+    requestId: "request-rules", workspaceHash: "workspace-rules",
+    scope: { mode: "full", paths: ["root/app.mjs"], digest: "rules-scope" },
+    packetDigest: "packet-rules", reviewRulesHash: "rules-sent", maxAiAttempts: 2
+  });
+  assert.equal(rulesAttempt.reviewRulesHash, "rules-sent");
+  assert.equal(attemptStore.reviewAttemptByDigest("rules-change", rulesAttempt.digest)
+    ?.reviewRulesHash, "rules-sent", "the stored attempt keeps and verifies the bound hash");
+  writeFileSync(join(root, "REVIEW.md"), "# Edited while the reviewer ran\n");
+  assert.equal(receiptReviewRulesHash(rulesAttempt, root), "rules-sent",
+    "an edit during review does not move the bound hash");
+  assert.equal(receiptReviewRulesHash({ ...rulesAttempt, reviewRulesHash: null }, root), null,
+    "a dispatch that carried no rules binds null");
+  const { reviewRulesHash: _bound, ...legacyAttempt } = rulesAttempt;
+  const currentRules = createHash("sha256")
+    .update("# Edited while the reviewer ran\n").digest("hex");
+  assert.equal(receiptReviewRulesHash(legacyAttempt, root), currentRules,
+    "a pre-upgrade attempt falls back to the current rules");
+  assert.equal(receiptReviewRulesHash(null, root), currentRules,
+    "a receipt without dispatch reads the current rules");
+  rmSync(join(root, "REVIEW.md"));
+  assert.equal(receiptReviewRulesHash(null, root), null);
 
   console.log("review repair closure tests: PASS");
 } finally {

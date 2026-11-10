@@ -222,6 +222,22 @@ Exhausted review is never waived. Who may review (independence and model
 diversity) is project policy; see
 [Review independence and diversity](#review-independence-and-diversity).
 
+### Project review rules (REVIEW.md)
+
+Write your team's review expectations once in `REVIEW.md` at the project root:
+which passes to run, what each severity means, how many nits to report, and
+what to skip. The AI reviewer reads it on every review as **advisory**
+guidance. It shapes what the reviewer looks at and how it reports; it never
+turns a review into a pass or a fail on its own.
+
+- No `REVIEW.md`, or an empty one: review works exactly as before.
+- Edit, delete, or create `REVIEW.md` after a review: that review expires and
+  runs again on the next Prove. Reviews recorded before your upgrade stay valid.
+- Installing or upgrading adds a starter `REVIEW.md` only when you have none; it
+  never overwrites yours. Edit it like any project file.
+
+Details: [project review rules in the evidence reference](https://github.com/Maximumsoft-Co-LTD/claude-foundation/blob/main/.claude/harness/EVIDENCE.md#project-review-rules).
+
 ## Where decisions get recorded
 
 Decisions belong in the change packet, not in a chat transcript. An acceptance

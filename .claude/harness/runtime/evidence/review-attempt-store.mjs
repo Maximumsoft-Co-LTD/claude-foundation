@@ -331,6 +331,10 @@ export function reviewDispatchAttemptValue(context, id, details, history,
       digest: details.scope?.digest || null
     },
     packetDigest: details.packetDigest || null,
+    // The advisory REVIEW.md hash the dispatched packet carried (null: none).
+    // A caller that knows nothing of review rules leaves the attempt as before.
+    ...(Object.hasOwn(details, "reviewRulesHash")
+      ? { reviewRulesHash: details.reviewRulesHash ?? null } : {}),
     status: "dispatched",
     priorChainHead: history.chainHead || null,
     timestamp: context.now()

@@ -5,6 +5,17 @@ import {
   validateSemanticAcceptanceEnvelope
 } from "./semantic-acceptance.mjs";
 import { VISUAL_CAPABILITY, visualReceiptResult } from "./visual-review.mjs";
+import { reviewRulesHash } from "./configured-reviewer.mjs";
+
+// The advisory REVIEW.md hash a review receipt binds: the one the dispatched
+// packet carried, so an edit while the reviewer ran expires the verdict. An
+// attempt from before the field, or a receipt without a dispatch, falls back
+// to the project's current rules.
+export function receiptReviewRulesHash(dispatched, root, currentHash = reviewRulesHash) {
+  if (dispatched && Object.hasOwn(dispatched, "reviewRulesHash"))
+    return dispatched.reviewRulesHash ?? null;
+  return currentHash(root);
+}
 
 // Adapters the harness itself executes. A receipt may only claim one of these
 // when this process ran the command; naming one on the command line is a claim
@@ -952,6 +963,9 @@ export function createReceiptRuntime({
       },
       scope: reviewScopeBinding(scope, receipt.workspaceHash),
       packetDigest: scope.dispatched?.packetDigest || null,
+      // The advisory REVIEW.md this verdict was given (null: none usable).
+      // Receipt validity expires the verdict when the project's rules change.
+      reviewRulesHash: receiptReviewRulesHash(scope.dispatched, ROOT),
       findings: {
         verified: findings.verified, unresolvedBlockers: findings.blockers,
         reference: references[0] || null, items: findings.findingRows,
