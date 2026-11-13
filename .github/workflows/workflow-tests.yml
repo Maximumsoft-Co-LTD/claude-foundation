@@ -81,7 +81,7 @@ on:
 
 jobs:
   minimum-runtime:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     env:
       FOUNDATION_UPDATE_CHECK: '0'
     steps:
@@ -102,7 +102,7 @@ jobs:
           node .claude/harness/foundation.mjs doctor --stage change
 
   deterministic:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       # Upgrade compatibility archives the real previous release tag, so the
       # deterministic job needs release history rather than a depth-1 checkout.
